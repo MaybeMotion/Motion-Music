@@ -2,21 +2,21 @@
 
 <h1 align="center">Motion Music</h1>
 
-<p align="center"><strong>Your music, in full colour.</strong><br>A native Spotify client with 168 curated themes and sixteen audio-reactive player-bar visualisers.</p>
+<p align="center"><strong>Your music, in full colour.</strong><br>A native Spotify client with 180 curated themes and sixteen audio-reactive player-bar visualisers.</p>
 
 Motion Music is a personal customisation of [Spotifast](https://github.com/crmne/spotifast), built with Rust, egui, fastframe, and librespot. Original copyright, licence, and upstream credits are retained. Upstream documentation and release links describe Spotifast; official downloads do not include these customisations.
 
-## Download Motion Music v7
+## Download Motion Music v8
 
-**[Download the Windows portable ZIP](https://github.com/MaybeMotion/Motion-Music/releases/download/motion-v7/Motion-Music-v7-Windows.zip)** or open the [Motion Music v7 release](https://github.com/MaybeMotion/Motion-Music/releases/tag/motion-v7) for the source archive and checksums. Extract the ZIP, keep `spotifast-portable.txt` beside `Motion Music v7.exe`, and fully quit an older running copy before opening it.
+**[Download the Windows portable ZIP](https://github.com/MaybeMotion/Motion-Music/releases/download/motion-v8/Motion-Music-v8-Windows.zip)** or open the [Motion Music v8 release](https://github.com/MaybeMotion/Motion-Music/releases/tag/motion-v8) for the source archive and checksums. Extract the ZIP, keep `spotifast-portable.txt` beside `Motion Music v8.exe`, and fully quit an older running copy before opening it.
 
-See the [v7 setup and visualiser guide](docs/MOTION-MUSIC-V7.md). Downloads are installed manually; the automatic updater remains disabled for this custom build. **motion-v7** identifies this customised portable edition. The underlying Cargo package and executable version remain **0.14.1**, matching the tested build.
+See the [v8 setup and visualiser guide](docs/MOTION-MUSIC-V8.md). Downloads are installed manually; the automatic updater remains disabled for this custom build. **motion-v8** identifies this customised portable edition. The underlying Cargo package and executable version remain **0.14.1**, matching the tested build.
 
 The inherited Spotifast publishing workflows are archived and inactive. See [GitHub upload notes](docs/GITHUB-UPLOAD.md) for the source and publishing details.
 
 ## Make it yours
 
-Open **Settings > Appearance > Motion themes**. The gallery has clearly labelled colour tabs with swatches: **Red, Orange, Yellow, Green, Teal, Cyan, Blue, Purple, Pink, Brown, Monochrome and Gradients**. Every colour collection has both dark and light choices. Click a preview to apply it. Settings search understands colour names and aliases such as **navy**, **aqua**, **grey**, **black** and **white**, as well as combinations such as **light blue** and **blue gradient**. All 168 palettes are built in and available without downloads. They also appear in the main Theme menu and matching Light mode theme or Dark mode theme picker.
+Open **Settings > Appearance > Motion themes**. The gallery has clearly labelled colour tabs with swatches: **Red, Orange, Yellow, Green, Teal, Cyan, Blue, Purple, Pink, Brown, Monochrome and Gradients**. Every colour collection has both dark and light choices. Click a preview to apply it. Settings search understands colour names and aliases such as **navy**, **aqua**, **grey**, **black** and **white**, as well as combinations such as **light blue** and **blue gradient**. All 180 palettes are built in and available without downloads. They also appear in the main Theme menu and matching Light mode theme or Dark mode theme picker.
 
 | Collection | Themes |
 | --- | --- |
@@ -31,19 +31,19 @@ Open **Settings > Appearance > Motion themes**. The gallery has clearly labelled
 | Pink (12) | Plum Velvet, Synthwave, Cosmic Dusk, Rose Noir, Rose Quartz, Dragonfruit, Pomegranate, Blush Silk, Bubblegum, Pink Lemonade, Fuchsia Pulse, Sakura Silk |
 | Brown (8) | Bronze Age, Copper Wire, Desert Night, Espresso, Sandstone, Oat Milk, Terracotta, Toffee Cream |
 | Monochrome (9) | Graphite, Paper, Slate Steel, Carbon Mono, Silver Lining, True Black, Silver Mist, Pure White, Ash Stone |
-| Gradients (56) | Prism Night, Velvet Sunset, Aurora Borealis, Midnight Lagoon, Crimson Nebula, Neon Horizon, Purple Haze, Cherry Aurora, Deep Space, Molten Gold, Emerald Dream, Ocean Drive, Candy Cloud, Dawn Glow, Iridescent, Rosewater, Solar Flare, Boreal Sky, Sapphire Rose, Copper Twilight, Tropical Night, Amber Tide, Forest Ember, Pink Voltage, Blue Hour, Citrus Noir, Cobalt Ember, Opal Night, Desert Mirage, Moonlit Steel, Peacock Feather, Royal Spectrum, Sorbet Sky, Seaglass Dawn, Lemon Petal, Peach Lagoon, Pearl Prism, Sky Meadow, Coral Mist, Honey Lavender, Ruby Sunrise, Mango Wave, Lemon Lime, Jungle Current, Cyan Aurora, Indigo Spectrum, Fuchsia Lagoon, Bronze Ocean, Noir Prism, Copper Rose, Citrus Clouds, Aqua Bloom, Blue Porcelain, Rose Gold, Pistachio Peach, Arctic Pearl |
+| Gradients (68) | Prism Night, Velvet Sunset, Aurora Borealis, Midnight Lagoon, Crimson Nebula, Neon Horizon, Purple Haze, Cherry Aurora, Deep Space, Molten Gold, Emerald Dream, Ocean Drive, Candy Cloud, Dawn Glow, Iridescent, Rosewater, Solar Flare, Boreal Sky, Sapphire Rose, Copper Twilight, Tropical Night, Amber Tide, Forest Ember, Pink Voltage, Blue Hour, Citrus Noir, Cobalt Ember, Opal Night, Desert Mirage, Moonlit Steel, Peacock Feather, Royal Spectrum, Sorbet Sky, Seaglass Dawn, Lemon Petal, Peach Lagoon, Pearl Prism, Sky Meadow, Coral Mist, Honey Lavender, Ruby Sunrise, Mango Wave, Lemon Lime, Jungle Current, Cyan Aurora, Indigo Spectrum, Fuchsia Lagoon, Bronze Ocean, Noir Prism, Copper Rose, Citrus Clouds, Aqua Bloom, Blue Porcelain, Rose Gold, Pistachio Peach, Arctic Pearl, Ruby Silk, Scarlet Ember, Garnet Glow, Cherry Lacquer, Rosefire, Crimson Tide, Velvet Ruby, Blood Orange, Strawberry Cream, Cherry Sorbet, Rose Satin, Coral Velvet |
 
-There are **112 solid palettes and 56 gradient themes**, including 51 light choices overall. The gradient collection has 38 dark and 18 light choices. Three-colour blends extend across the main background, library sidebar and player bar, with matching preview cards. These gradients are drawn natively and cached for smooth redraws; controls keep readable surfaces. Try **Cyan Aurora**, **Lemon Lime**, **Jungle Current**, or the light **Rose Gold** and **Arctic Pearl**. Solid choices include **Sunflower**, **Lime Wire**, **Cyan Circuit**, **Royal Navy**, **True Black** and **Pure White**.
+There are **112 solid palettes and 68 gradient themes**, including 55 light choices overall. The gradient collection has 46 dark and 22 light choices. Three-colour blends extend across the main background, library sidebar and player bar, with matching preview cards. These gradients are drawn natively and cached for smooth redraws; controls keep readable surfaces. Twelve more red-led gradients range from deep **Ruby Silk**, **Garnet Glow** and **Cherry Lacquer** to light **Strawberry Cream**, **Rose Satin** and **Coral Velvet**. Search **red gradient**, **dark red gradient** or **light red gradient** to find blends by colour and appearance. Existing favourites such as **Cyan Aurora**, **Lemon Lime**, **Rose Gold** and **Arctic Pearl** remain available. Solid choices include **Sunflower**, **Lime Wire**, **Cyan Circuit**, **Royal Navy**, **True Black** and **Pure White**.
 
 Each palette colours the page, panels, surfaces, highlights, buttons, outlines, and header tint. Following the system uses Amethyst in dark mode and Lavender Milk in light mode by default. Built-in palettes can also be assigned independently to the system light and dark appearances; no palette file or cached copy is required. Saved light/dark/system selections and existing custom themes still work.
 
 **Colour from album art** lets covers tint the page and visualisers. Turn it off in Appearance for colours driven by your selected theme.
 
-Load your own JSON palettes through **Open themes folder**, choose separate custom themes for light and dark appearances, or use the existing shared desktop presets. See [custom theme format](docs/_reference/settings-and-files.md#custom-themes). The existing custom-file picker supports up to 128 valid palettes; the 168 built-in Motion themes are separate.
+Load your own JSON palettes through **Open themes folder**, choose separate custom themes for light and dark appearances, or use the existing shared desktop presets. See [custom theme format](docs/_reference/settings-and-files.md#custom-themes). The existing custom-file picker supports up to 128 valid palettes; the 180 built-in Motion themes are separate.
 
 ## Smooth motion
 
-Interactive colours and press feedback ease over 160 ms. Switching pages, opening a playlist or album, visiting an artist, and using Back or Forward now gives the page a smooth **260 ms slide and fade**. Playlist-to-playlist changes have the same transition. The sidebar, top bar and player controls stay anchored, and clicks and keyboard actions remain immediate. Theme collections keep their 200 ms arrival fade; changing the theme uses a soft circular reveal over 600 ms, alongside native menu and smooth-scroll transitions.
+Interactive colours and press feedback ease over 160 ms. Switching pages, opening a playlist or album, visiting an artist, and using Back or Forward now chooses a short, eased transition from a shuffled set of six: the original **rise and fade**, **glide from the left**, **glide from the right**, **soft drop**, **diagonal lift** and **dissolve**. Playlist-to-playlist changes use the same mix. Each style appears once per shuffled set, and consecutive switches never repeat the same animation, including across sets. The sidebar, top bar and player controls stay anchored, and clicks and keyboard actions remain immediate. Theme collections keep their 200 ms arrival fade; changing the theme uses a soft circular reveal over 600 ms, alongside native menu and smooth-scroll transitions.
 
 These interface transitions stop requesting frames once they finish, so they add no idle animation loop. Loading more data, scrolling or resizing does not restart the page transition. Motion Music honours the operating system's reduced-motion preference and shows the final state immediately when motion is reduced. Existing audio visualisers keep their own frame-rate controls.
 
@@ -113,7 +113,7 @@ Demo visual flags include **--demo-show motion-aurora**, **motion-radial**, **mo
 
 The executable, windows, tray/menu entries, playback device default, and native icons identify as Motion Music. Internal crate names, Spotify authentication identifiers, credential keys, profile folders, IPC identifiers, and package IDs remain compatible with Spotifast. Existing saved settings and sign-ins are preserved; custom device names are kept.
 
-Self-updates are disabled for this custom build. Download new Motion Music editions manually from [this repository's releases](https://github.com/MaybeMotion/Motion-Music/releases), or rebuild this source. Upstream Spotifast downloads do not include these customisations.
+Self-updates remain disabled for this custom build, preventing an upstream Spotifast download from replacing Motion Music. Update manually from [Motion Music releases](https://github.com/MaybeMotion/Motion-Music/releases), or rebuild this source. The custom v8 label identifies this portable update; the underlying package version remains 0.14.1.
 
 ## Upstream and licence
 
@@ -127,4 +127,4 @@ The native playback engine can receive **audio key 0 1** from Spotify. This mean
 
 The Motion Music v3 app icon is an original flowing violet-to-rose M inside a circular aubergine disc with a luminous rim and transparent corners. A canonical PNG supplies the window and in-app icon; a matching monochrome M supplies the tray template, with native ICO and macOS exports.
 
-For the supplied v7 portable build, keep **spotifast-portable.txt** beside the executable. Fully quit an older running Motion Music instance before launching the new build; otherwise the existing instance handles the launch.
+For the supplied v8 portable build, keep **spotifast-portable.txt** beside the executable. Fully quit an older running Motion Music instance before launching the new build; otherwise the existing instance handles the launch.

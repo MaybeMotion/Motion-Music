@@ -173,6 +173,18 @@ pub enum MotionTheme {
     RoseGold,
     PistachioPeach,
     ArcticPearl,
+    RubySilk,
+    ScarletEmber,
+    GarnetGlow,
+    CherryLacquer,
+    Rosefire,
+    CrimsonTide,
+    VelvetRuby,
+    BloodOrange,
+    StrawberryCream,
+    CherrySorbet,
+    RoseSatin,
+    CoralVelvet,
 }
 
 impl MotionTheme {
@@ -347,6 +359,18 @@ impl MotionTheme {
             Self::RoseGold => "motion-theme:rose-gold",
             Self::PistachioPeach => "motion-theme:pistachio-peach",
             Self::ArcticPearl => "motion-theme:arctic-pearl",
+            Self::RubySilk => "motion-theme:ruby-silk",
+            Self::ScarletEmber => "motion-theme:scarlet-ember",
+            Self::GarnetGlow => "motion-theme:garnet-glow",
+            Self::CherryLacquer => "motion-theme:cherry-lacquer",
+            Self::Rosefire => "motion-theme:rosefire",
+            Self::CrimsonTide => "motion-theme:crimson-tide",
+            Self::VelvetRuby => "motion-theme:velvet-ruby",
+            Self::BloodOrange => "motion-theme:blood-orange",
+            Self::StrawberryCream => "motion-theme:strawberry-cream",
+            Self::CherrySorbet => "motion-theme:cherry-sorbet",
+            Self::RoseSatin => "motion-theme:rose-satin",
+            Self::CoralVelvet => "motion-theme:coral-velvet",
         }
     }
 
@@ -363,7 +387,7 @@ impl MotionTheme {
         }
     }
 
-    pub const ALL: [Self; 168] = [
+    pub const ALL: [Self; 180] = [
         Self::Amethyst,
         Self::PurpleRain,
         Self::Ultraviolet,
@@ -532,6 +556,18 @@ impl MotionTheme {
         Self::RoseGold,
         Self::PistachioPeach,
         Self::ArcticPearl,
+        Self::RubySilk,
+        Self::ScarletEmber,
+        Self::GarnetGlow,
+        Self::CherryLacquer,
+        Self::Rosefire,
+        Self::CrimsonTide,
+        Self::VelvetRuby,
+        Self::BloodOrange,
+        Self::StrawberryCream,
+        Self::CherrySorbet,
+        Self::RoseSatin,
+        Self::CoralVelvet,
     ];
     pub const FAMILIES: [&str; 12] = [
         "Red",
@@ -717,6 +753,18 @@ impl MotionTheme {
             Self::RoseGold => "Rose Gold",
             Self::PistachioPeach => "Pistachio Peach",
             Self::ArcticPearl => "Arctic Pearl",
+            Self::RubySilk => "Ruby Silk",
+            Self::ScarletEmber => "Scarlet Ember",
+            Self::GarnetGlow => "Garnet Glow",
+            Self::CherryLacquer => "Cherry Lacquer",
+            Self::Rosefire => "Rosefire",
+            Self::CrimsonTide => "Crimson Tide",
+            Self::VelvetRuby => "Velvet Ruby",
+            Self::BloodOrange => "Blood Orange",
+            Self::StrawberryCream => "Strawberry Cream",
+            Self::CherrySorbet => "Cherry Sorbet",
+            Self::RoseSatin => "Rose Satin",
+            Self::CoralVelvet => "Coral Velvet",
         }
     }
     /// Colour collections include both dark and light palettes.
@@ -890,6 +938,18 @@ impl MotionTheme {
             Self::RoseGold => "Gradients",
             Self::PistachioPeach => "Gradients",
             Self::ArcticPearl => "Gradients",
+            Self::RubySilk => "Gradients",
+            Self::ScarletEmber => "Gradients",
+            Self::GarnetGlow => "Gradients",
+            Self::CherryLacquer => "Gradients",
+            Self::Rosefire => "Gradients",
+            Self::CrimsonTide => "Gradients",
+            Self::VelvetRuby => "Gradients",
+            Self::BloodOrange => "Gradients",
+            Self::StrawberryCream => "Gradients",
+            Self::CherrySorbet => "Gradients",
+            Self::RoseSatin => "Gradients",
+            Self::CoralVelvet => "Gradients",
         }
     }
 
@@ -1192,6 +1252,42 @@ impl MotionTheme {
             Self::ArcticPearl => {
                 "gradient gradients multicolour multicolor monochrome neutral grey gray cyan aqua aquamarine ice blue navy cobalt sapphire ocean silver white light daylight pastel"
             }
+            Self::RubySilk => {
+                "gradient gradients multicolour multicolor red ruby wine burgundy rose dark night after hours"
+            }
+            Self::ScarletEmber => {
+                "gradient gradients multicolour multicolor red scarlet ember orange vermilion dark night after hours"
+            }
+            Self::GarnetGlow => {
+                "gradient gradients multicolour multicolor red garnet wine burgundy cherry dark night after hours"
+            }
+            Self::CherryLacquer => {
+                "gradient gradients multicolour multicolor red cherry lacquer ruby scarlet dark night after hours"
+            }
+            Self::Rosefire => {
+                "gradient gradients multicolour multicolor red rose fire ember orange dark night after hours"
+            }
+            Self::CrimsonTide => {
+                "gradient gradients multicolour multicolor red crimson cherry carmine wine dark night after hours"
+            }
+            Self::VelvetRuby => {
+                "gradient gradients multicolour multicolor red ruby velvet garnet burgundy dark night after hours"
+            }
+            Self::BloodOrange => {
+                "gradient gradients multicolour multicolor red blood orange vermilion ember dark night after hours"
+            }
+            Self::StrawberryCream => {
+                "gradient gradients multicolour multicolor red strawberry cherry cream pink rose light daylight pastel"
+            }
+            Self::CherrySorbet => {
+                "gradient gradients multicolour multicolor red cherry sorbet strawberry pink rose light daylight pastel"
+            }
+            Self::RoseSatin => {
+                "gradient gradients multicolour multicolor red rose satin ruby pink coral light daylight pastel"
+            }
+            Self::CoralVelvet => {
+                "gradient gradients multicolour multicolor red coral velvet scarlet orange peach light daylight pastel"
+            }
         }
     }
     /// Three opaque canvas colours, drawn as a real gradient by the native
@@ -1256,6 +1352,18 @@ impl MotionTheme {
             Self::RoseGold => [0xffe9f1, 0xffeddf, 0xfff6dc],
             Self::PistachioPeach => [0xecf7df, 0xfff7dd, 0xffe8dd],
             Self::ArcticPearl => [0xf9fcff, 0xe5f5fa, 0xeaeef5],
+            Self::RubySilk => [0x250b15, 0x4c142a, 0x311015],
+            Self::ScarletEmber => [0x230c09, 0x531c10, 0x351017],
+            Self::GarnetGlow => [0x200a0d, 0x42101a, 0x541e2c],
+            Self::CherryLacquer => [0x27080e, 0x571522, 0x330c15],
+            Self::Rosefire => [0x270c13, 0x4c1a26, 0x421c0e],
+            Self::CrimsonTide => [0x220a0b, 0x4b1b25, 0x34101e],
+            Self::VelvetRuby => [0x1f0d10, 0x481d2c, 0x35110d],
+            Self::BloodOrange => [0x280c07, 0x56250f, 0x401014],
+            Self::StrawberryCream => [0xffeceb, 0xffdce0, 0xfff2e8],
+            Self::CherrySorbet => [0xffe8eb, 0xfbd8dd, 0xffede2],
+            Self::RoseSatin => [0xffeff0, 0xf6d9db, 0xffe6df],
+            Self::CoralVelvet => [0xffeddf, 0xffddd6, 0xffedf0],
             _ => return None,
         };
         Some(stops.map(|hex| Color32::from_rgb((hex >> 16) as u8, (hex >> 8) as u8, hex as u8)))
@@ -1431,6 +1539,18 @@ impl MotionTheme {
             Self::RoseGold => (false, 0xffe9f1, 0xfffaf8, 0xf2dfdf, 0xa13c58),
             Self::PistachioPeach => (false, 0xecf7df, 0xfefff8, 0xe5ecd3, 0x4d6b2a),
             Self::ArcticPearl => (false, 0xf9fcff, 0xffffff, 0xe2e9ef, 0x425b72),
+            Self::RubySilk => (true, 0x250b15, 0x2b111a, 0x3c2028, 0xffa1ad),
+            Self::ScarletEmber => (true, 0x230c09, 0x2d1510, 0x40251f, 0xffad93),
+            Self::GarnetGlow => (true, 0x200a0d, 0x29111b, 0x3a1e28, 0xf5a4b7),
+            Self::CherryLacquer => (true, 0x27080e, 0x32131a, 0x44202a, 0xff9ea9),
+            Self::Rosefire => (true, 0x270c13, 0x30191f, 0x422831, 0xffb29f),
+            Self::CrimsonTide => (true, 0x220a0b, 0x2b1419, 0x3e242b, 0xff9b9b),
+            Self::VelvetRuby => (true, 0x1f0d10, 0x2a181d, 0x3c2930, 0xf3aab4),
+            Self::BloodOrange => (true, 0x280c07, 0x321b13, 0x442c20, 0xffb18b),
+            Self::StrawberryCream => (false, 0xffeceb, 0xfffaf8, 0xf0dbdb, 0x9e3345),
+            Self::CherrySorbet => (false, 0xffe8eb, 0xfff9f7, 0xf0d9df, 0x9c2944),
+            Self::RoseSatin => (false, 0xffeff0, 0xfffcfa, 0xf0e0df, 0x9b3a4f),
+            Self::CoralVelvet => (false, 0xffeddf, 0xfffbf7, 0xf1dfd6, 0xa13930),
         };
         let rgb = |hex: u32| Color32::from_rgb((hex >> 16) as u8, (hex >> 8) as u8, hex as u8);
         let (window, panel, surface, accent) = (rgb(window), rgb(panel), rgb(surface), rgb(accent));
@@ -1545,14 +1665,14 @@ mod tests {
                 .iter()
                 .filter(|theme| !theme.palette().dark)
                 .count(),
-            51
+            55
         );
     }
 
     #[test]
-    fn all_168_themes_have_unique_stable_identities_and_expected_collections() {
+    fn all_180_themes_have_unique_stable_identities_and_expected_collections() {
         let mut filenames = std::collections::BTreeSet::new();
-        assert_eq!(MotionTheme::ALL.len(), 168);
+        assert_eq!(MotionTheme::ALL.len(), 180);
         assert_eq!(MotionTheme::FAMILIES.len(), 12);
         for theme in MotionTheme::ALL {
             assert!(
@@ -1576,7 +1696,7 @@ mod tests {
             ("Pink", 12),
             ("Brown", 8),
             ("Monochrome", 9),
-            ("Gradients", 56),
+            ("Gradients", 68),
         ] {
             assert_eq!(
                 MotionTheme::ALL
@@ -1606,7 +1726,7 @@ mod tests {
     }
 
     #[test]
-    fn fifty_six_gradients_keep_text_readable_across_the_whole_canvas() {
+    fn sixty_eight_gradients_keep_text_readable_across_the_whole_canvas() {
         let mut dark = 0;
         let mut light = 0;
         for theme in MotionTheme::ALL {
@@ -1649,7 +1769,50 @@ mod tests {
                 }
             }
         }
-        assert_eq!((dark, light), (38, 18));
+        assert_eq!((dark, light), (46, 22));
+    }
+
+    #[test]
+    fn the_red_gradient_collection_keeps_every_canvas_stop_warm_and_searchable() {
+        let themes = [
+            MotionTheme::RubySilk,
+            MotionTheme::ScarletEmber,
+            MotionTheme::GarnetGlow,
+            MotionTheme::CherryLacquer,
+            MotionTheme::Rosefire,
+            MotionTheme::CrimsonTide,
+            MotionTheme::VelvetRuby,
+            MotionTheme::BloodOrange,
+            MotionTheme::StrawberryCream,
+            MotionTheme::CherrySorbet,
+            MotionTheme::RoseSatin,
+            MotionTheme::CoralVelvet,
+        ];
+        let mut dark = 0;
+        let mut light = 0;
+        let mut distinct = std::collections::BTreeSet::new();
+        for theme in themes {
+            assert!(MotionTheme::ALL.contains(&theme));
+            assert_eq!(theme.family(), "Gradients");
+            let words: Vec<_> = theme.colour_keywords().split_whitespace().collect();
+            assert!(words.contains(&"red") && words.contains(&"gradient"));
+            let stops = theme.gradient().expect("a real red gradient");
+            assert!(distinct.insert(stops.map(|stop| stop.to_array())));
+            for stop in stops {
+                assert!(
+                    stop.r() > stop.g() && stop.r() > stop.b(),
+                    "{theme:?}: each stop stays led by red"
+                );
+            }
+            if theme.palette().dark {
+                dark += 1;
+                assert!(words.contains(&"dark"));
+            } else {
+                light += 1;
+                assert!(words.contains(&"light"));
+            }
+        }
+        assert_eq!((dark, light), (8, 4));
     }
 
     #[test]

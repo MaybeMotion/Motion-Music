@@ -1739,13 +1739,13 @@ impl Default for MotionTour {
 #[cfg(feature = "demo")]
 impl MotionTour {
     fn phase(elapsed: std::time::Duration) -> usize {
-        [320, 920, 1520, 2120, 2720, 3220, 3620]
+        [320, 920, 1520, 2120, 2720, 3320, 3920, 4320]
             .into_iter()
             .take_while(|&at| elapsed.as_millis() >= at)
             .count()
     }
 
-    /// Each concrete page identity is opened once. The fixture uses only
+    /// Each scheduled navigation is opened once. The fixture uses only
     /// cached sample pages; no operating-system input or account is involved.
     pub fn events(
         &mut self,
@@ -1762,6 +1762,7 @@ impl MotionTour {
             self.phase = Some(phase);
             match phase {
                 0 => {
+                    crate::ui::motion::seed_page_transitions(ctx, 7);
                     app.open(Page::Home);
                     app.settings.accent_from_art = false;
                     app.settings.player_bar_vis = crate::settings::PlayerBarVis::Off;
@@ -1779,18 +1780,26 @@ impl MotionTour {
                         )
                     });
                 }
-                6 => ctx.data_mut(|data| {
-                    data.insert_temp(egui::Id::new("settings-filter"), "Blue".to_string());
-                }),
-                7 => ctx.data_mut(|data| {
-                    data.insert_temp(egui::Id::new("settings-filter"), "Gradients".to_string());
+                6 => app.open(Page::Queue),
+                7 => {
+                    app.open(Page::Settings);
+                    ctx.data_mut(|data| {
+                        data.insert_temp(
+                            egui::Id::new("settings-filter"),
+                            "Motion themes".to_string(),
+                        )
+                    });
+                }
+                8 => ctx.data_mut(|data| {
+                    data.insert_temp(egui::Id::new("settings-filter"), "red gradient".to_string());
                 }),
                 _ => {}
             }
         }
         let point = match phase {
             1..=4 => egui::pos2(470.0, 465.0),
-            5..=7 => egui::pos2(530.0, if size.x < 900.0 { 620.0 } else { 520.0 }),
+            5 | 7..=8 => egui::pos2(530.0, if size.x < 900.0 { 620.0 } else { 520.0 }),
+            6 => egui::pos2(470.0, 465.0),
             _ => egui::pos2(650.0, 90.0),
         };
         vec![egui::Event::PointerMoved(egui::pos2(
@@ -6616,6 +6625,12 @@ mod tests {
             ("black", "Monochrome", MotionTheme::CarbonMono),
             ("light blue", "Blue", MotionTheme::PowderBlue),
             ("blue gradient", "Gradients", MotionTheme::BorealSky),
+            ("dark red gradient", "Gradients", MotionTheme::RubySilk),
+            (
+                "light red gradient",
+                "Gradients",
+                MotionTheme::StrawberryCream,
+            ),
         ];
         for (size, base) in [
             (egui::vec2(720.0, 900.0), ThemeChoice::Dark),
@@ -6660,6 +6675,11 @@ mod tests {
                     "{query}, {size:?}"
                 );
                 assert_eq!(app.palette, preset.palette(), "{query}, {size:?}");
+                assert_eq!(app.theme_gradient(), preset.gradient(), "{query}, {size:?}");
+                let stored = serde_json::to_string(&app.settings).unwrap();
+                let restored: Settings = serde_json::from_str(&stored).unwrap();
+                assert_eq!(restored.theme, ThemeChoice::Motion(preset));
+                assert_eq!(restored.fixed_palette(), Some(preset.palette()));
             }
         }
     }
@@ -12264,6 +12284,8 @@ mod tests {
             (1520, Page::Album("alb0".into())),
             (2120, Page::Artist("art0".into())),
             (2720, Page::Settings),
+            (3320, Page::Queue),
+            (3920, Page::Settings),
         ] {
             let events = tour.events(&mut app, &ctx, Some(Duration::from_millis(at)), size);
             assert!(matches!(events.as_slice(), [egui::Event::PointerMoved(_)]));
@@ -12271,11 +12293,11 @@ mod tests {
         }
         // Staying in a phase does not reopen its page over an interaction.
         app.open(Page::Home);
-        tour.events(&mut app, &ctx, Some(Duration::from_millis(2800)), size);
+        tour.events(&mut app, &ctx, Some(Duration::from_millis(4000)), size);
         assert_eq!(app.page(), &Page::Home);
         app.offline = false;
         assert!(
-            tour.events(&mut app, &ctx, Some(Duration::from_millis(3000)), size)
+            tour.events(&mut app, &ctx, Some(Duration::from_millis(4320)), size)
                 .is_empty()
         );
         assert_eq!(app.page(), &Page::Home);
