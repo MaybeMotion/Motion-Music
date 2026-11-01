@@ -951,6 +951,11 @@ fn link_recording(
 
 impl App {
     pub fn new(waker: &Waker, dirs: AppDirs, mut settings: Settings, options: AppOptions) -> Self {
+        if !crate::milkdrop::AVAILABLE {
+            // Older slim builds could save an open flag despite lacking the
+            // child engine. Do not restore a phantom visualizer or its ticks.
+            settings.milkdrop_open = false;
+        }
         // The legacy password file has no endpoint of its own. Keep the old
         // settings beside it until migration binds that password in the store.
         settings.proxy_password_legacy |= dirs.proxy_secret_file().try_exists().unwrap_or(true);
@@ -3984,11 +3989,24 @@ impl App {
             let tap = std::sync::Arc::clone(&self.winamp.tap);
             self.milkdrop_host = Some(crate::milkdrop::host::Host::new(tap));
         }
+        let native = self
+            .now_playing()
+            .is_some_and(|now| now.local && (now.playing || now.loading));
+        let (tap, lag) = if cfg!(windows) && !native {
+            (std::sync::Arc::clone(self.desktop_audio.tap()), 0)
+        } else {
+            (std::sync::Arc::clone(&self.winamp.tap), crate::vis::LAG)
+        };
+        let mut opening_error = None;
         let poll = {
             let host = self.milkdrop_host.as_mut().expect("the host was just made");
+            host.set_audio(tap, lag);
             if open {
-                if !host.is_running() {
-                    host.open(&presets, size, pos, fullscreen, fps, seconds, scale);
+                if !host.is_running()
+                    && let Err(error) =
+                        host.open(&presets, size, pos, fullscreen, fps, seconds, scale)
+                {
+                    opening_error = Some(error);
                 }
                 host.update(fps, seconds, scale);
                 host.song(song);
@@ -3997,9 +4015,12 @@ impl App {
             }
             host.poll()
         };
-        if poll.closed {
+        if poll.closed || opening_error.is_some() {
             self.settings.milkdrop_open = false;
             self.mark_settings_dirty();
+        }
+        if let Some(error) = opening_error.or(poll.error) {
+            self.toast_error(error);
         }
         if let Some(size) = poll.size
             && self.settings.milkdrop_size != size
@@ -4037,18 +4058,34 @@ impl App {
     /// A phone's playback state does not say what is audible on this PC:
     /// the fallback deliberately follows the default Windows output mix.
     fn desktop_visualizer_wanted(&self) -> bool {
+        #[cfg(feature = "milkdrop")]
+        let milkdrop_visible = self.settings.milkdrop_open
+            && self
+                .milkdrop_host
+                .as_ref()
+                .is_some_and(|host| host.is_visible());
+        #[cfg(not(feature = "milkdrop"))]
+        let milkdrop_visible = false;
+        self.desktop_visualizer_wanted_for(milkdrop_visible)
+    }
+
+    fn desktop_visualizer_wanted_for(&self, milkdrop_visible: bool) -> bool {
         use crate::settings::{PlayerBarVis, VisMode};
         let chosen = if self.settings.winamp_window {
             !self.settings.winamp_shaded && self.settings.vis != VisMode::Off
         } else {
             self.settings.player_bar_vis != PlayerBarVis::Off
         };
-        cfg!(windows)
-            && chosen
+        let main_visible = chosen
             && self.visualiser_fps().is_some()
             && !self.window_hidden
             && !self.hide_intent
-            && !self.switch_intent
+            && !self.switch_intent;
+        let conditions = self.power.conditions();
+        cfg!(windows)
+            && (main_visible || milkdrop_visible)
+            && !conditions.locked
+            && !conditions.display_off
             && !self.quit_requested
             && self.is_connected()
             && self.user.is_some()
@@ -4086,7 +4123,7 @@ impl App {
             _ => "Listening to the default Windows audio output.".to_owned(),
         };
         format!(
-            "{detail} Visualisers can react to Spotify and other apps audible on this PC.              No microphone is used and no audio is saved.              Phone or speaker playback is not audible here.              This input follows the other app's volume and EQ."
+            "{detail} Visualisers react to Spotify and other apps audible on this PC. No microphone, recordings or uploads. MilkDrop uses a short-lived local shared-memory buffer. Phone or speaker playback is not audible here. This input follows the other app's volume and EQ."
         )
     }
 
@@ -12018,23 +12055,31 @@ impl App {
                 }
             }
             Action::ToggleWinampMilkdrop => {
-                self.settings.milkdrop_open = !self.settings.milkdrop_open;
-                self.settings_dirty = true;
+                #[cfg(not(feature = "milkdrop"))]
+                {
+                    self.settings.milkdrop_open = false;
+                    self.settings_dirty = true;
+                    self.toast_error("MilkDrop is not included in this build. Open the full Motion Music build to use it.");
+                }
                 #[cfg(feature = "milkdrop")]
-                if self.settings.milkdrop_open {
-                    // A first open has nothing to draw but the idle preset,
-                    // which hardly answers the music; fetch the packs in the
-                    // background and the window fills up on its own.
-                    let folder = self.dirs.milkdrop_dir();
-                    if self.winamp.presets.downloading().is_none()
-                        && !crate::milkdrop::has_presets(&folder)
-                    {
-                        self.winamp.presets.download_missing(
-                            folder,
-                            ctx.clone(),
-                            self.applied_proxy.clone(),
-                        );
-                        self.toast(gettext(self.locale, "Downloading MilkDrop preset packs"));
+                {
+                    self.settings.milkdrop_open = !self.settings.milkdrop_open;
+                    self.settings_dirty = true;
+                    if self.settings.milkdrop_open {
+                        // The embedded starter already works offline. Fetch the
+                        // optional community packs in the background so they
+                        // become available without blocking the first window.
+                        let folder = self.dirs.milkdrop_dir();
+                        if self.winamp.presets.downloading().is_none()
+                            && !crate::milkdrop::has_presets(&folder)
+                        {
+                            self.winamp.presets.download_missing(
+                                folder,
+                                ctx.clone(),
+                                self.applied_proxy.clone(),
+                            );
+                            self.toast(gettext(self.locale, "Downloading MilkDrop preset packs"));
+                        }
                     }
                 }
             }
@@ -13445,6 +13490,57 @@ mod tests {
     use crate::api::models::{
         Episode, Image, Page as ApiPage, ResumePoint, SavedEpisode, SavedTrack, SearchResults,
     };
+
+    #[cfg(not(feature = "milkdrop"))]
+    #[test]
+    fn builds_without_milkdrop_explain_the_missing_engine_and_never_stay_open() {
+        let mut app = test_app("milkdrop-unavailable");
+        app.settings.milkdrop_open = true;
+        app.apply(Action::ToggleWinampMilkdrop, &egui::Context::default());
+        assert!(!app.settings.milkdrop_open);
+        assert!(app.settings_dirty);
+        let toast = app.toasts.last().expect("an actionable explanation");
+        assert_eq!(toast.kind, ToastKind::Error);
+        assert!(toast.message.contains("MilkDrop is not included"));
+        app.backend.shutdown();
+    }
+
+    #[test]
+    fn milkdrop_window_alone_can_request_windows_audio_but_not_when_locked_or_native() {
+        use crate::settings::{PlayerBarVis, VisMode};
+        let mut app = test_app("milkdrop-desktop-demand");
+        crate::demo::populate(&mut app);
+        app.settings.player_bar_vis = PlayerBarVis::Off;
+        app.settings.vis = VisMode::Off;
+        app.window_hidden = true;
+        app.hide_intent = true;
+        app.budget = crate::power::Budget::Background;
+        assert!(!app.desktop_visualizer_wanted_for(false));
+        assert_eq!(app.desktop_visualizer_wanted_for(true), cfg!(windows));
+        app.power = crate::power::Power::fixed(crate::power::Conditions {
+            locked: true,
+            ..Default::default()
+        });
+        assert!(!app.desktop_visualizer_wanted_for(true));
+        app.power = crate::power::Power::fixed(crate::power::Conditions {
+            display_off: true,
+            ..Default::default()
+        });
+        assert!(!app.desktop_visualizer_wanted_for(true));
+        app.power = crate::power::Power::fixed(crate::power::Conditions::default());
+        let mut now = app.now_playing().expect("demo metadata");
+        now.local = true;
+        now.playing = true;
+        app.frame_now = Some(now);
+        assert!(
+            !app.desktop_visualizer_wanted_for(true),
+            "native post-EQ/pre-volume PCM wins"
+        );
+        app.frame_now = None;
+        app.quit_requested = true;
+        assert!(!app.desktop_visualizer_wanted_for(true));
+        app.backend.shutdown();
+    }
 
     #[test]
     fn desktop_visualizer_uses_fresh_output_without_remote_playback_metadata() {

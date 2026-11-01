@@ -1,4 +1,5 @@
 //! Short, finite presentation transitions with matching paint and hit geometry.
+use super::reveal;
 use egui::{Id, Ui, Vec2};
 use rand::{Rng, seq::SliceRandom};
 
@@ -70,7 +71,7 @@ impl PagePresentation {
     };
 }
 
-/// Six short arrivals share their final layout and keep their controls live.
+/// Short arrivals and wallpaper-style reveals share one shuffled mix.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PageTransition {
     Rise,
@@ -79,17 +80,39 @@ enum PageTransition {
     SoftDrop,
     DiagonalLift,
     Dissolve,
+    CircleOut,
+    CircleIn,
+    DiagonalSweep,
+    Curtain,
 }
 
 impl PageTransition {
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 10] = [
         Self::Rise,
         Self::GlideLeft,
         Self::GlideRight,
         Self::SoftDrop,
         Self::DiagonalLift,
         Self::Dissolve,
+        Self::CircleOut,
+        Self::CircleIn,
+        Self::DiagonalSweep,
+        Self::Curtain,
     ];
+
+    fn reveal(self) -> Option<reveal::Kind> {
+        match self {
+            Self::CircleOut => Some(reveal::Kind::CircleOut),
+            Self::CircleIn => Some(reveal::Kind::CircleIn),
+            Self::DiagonalSweep => Some(reveal::Kind::Diagonal),
+            Self::Curtain => Some(reveal::Kind::Curtain),
+            _ => None,
+        }
+    }
+
+    fn seconds(self) -> f32 {
+        if self.reveal().is_some() { 0.56 } else { 0.26 }
+    }
 
     fn presentation(self, remaining: f32) -> PagePresentation {
         let (offset, fade) = match self {
@@ -100,6 +123,9 @@ impl PageTransition {
             Self::SoftDrop => (egui::vec2(0.0, -18.0), 0.52),
             Self::DiagonalLift => (egui::vec2(18.0, 14.0), 0.50),
             Self::Dissolve => (Vec2::ZERO, 0.72),
+            Self::CircleOut | Self::CircleIn | Self::DiagonalSweep | Self::Curtain => {
+                return PagePresentation::SETTLED;
+            }
         };
         PagePresentation {
             opacity: 1.0 - fade * remaining,
@@ -112,7 +138,7 @@ impl PageTransition {
 /// the previous group's last choice. Only a real page change advances it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct PageTransitions {
-    order: [PageTransition; 6],
+    order: [PageTransition; PageTransition::ALL.len()],
     next: usize,
     last: Option<PageTransition>,
 }
@@ -206,42 +232,178 @@ impl PageArrival {
     }
 }
 
-/// Draw the new page immediately with a randomly shuffled 260 ms arrival.
-/// The original rise-and-fade stays in the mix, without consecutive repeats.
+#[derive(Clone)]
+struct PageReveal {
+    source: Option<reveal::Snapshot>,
+    picture: Option<reveal::Picture>,
+    previous: Id,
+}
+
+#[derive(Clone)]
+struct PendingOverlay {
+    pass: u64,
+    layer: egui::LayerId,
+    shapes: Vec<egui::layers::ShapeIdx>,
+    font_size: [usize; 2],
+    arrival: Id,
+}
+
+fn pending_overlay_id() -> Id {
+    Id::new("motion-page-pending-overlay")
+}
+
+/// Later dialogs and toasts can add new glyphs after the central page. Drop
+/// only its old-page overlay if their atlas growth invalidated cached UVs.
+pub(crate) fn finish(ctx: &egui::Context) {
+    let pending = ctx.data_mut(|data| {
+        let pending = data.get_temp::<PendingOverlay>(pending_overlay_id());
+        data.remove::<PendingOverlay>(pending_overlay_id());
+        pending
+    });
+    let Some(pending) = pending else {
+        return;
+    };
+    if pending.pass != ctx.cumulative_pass_nr()
+        || pending.font_size == ctx.fonts(|fonts| fonts.font_image_size())
+    {
+        return;
+    }
+    ctx.graphics_mut(|graphics| {
+        if let Some(layer) = graphics.get_mut(pending.layer) {
+            for index in pending.shapes {
+                layer.reset_shape(index);
+            }
+        }
+    });
+    ctx.data_mut(|data| {
+        if let Some(mut state) = data.get_temp::<PageArrival>(pending.arrival) {
+            state.started = None;
+            data.insert_temp(pending.arrival, state);
+        }
+        data.remove::<PageReveal>(pending.arrival.with("active-page-reveal"));
+    });
+    ctx.request_repaint();
+}
+
+fn reveal_progress(state: PageArrival, now: f64) -> f32 {
+    let t = state.started.map_or(1.0, |start| {
+        ((now - start) / f64::from(state.transition.seconds())).clamp(0.0, 1.0) as f32
+    });
+    t * t * (3.0 - 2.0 * t)
+}
+
+fn interrupt_reveal(ui: &Ui) -> bool {
+    ui.input(|input| {
+        input.smooth_scroll_delta != Vec2::ZERO
+            || input.events.iter().any(|event| {
+                matches!(
+                    event,
+                    egui::Event::MouseWheel { .. }
+                        | egui::Event::Key { pressed: true, .. }
+                        | egui::Event::Text(_)
+                        | egui::Event::Paste(_)
+                        | egui::Event::Cut
+                        | egui::Event::Copy
+                        | egui::Event::Ime(_)
+                )
+            })
+    })
+}
+
+/// Page bodies use the original six arrivals and four native wallpaper-style
+/// reveals. Fixed chrome stays outside the cached viewport. Only the previous
+/// body is retained; geometry and existing textures stay in memory, with no
+/// screenshot, readback, file operation or new renderer dependency.
 ///
-/// The child Ui's real coordinates move, so painted controls and pointer,
-/// keyboard and accessibility targets agree throughout the animation. The
-/// parent measures its untranslated size, keeping the scroll extent stable.
-/// The clip remains the fixed page viewport. No screenshot of the old page
-/// can cover new controls, and only one current page identity is retained.
-pub(crate) fn page<R>(ui: &mut Ui, id: Id, key: Id, add_contents: impl FnOnce(&mut Ui) -> R) -> R {
+/// New controls already have their actual layout. A covered pointer cannot
+/// activate them. Keyboard/scroll input and a click on a revealed control
+/// finish the reveal immediately, preserving responsive navigation.
+pub(crate) fn page<R>(
+    ui: &mut Ui,
+    id: Id,
+    key: Id,
+    scene: Id,
+    add_contents: impl FnOnce(&mut Ui) -> R,
+) -> R {
     let now = ui.input(|input| input.time);
-    let seconds = crate::motion::seconds(ui.ctx(), 0.26);
+    let reduced = crate::motion::reduced(ui.ctx());
+    let snapshot_id = id.with("last-page-picture");
+    let reveal_id = id.with("active-page-reveal");
     let mut state = ui
         .data(|data| data.get_temp::<PageArrival>(id))
         .unwrap_or_else(|| PageArrival::new(key));
+    let mut active = ui.data(|data| data.get_temp::<PageReveal>(reveal_id));
     if state.key != key {
+        let previous = state.key;
+        let was_active = state.started.is_some();
         state.key = key;
-        if seconds > 0.0 {
+        active = None;
+        if !reduced {
             state.transition = next_page_transition(ui.ctx(), &mut state.choices);
             state.started = Some(now);
+            if state.transition.reveal().is_some() {
+                let source = ui.data(|data| data.get_temp::<reveal::Snapshot>(snapshot_id));
+                if !was_active
+                    && source
+                        .as_ref()
+                        .is_some_and(|s| s.matches(ui, previous, scene))
+                {
+                    active = Some(PageReveal {
+                        source,
+                        picture: None,
+                        previous,
+                    });
+                } else {
+                    state.started = None;
+                }
+            }
         } else {
             state.started = None;
         }
     }
-    // Cancel any in-progress arrival as soon as reduced motion is enabled.
-    // Turning it back off must not replay a partially completed transition.
-    if seconds <= 0.0 {
+    if reduced || interrupt_reveal(ui) && state.transition.reveal().is_some() {
         state.started = None;
+        active = None;
+    }
+    let seconds = crate::motion::seconds(ui.ctx(), state.transition.seconds());
+    if state
+        .started
+        .is_some_and(|start| !now.is_finite() || now - start >= f64::from(seconds))
+    {
+        state.started = None;
+        active = None;
+    }
+    if active.as_ref().is_some_and(|a| {
+        a.picture.as_ref().is_some_and(|p| !p.valid(ui, scene))
+            || a.source
+                .as_ref()
+                .is_some_and(|s| !s.matches(ui, a.previous, scene))
+    }) {
+        state.started = None;
+        active = None;
+    }
+    let mut progress = reveal_progress(state, now);
+    let kind = state.transition.reveal();
+    let body_pointer = ui
+        .input(|input| input.pointer.interact_pos())
+        .filter(|&point| ui.clip_rect().contains(point));
+    let covered_pointer = active.is_some()
+        && body_pointer.is_some_and(|point| {
+            kind.is_some_and(|kind| !reveal::revealed(ui.clip_rect(), kind, progress, point))
+        });
+    if active.is_some()
+        && body_pointer.is_some()
+        && !covered_pointer
+        && ui.input(|input| input.pointer.any_pressed())
+    {
+        state.started = None;
+        active = None;
+        progress = 1.0;
     }
     let presentation = state.presentation(now, seconds);
-    if presentation == PagePresentation::SETTLED {
-        state.started = None;
-    } else {
+    if state.started.is_some() {
         ui.ctx().request_repaint();
     }
-    ui.data_mut(|data| data.insert_temp(id, state));
-
     let clip = ui.clip_rect();
     let rect = ui
         .available_rect_before_wrap()
@@ -253,10 +415,66 @@ pub(crate) fn page<R>(ui: &mut Ui, id: Id, key: Id, add_contents: impl FnOnce(&m
     );
     child.set_clip_rect(clip);
     child.multiply_opacity(presentation.opacity);
+    if covered_pointer {
+        let opacity = child.opacity();
+        child.disable();
+        // egui's disabled treatment is painter opacity, not different widget
+        // colours. Keep the original paint while gating covered hit targets.
+        child.set_opacity(opacity);
+    }
     let result = add_contents(&mut child);
     let measured = child.min_rect().translate(-presentation.offset);
     drop(child);
     ui.advance_cursor_after_rect(measured);
+    // On a new reveal this runs after text layout, so it uses the font atlas
+    // size that the new body actually needs. Later growth cancels safely.
+    if let Some(reveal) = active.as_mut() {
+        if reveal.picture.is_none() {
+            reveal.picture = reveal
+                .source
+                .take()
+                .and_then(|s| s.picture(ui, reveal.previous, scene));
+            if reveal.picture.is_none() {
+                state.started = None;
+            }
+        }
+        // The new body can grow the font atlas during this very draw. Never
+        // paint a cached mesh with UVs normalized for its previous size.
+        if let (Some(picture), Some(kind)) = (&reveal.picture, kind) {
+            if picture.valid(ui, scene) {
+                let shapes = picture.paint(ui, kind, progress);
+                let pending = PendingOverlay {
+                    pass: ui.ctx().cumulative_pass_nr(),
+                    layer: ui.layer_id(),
+                    shapes,
+                    font_size: ui.ctx().fonts(|fonts| fonts.font_image_size()),
+                    arrival: id,
+                };
+                ui.data_mut(|data| data.insert_temp(pending_overlay_id(), pending));
+            } else {
+                state.started = None;
+            }
+        }
+    }
+    if state.started.is_none() {
+        active = None;
+        // Capture only clean, settled content, before any old-page overlay.
+        // The fixed-size cache replaces the last page instead of retaining a
+        // picture for every visited playlist.
+        if let Some(snapshot) = reveal::capture(ui, key, scene) {
+            ui.data_mut(|data| data.insert_temp(snapshot_id, snapshot));
+        } else {
+            ui.data_mut(|data| data.remove::<reveal::Snapshot>(snapshot_id));
+        }
+    }
+    ui.data_mut(|data| {
+        data.insert_temp(id, state);
+        if let Some(active) = active {
+            data.insert_temp(reveal_id, active);
+        } else {
+            data.remove::<PageReveal>(reveal_id);
+        }
+    });
     result
 }
 
@@ -368,20 +586,26 @@ mod tests {
                     ui.allocate_exact_size(egui::vec2(200.0, 24.0), egui::Sense::hover());
                 let before = ui.cursor().min.y;
                 let clip = ui.clip_rect();
-                let response = page(ui, Id::new("page-slide-test"), Id::new(key), |ui| {
-                    assert_eq!(ui.clip_rect(), clip, "the viewport stays anchored");
-                    // Keep the tested target inside the fixed viewport in every
-                    // direction, so its newly exposed clickable edge is visible.
-                    ui.add_space(32.0);
-                    ui.horizontal(|ui| {
-                        ui.add_space(40.0);
-                        let (rect, response) =
-                            ui.allocate_exact_size(egui::vec2(200.0, 44.0), egui::Sense::click());
-                        ui.painter().rect_filled(rect, 0, egui::Color32::WHITE);
-                        response
-                    })
-                    .inner
-                });
+                let response = page(
+                    ui,
+                    Id::new("page-slide-test"),
+                    Id::new(key),
+                    Id::new("test-scene"),
+                    |ui| {
+                        assert_eq!(ui.clip_rect(), clip, "the viewport stays anchored");
+                        // Keep the tested target inside the fixed viewport in every
+                        // direction, so its newly exposed clickable edge is visible.
+                        ui.add_space(32.0);
+                        ui.horizontal(|ui| {
+                            ui.add_space(40.0);
+                            let (rect, response) = ui
+                                .allocate_exact_size(egui::vec2(200.0, 44.0), egui::Sense::click());
+                            ui.painter().rect_filled(rect, 0, egui::Color32::WHITE);
+                            response
+                        })
+                        .inner
+                    },
+                );
                 result = Some((response, header, ui.cursor().min.y - before));
             },
         );
@@ -472,7 +696,14 @@ mod tests {
             PageTransition::Rise,
             "a different arrival is next"
         );
-        assert!(second_alpha > 0 && second_alpha < 255);
+        if state.transition.reveal().is_some() {
+            assert_eq!(
+                second_alpha, 255,
+                "a reveal keeps the new page fully painted"
+            );
+        } else {
+            assert!(second_alpha > 0 && second_alpha < 255);
+        }
     }
 
     #[test]
@@ -495,7 +726,10 @@ mod tests {
 
     #[test]
     fn all_arrivals_keep_controls_clickable_at_their_painted_positions() {
-        for transition in PageTransition::ALL {
+        for transition in PageTransition::ALL
+            .into_iter()
+            .filter(|t| t.reveal().is_none())
+        {
             let ctx = egui::Context::default();
             seed_page_transitions(&ctx, 7);
             let (original, header, extent, _) = page_frame(&ctx, 0.0, "home", vec![]);
@@ -621,7 +855,10 @@ mod tests {
 
     #[test]
     fn every_style_finishes_exactly_and_nonfinite_timing_cannot_leave_it_running() {
-        for transition in PageTransition::ALL {
+        for transition in PageTransition::ALL
+            .into_iter()
+            .filter(|t| t.reveal().is_none())
+        {
             let mut state = PageArrival::new(Id::new("timing"));
             state.transition = transition;
             state.started = Some(1.0);
@@ -636,5 +873,294 @@ mod tests {
                 PagePresentation::SETTLED
             );
         }
+    }
+
+    #[test]
+    fn reveals_keep_layout_and_full_paint_and_block_covered_clicks() {
+        for transition in PageTransition::ALL
+            .into_iter()
+            .filter(|t| t.reveal().is_some())
+        {
+            let ctx = egui::Context::default();
+            let (original, header, extent, _) = page_frame(&ctx, 0.0, "home", vec![]);
+            choose_next(&ctx, transition);
+            let (started, new_header, new_extent, alpha) =
+                page_frame(&ctx, 1.0, "playlist:reveal", vec![]);
+            assert_eq!(
+                started.rect, original.rect,
+                "{transition:?} never shifts layout"
+            );
+            assert_eq!(new_header, header);
+            assert_eq!(new_extent, extent);
+            assert_eq!(alpha, 255);
+            let (covered, _, _, alpha) = page_frame(
+                &ctx,
+                1.001,
+                "playlist:reveal",
+                click_events(started.rect.center()),
+            );
+            assert!(
+                !covered.clicked(),
+                "{transition:?} never clicks through old content"
+            );
+            assert!(!covered.enabled());
+            assert_eq!(
+                alpha, 255,
+                "blocking a covered hit must not gray the new body"
+            );
+            assert!(page_state(&ctx).started.is_some());
+            let (finished, _, _, alpha) = page_frame(
+                &ctx,
+                1.57,
+                "playlist:reveal",
+                vec![egui::Event::PointerGone],
+            );
+            assert!(finished.enabled());
+            assert_eq!(finished.rect, original.rect);
+            assert_eq!(alpha, 255);
+            assert!(page_state(&ctx).started.is_none());
+        }
+    }
+
+    #[test]
+    fn clicking_a_revealed_control_finishes_the_reveal_and_acts_immediately() {
+        for transition in PageTransition::ALL
+            .into_iter()
+            .filter(|t| t.reveal().is_some())
+        {
+            let ctx = egui::Context::default();
+            page_frame(&ctx, 0.0, "home", vec![]);
+            choose_next(&ctx, transition);
+            page_frame(&ctx, 1.0, "playlist:reveal", vec![]);
+            let time = if transition == PageTransition::DiagonalSweep {
+                1.16
+            } else {
+                1.28
+            };
+            let (response, _, _, _) = page_frame(
+                &ctx,
+                time,
+                "playlist:reveal",
+                vec![egui::Event::PointerGone],
+            );
+            let state = page_state(&ctx);
+            let progress = reveal_progress(state, time);
+            let point = (1..10)
+                .flat_map(|y| {
+                    (1..10).map(move |x| {
+                        egui::pos2(
+                            response.rect.left() + response.rect.width() * x as f32 / 10.0,
+                            response.rect.top() + response.rect.height() * y as f32 / 10.0,
+                        )
+                    })
+                })
+                .find(|&point| {
+                    reveal::revealed(
+                        egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(640.0, 480.0)),
+                        transition.reveal().unwrap(),
+                        progress,
+                        point,
+                    )
+                })
+                .expect("the control has a newly revealed portion");
+            let (clicked, _, _, _) =
+                page_frame(&ctx, time + 0.001, "playlist:reveal", click_events(point));
+            assert!(
+                clicked.clicked(),
+                "the revealed {transition:?} control acts immediately"
+            );
+            assert!(page_state(&ctx).started.is_none());
+        }
+    }
+
+    #[test]
+    fn keyboard_and_scroll_finish_reveals_without_consuming_another_style() {
+        for event in [
+            egui::Event::Key {
+                key: egui::Key::Tab,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            },
+            egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, 30.0),
+                phase: egui::TouchPhase::Move,
+                modifiers: egui::Modifiers::NONE,
+            },
+        ] {
+            let ctx = egui::Context::default();
+            page_frame(&ctx, 0.0, "home", vec![]);
+            choose_next(&ctx, PageTransition::CircleOut);
+            page_frame(&ctx, 1.0, "playlist:reveal", vec![]);
+            let choices = page_state(&ctx).choices;
+            page_frame(&ctx, 1.1, "playlist:reveal", vec![event]);
+            assert!(page_state(&ctx).started.is_none());
+            assert_eq!(page_state(&ctx).choices, choices);
+        }
+    }
+
+    #[test]
+    fn rapid_reveal_retargeting_drops_the_old_picture_instead_of_replaying_it() {
+        let ctx = egui::Context::default();
+        page_frame(&ctx, 0.0, "home", vec![]);
+        choose_next(&ctx, PageTransition::CircleOut);
+        page_frame(&ctx, 1.0, "playlist:first", vec![]);
+        choose_next(&ctx, PageTransition::CircleIn);
+        page_frame(&ctx, 1.1, "playlist:second", vec![]);
+        assert!(page_state(&ctx).started.is_none());
+        assert!(
+            ctx.data(|data| data
+                .get_temp::<PageReveal>(Id::new("page-slide-test").with("active-page-reveal")))
+                .is_none()
+        );
+        let state = page_state(&ctx);
+        page_frame(&ctx, 1.2, "playlist:second", vec![]);
+        assert_eq!(page_state(&ctx).choices, state.choices);
+        assert!(page_state(&ctx).started.is_none());
+    }
+
+    #[test]
+    fn fixed_chrome_clicks_do_not_snap_a_body_reveal() {
+        let ctx = egui::Context::default();
+        page_frame(&ctx, 0.0, "home", vec![]);
+        choose_next(&ctx, PageTransition::CircleOut);
+        page_frame(&ctx, 1.0, "playlist:reveal", vec![]);
+        page_frame(
+            &ctx,
+            1.1,
+            "playlist:reveal",
+            click_events(egui::pos2(-10.0, 20.0)),
+        );
+        assert!(page_state(&ctx).started.is_some());
+    }
+
+    #[test]
+    fn blocking_a_covered_button_preserves_its_normal_theme_colours() {
+        let ctx = egui::Context::default();
+        let frame = |time: f64, key: &str, pointer| {
+            let mut response = None;
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(640.0, 480.0),
+                    )),
+                    time: Some(time),
+                    events: pointer,
+                    ..Default::default()
+                },
+                |ui| {
+                    response = Some(page(
+                        ui,
+                        Id::new("page-slide-test"),
+                        Id::new(key),
+                        Id::new("button-theme"),
+                        |ui| ui.add_sized([200.0, 44.0], egui::Button::new("Play album")),
+                    ))
+                },
+            );
+            let response = response.unwrap();
+            let colours = output
+                .shapes
+                .iter()
+                .find_map(|shape| match &shape.shape {
+                    egui::Shape::Rect(rect) if rect.rect == response.rect => {
+                        Some((rect.fill, rect.stroke))
+                    }
+                    _ => None,
+                })
+                .expect("a native themed button is painted");
+            output.textures_delta.clear();
+            (response, colours)
+        };
+        let (initial, _) = frame(0.0, "home", vec![]);
+        // Match the pointer state: egui computes button styles from the
+        // previous widget's interaction, including this frame's hover.
+        let (_, normal) = frame(
+            0.01,
+            "home",
+            vec![egui::Event::PointerMoved(initial.rect.center())],
+        );
+        choose_next(&ctx, PageTransition::CircleOut);
+        let (blocked, current) = frame(
+            1.0,
+            "playlist:reveal",
+            vec![egui::Event::PointerMoved(initial.rect.center())],
+        );
+        assert!(!blocked.enabled());
+        assert_eq!(
+            normal, current,
+            "covered controls retain normal colours and opacity"
+        );
+    }
+
+    #[test]
+    fn late_toast_atlas_growth_drops_only_the_old_overlay_and_preserves_the_shuffle() {
+        let ctx = egui::Context::default();
+        page_frame(&ctx, 0.0, "home", vec![]);
+        choose_next(&ctx, PageTransition::CircleOut);
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(640.0, 480.0),
+                )),
+                time: Some(1.0),
+                ..Default::default()
+            },
+            |ui| {
+                page(
+                    ui,
+                    Id::new("page-slide-test"),
+                    Id::new("playlist:late-toast"),
+                    Id::new("test-scene"),
+                    |ui| {
+                        ui.label("New playlist");
+                    },
+                );
+                let pending = ctx
+                    .data(|data| data.get_temp::<PendingOverlay>(pending_overlay_id()))
+                    .unwrap();
+                let choices = page_state(&ctx).choices;
+                assert!(!pending.shapes.is_empty());
+                ui.label(
+                    egui::RichText::new(
+                        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+                    )
+                    .size(160.0),
+                );
+                assert_ne!(
+                    pending.font_size,
+                    ctx.fonts(|fonts| fonts.font_image_size())
+                );
+                finish(&ctx);
+                assert!(page_state(&ctx).started.is_none());
+                assert_eq!(page_state(&ctx).choices, choices);
+                assert!(
+                    ctx.data(|data| data
+                        .get_temp::<PageReveal>(pending.arrival.with("active-page-reveal")))
+                        .is_none()
+                );
+                ctx.graphics(|graphics| {
+                    let shapes = graphics
+                        .get(pending.layer)
+                        .unwrap()
+                        .all_entries()
+                        .collect::<Vec<_>>();
+                    for index in pending.shapes {
+                        assert!(matches!(shapes[index.0].shape, egui::Shape::Noop));
+                    }
+                    assert!(
+                        shapes
+                            .iter()
+                            .any(|shape| matches!(shape.shape, egui::Shape::Text(_))),
+                        "the new page and later toast stay painted"
+                    );
+                });
+            },
+        );
+        output.textures_delta.clear();
     }
 }

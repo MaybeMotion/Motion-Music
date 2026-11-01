@@ -185,6 +185,38 @@ pub enum MotionTheme {
     CherrySorbet,
     RoseSatin,
     CoralVelvet,
+    MotionRed,
+    MotionOrange,
+    MotionYellow,
+    MotionLime,
+    MotionGreen,
+    MotionTeal,
+    MotionCyan,
+    MotionBlue,
+    MotionIndigo,
+    MotionPurple,
+    MotionPink,
+    MotionBrown,
+    MotionGold,
+    MotionBlack,
+    MotionWhite,
+    MotionGrey,
+    RedHorizon,
+    OrangeHorizon,
+    YellowHorizon,
+    LimeHorizon,
+    GreenHorizon,
+    TealHorizon,
+    CyanHorizon,
+    BlueHorizon,
+    IndigoHorizon,
+    PurpleHorizon,
+    PinkHorizon,
+    BrownHorizon,
+    GoldHorizon,
+    BlackHorizon,
+    WhiteHorizon,
+    GreyHorizon,
 }
 
 impl MotionTheme {
@@ -371,6 +403,38 @@ impl MotionTheme {
             Self::CherrySorbet => "motion-theme:cherry-sorbet",
             Self::RoseSatin => "motion-theme:rose-satin",
             Self::CoralVelvet => "motion-theme:coral-velvet",
+            Self::MotionRed => "motion-theme:motion-red",
+            Self::MotionOrange => "motion-theme:motion-orange",
+            Self::MotionYellow => "motion-theme:motion-yellow",
+            Self::MotionLime => "motion-theme:motion-lime",
+            Self::MotionGreen => "motion-theme:motion-green",
+            Self::MotionTeal => "motion-theme:motion-teal",
+            Self::MotionCyan => "motion-theme:motion-cyan",
+            Self::MotionBlue => "motion-theme:motion-blue",
+            Self::MotionIndigo => "motion-theme:motion-indigo",
+            Self::MotionPurple => "motion-theme:motion-purple",
+            Self::MotionPink => "motion-theme:motion-pink",
+            Self::MotionBrown => "motion-theme:motion-brown",
+            Self::MotionGold => "motion-theme:motion-gold",
+            Self::MotionBlack => "motion-theme:motion-black",
+            Self::MotionWhite => "motion-theme:motion-white",
+            Self::MotionGrey => "motion-theme:motion-grey",
+            Self::RedHorizon => "motion-theme:red-horizon",
+            Self::OrangeHorizon => "motion-theme:orange-horizon",
+            Self::YellowHorizon => "motion-theme:yellow-horizon",
+            Self::LimeHorizon => "motion-theme:lime-horizon",
+            Self::GreenHorizon => "motion-theme:green-horizon",
+            Self::TealHorizon => "motion-theme:teal-horizon",
+            Self::CyanHorizon => "motion-theme:cyan-horizon",
+            Self::BlueHorizon => "motion-theme:blue-horizon",
+            Self::IndigoHorizon => "motion-theme:indigo-horizon",
+            Self::PurpleHorizon => "motion-theme:purple-horizon",
+            Self::PinkHorizon => "motion-theme:pink-horizon",
+            Self::BrownHorizon => "motion-theme:brown-horizon",
+            Self::GoldHorizon => "motion-theme:gold-horizon",
+            Self::BlackHorizon => "motion-theme:black-horizon",
+            Self::WhiteHorizon => "motion-theme:white-horizon",
+            Self::GreyHorizon => "motion-theme:grey-horizon",
         }
     }
 
@@ -387,7 +451,7 @@ impl MotionTheme {
         }
     }
 
-    pub const ALL: [Self; 180] = [
+    pub const ALL: [Self; 212] = [
         Self::Amethyst,
         Self::PurpleRain,
         Self::Ultraviolet,
@@ -568,7 +632,79 @@ impl MotionTheme {
         Self::CherrySorbet,
         Self::RoseSatin,
         Self::CoralVelvet,
+        Self::MotionRed,
+        Self::MotionOrange,
+        Self::MotionYellow,
+        Self::MotionLime,
+        Self::MotionGreen,
+        Self::MotionTeal,
+        Self::MotionCyan,
+        Self::MotionBlue,
+        Self::MotionIndigo,
+        Self::MotionPurple,
+        Self::MotionPink,
+        Self::MotionBrown,
+        Self::MotionGold,
+        Self::MotionBlack,
+        Self::MotionWhite,
+        Self::MotionGrey,
+        Self::RedHorizon,
+        Self::OrangeHorizon,
+        Self::YellowHorizon,
+        Self::LimeHorizon,
+        Self::GreenHorizon,
+        Self::TealHorizon,
+        Self::CyanHorizon,
+        Self::BlueHorizon,
+        Self::IndigoHorizon,
+        Self::PurpleHorizon,
+        Self::PinkHorizon,
+        Self::BrownHorizon,
+        Self::GoldHorizon,
+        Self::BlackHorizon,
+        Self::WhiteHorizon,
+        Self::GreyHorizon,
     ];
+    /// Explicit core colours, in the same order as their gradient partners.
+    pub const MAIN_COLOURS: [Self; 16] = [
+        Self::MotionRed,
+        Self::MotionOrange,
+        Self::MotionYellow,
+        Self::MotionLime,
+        Self::MotionGreen,
+        Self::MotionTeal,
+        Self::MotionCyan,
+        Self::MotionBlue,
+        Self::MotionIndigo,
+        Self::MotionPurple,
+        Self::MotionPink,
+        Self::MotionBrown,
+        Self::MotionGold,
+        Self::MotionBlack,
+        Self::MotionWhite,
+        Self::MotionGrey,
+    ];
+
+    /// A real three-stop gradient for every named core colour.
+    pub const MAIN_GRADIENTS: [Self; 16] = [
+        Self::RedHorizon,
+        Self::OrangeHorizon,
+        Self::YellowHorizon,
+        Self::LimeHorizon,
+        Self::GreenHorizon,
+        Self::TealHorizon,
+        Self::CyanHorizon,
+        Self::BlueHorizon,
+        Self::IndigoHorizon,
+        Self::PurpleHorizon,
+        Self::PinkHorizon,
+        Self::BrownHorizon,
+        Self::GoldHorizon,
+        Self::BlackHorizon,
+        Self::WhiteHorizon,
+        Self::GreyHorizon,
+    ];
+
     pub const FAMILIES: [&str; 12] = [
         "Red",
         "Orange",
@@ -765,6 +901,38 @@ impl MotionTheme {
             Self::CherrySorbet => "Cherry Sorbet",
             Self::RoseSatin => "Rose Satin",
             Self::CoralVelvet => "Coral Velvet",
+            Self::MotionRed => "Motion Red",
+            Self::MotionOrange => "Motion Orange",
+            Self::MotionYellow => "Motion Yellow",
+            Self::MotionLime => "Motion Lime",
+            Self::MotionGreen => "Motion Green",
+            Self::MotionTeal => "Motion Teal",
+            Self::MotionCyan => "Motion Cyan",
+            Self::MotionBlue => "Motion Blue",
+            Self::MotionIndigo => "Motion Indigo",
+            Self::MotionPurple => "Motion Purple",
+            Self::MotionPink => "Motion Pink",
+            Self::MotionBrown => "Motion Brown",
+            Self::MotionGold => "Motion Gold",
+            Self::MotionBlack => "Motion Black",
+            Self::MotionWhite => "Motion White",
+            Self::MotionGrey => "Motion Grey",
+            Self::RedHorizon => "Red Horizon",
+            Self::OrangeHorizon => "Orange Horizon",
+            Self::YellowHorizon => "Yellow Horizon",
+            Self::LimeHorizon => "Lime Horizon",
+            Self::GreenHorizon => "Green Horizon",
+            Self::TealHorizon => "Teal Horizon",
+            Self::CyanHorizon => "Cyan Horizon",
+            Self::BlueHorizon => "Blue Horizon",
+            Self::IndigoHorizon => "Indigo Horizon",
+            Self::PurpleHorizon => "Purple Horizon",
+            Self::PinkHorizon => "Pink Horizon",
+            Self::BrownHorizon => "Brown Horizon",
+            Self::GoldHorizon => "Gold Horizon",
+            Self::BlackHorizon => "Black Horizon",
+            Self::WhiteHorizon => "White Horizon",
+            Self::GreyHorizon => "Grey Horizon",
         }
     }
     /// Colour collections include both dark and light palettes.
@@ -950,6 +1118,38 @@ impl MotionTheme {
             Self::CherrySorbet => "Gradients",
             Self::RoseSatin => "Gradients",
             Self::CoralVelvet => "Gradients",
+            Self::MotionRed => "Red",
+            Self::MotionOrange => "Orange",
+            Self::MotionYellow => "Yellow",
+            Self::MotionLime => "Green",
+            Self::MotionGreen => "Green",
+            Self::MotionTeal => "Teal",
+            Self::MotionCyan => "Cyan",
+            Self::MotionBlue => "Blue",
+            Self::MotionIndigo => "Blue",
+            Self::MotionPurple => "Purple",
+            Self::MotionPink => "Pink",
+            Self::MotionBrown => "Brown",
+            Self::MotionGold => "Yellow",
+            Self::MotionBlack => "Monochrome",
+            Self::MotionWhite => "Monochrome",
+            Self::MotionGrey => "Monochrome",
+            Self::RedHorizon => "Gradients",
+            Self::OrangeHorizon => "Gradients",
+            Self::YellowHorizon => "Gradients",
+            Self::LimeHorizon => "Gradients",
+            Self::GreenHorizon => "Gradients",
+            Self::TealHorizon => "Gradients",
+            Self::CyanHorizon => "Gradients",
+            Self::BlueHorizon => "Gradients",
+            Self::IndigoHorizon => "Gradients",
+            Self::PurpleHorizon => "Gradients",
+            Self::PinkHorizon => "Gradients",
+            Self::BrownHorizon => "Gradients",
+            Self::GoldHorizon => "Gradients",
+            Self::BlackHorizon => "Gradients",
+            Self::WhiteHorizon => "Gradients",
+            Self::GreyHorizon => "Gradients",
         }
     }
 
@@ -1288,6 +1488,102 @@ impl MotionTheme {
             Self::CoralVelvet => {
                 "gradient gradients multicolour multicolor red coral velvet scarlet orange peach light daylight pastel"
             }
+            Self::MotionRed => {
+                "main basic colour color spectrum solid solids red crimson scarlet ruby dark night after hours"
+            }
+            Self::MotionOrange => {
+                "main basic colour color spectrum solid solids orange tangerine amber dark night after hours"
+            }
+            Self::MotionYellow => {
+                "main basic colour color spectrum solid solids yellow lemon sunshine light daylight pastel"
+            }
+            Self::MotionLime => {
+                "main basic colour color spectrum solid solids lime chartreuse yellowgreen dark night after hours"
+            }
+            Self::MotionGreen => {
+                "main basic colour color spectrum solid solids green emerald forest dark night after hours"
+            }
+            Self::MotionTeal => {
+                "main basic colour color spectrum solid solids teal turquoise aqua dark night after hours"
+            }
+            Self::MotionCyan => {
+                "main basic colour color spectrum solid solids cyan aqua aquamarine dark night after hours"
+            }
+            Self::MotionBlue => {
+                "main basic colour color spectrum solid solids blue cobalt sapphire navy dark night after hours"
+            }
+            Self::MotionIndigo => {
+                "main basic colour color spectrum solid solids indigo blue violet dark night after hours"
+            }
+            Self::MotionPurple => {
+                "main basic colour color spectrum solid solids purple violet plum dark night after hours"
+            }
+            Self::MotionPink => {
+                "main basic colour color spectrum solid solids pink rose magenta fuchsia light daylight pastel"
+            }
+            Self::MotionBrown => {
+                "main basic colour color spectrum solid solids brown cocoa chocolate earth dark night after hours"
+            }
+            Self::MotionGold => {
+                "main basic colour color spectrum solid solids gold golden brass honey dark night after hours"
+            }
+            Self::MotionBlack => {
+                "main basic colour color spectrum solid solids black monochrome neutral charcoal dark night after hours"
+            }
+            Self::MotionWhite => {
+                "main basic colour color spectrum solid solids white monochrome neutral pearl light daylight pastel"
+            }
+            Self::MotionGrey => {
+                "main basic colour color spectrum solid solids grey gray monochrome neutral silver light daylight pastel"
+            }
+            Self::RedHorizon => {
+                "main basic colour color spectrum gradient gradients horizon red crimson scarlet ruby dark night after hours"
+            }
+            Self::OrangeHorizon => {
+                "main basic colour color spectrum gradient gradients horizon orange tangerine amber dark night after hours"
+            }
+            Self::YellowHorizon => {
+                "main basic colour color spectrum gradient gradients horizon yellow lemon sunshine light daylight pastel"
+            }
+            Self::LimeHorizon => {
+                "main basic colour color spectrum gradient gradients horizon lime chartreuse yellowgreen dark night after hours"
+            }
+            Self::GreenHorizon => {
+                "main basic colour color spectrum gradient gradients horizon green emerald forest dark night after hours"
+            }
+            Self::TealHorizon => {
+                "main basic colour color spectrum gradient gradients horizon teal turquoise aqua dark night after hours"
+            }
+            Self::CyanHorizon => {
+                "main basic colour color spectrum gradient gradients horizon cyan aqua aquamarine dark night after hours"
+            }
+            Self::BlueHorizon => {
+                "main basic colour color spectrum gradient gradients horizon blue cobalt sapphire navy dark night after hours"
+            }
+            Self::IndigoHorizon => {
+                "main basic colour color spectrum gradient gradients horizon indigo blue violet dark night after hours"
+            }
+            Self::PurpleHorizon => {
+                "main basic colour color spectrum gradient gradients horizon purple violet plum dark night after hours"
+            }
+            Self::PinkHorizon => {
+                "main basic colour color spectrum gradient gradients horizon pink rose magenta fuchsia light daylight pastel"
+            }
+            Self::BrownHorizon => {
+                "main basic colour color spectrum gradient gradients horizon brown cocoa chocolate earth dark night after hours"
+            }
+            Self::GoldHorizon => {
+                "main basic colour color spectrum gradient gradients horizon gold golden brass honey dark night after hours"
+            }
+            Self::BlackHorizon => {
+                "main basic colour color spectrum gradient gradients horizon black monochrome neutral charcoal dark night after hours"
+            }
+            Self::WhiteHorizon => {
+                "main basic colour color spectrum gradient gradients horizon white monochrome neutral pearl light daylight pastel"
+            }
+            Self::GreyHorizon => {
+                "main basic colour color spectrum gradient gradients horizon grey gray monochrome neutral silver light daylight pastel"
+            }
         }
     }
     /// Three opaque canvas colours, drawn as a real gradient by the native
@@ -1364,6 +1660,22 @@ impl MotionTheme {
             Self::CherrySorbet => [0xffe8eb, 0xfbd8dd, 0xffede2],
             Self::RoseSatin => [0xffeff0, 0xf6d9db, 0xffe6df],
             Self::CoralVelvet => [0xffeddf, 0xffddd6, 0xffedf0],
+            Self::RedHorizon => [0x28080c, 0x58111a, 0x351020],
+            Self::OrangeHorizon => [0x291205, 0x4a2510, 0x3b1b0c],
+            Self::YellowHorizon => [0xfffbdc, 0xfff0ad, 0xfff7ca],
+            Self::LimeHorizon => [0x172308, 0x2b3b0e, 0x19321b],
+            Self::GreenHorizon => [0x08240e, 0x0e3c21, 0x07352c],
+            Self::TealHorizon => [0x062625, 0x0b3a34, 0x0c3039],
+            Self::CyanHorizon => [0x06232f, 0x083a46, 0x16324c],
+            Self::BlueHorizon => [0x091632, 0x142a52, 0x0c334b],
+            Self::IndigoHorizon => [0x100e30, 0x1f1b4b, 0x202641],
+            Self::PurpleHorizon => [0x230d30, 0x3e1a4b, 0x2b204e],
+            Self::PinkHorizon => [0xffedf6, 0xf9d6e8, 0xffefef],
+            Self::BrownHorizon => [0x25180e, 0x3e2916, 0x32231c],
+            Self::GoldHorizon => [0x271d07, 0x433409, 0x34220e],
+            Self::BlackHorizon => [0x020202, 0x1c1c1c, 0x0e0e0e],
+            Self::WhiteHorizon => [0xffffff, 0xeeeeee, 0xf8f8f8],
+            Self::GreyHorizon => [0xe8e8e8, 0xf3f3f3, 0xdcdcdc],
             _ => return None,
         };
         Some(stops.map(|hex| Color32::from_rgb((hex >> 16) as u8, (hex >> 8) as u8, hex as u8)))
@@ -1551,10 +1863,56 @@ impl MotionTheme {
             Self::CherrySorbet => (false, 0xffe8eb, 0xfff9f7, 0xf0d9df, 0x9c2944),
             Self::RoseSatin => (false, 0xffeff0, 0xfffcfa, 0xf0e0df, 0x9b3a4f),
             Self::CoralVelvet => (false, 0xffeddf, 0xfffbf7, 0xf1dfd6, 0xa13930),
+            Self::MotionRed => (true, 0x22090b, 0x2f1113, 0x421c1f, 0xff9797),
+            Self::MotionOrange => (true, 0x241204, 0x341e0d, 0x472b17, 0xffbb7d),
+            Self::MotionYellow => (false, 0xfff9d5, 0xfffdf2, 0xeee3b3, 0x7c610a),
+            Self::MotionLime => (true, 0x142006, 0x202d0e, 0x2e3d16, 0xcaef70),
+            Self::MotionGreen => (true, 0x071f0e, 0x102e1b, 0x1c3f2a, 0x88e6aa),
+            Self::MotionTeal => (true, 0x052021, 0x0c2d2d, 0x183e3b, 0x7ee2d2),
+            Self::MotionCyan => (true, 0x06202a, 0x0f2d38, 0x1d3d49, 0x79ddf2),
+            Self::MotionBlue => (true, 0x08152f, 0x111f3d, 0x203152, 0x99bdff),
+            Self::MotionIndigo => (true, 0x100d2b, 0x1a1739, 0x2a254b, 0xb4b0ff),
+            Self::MotionPurple => (true, 0x200c2b, 0x2d183a, 0x40254e, 0xd9a8ff),
+            Self::MotionPink => (false, 0xfff0f7, 0xfffafc, 0xf0dce8, 0x9f3269),
+            Self::MotionBrown => (true, 0x21170f, 0x302319, 0x433125, 0xe5bc99),
+            Self::MotionGold => (true, 0x231b06, 0x30260e, 0x433619, 0xefcc70),
+            Self::MotionBlack => (true, 0x030303, 0x0e0e0e, 0x1a1a1a, 0xcfcfcf),
+            Self::MotionWhite => (false, 0xffffff, 0xfbfbfb, 0xe6e6e6, 0x3b3b3b),
+            Self::MotionGrey => (false, 0xeeeeee, 0xf7f7f7, 0xd9d9d9, 0x474747),
+            Self::RedHorizon => (true, 0x28080c, 0x321217, 0x452128, 0xffa3a3),
+            Self::OrangeHorizon => (true, 0x291205, 0x311e10, 0x462e1a, 0xffc18d),
+            Self::YellowHorizon => (false, 0xfffbdc, 0xfffef5, 0xefe5b8, 0x7c620e),
+            Self::LimeHorizon => (true, 0x172308, 0x202f12, 0x2b3a18, 0xdcf391),
+            Self::GreenHorizon => (true, 0x08240e, 0x132f20, 0x223d29, 0x9be6b1),
+            Self::TealHorizon => (true, 0x062625, 0x102f2c, 0x1f3b35, 0x95e6d4),
+            Self::CyanHorizon => (true, 0x06232f, 0x102e38, 0x1d3a45, 0x8be1f2),
+            Self::BlueHorizon => (true, 0x091632, 0x15213e, 0x263353, 0xb0cdff),
+            Self::IndigoHorizon => (true, 0x100e30, 0x1b193b, 0x2d2a4d, 0xc0baff),
+            Self::PurpleHorizon => (true, 0x230d30, 0x2f1c3b, 0x402d4f, 0xe1b5ff),
+            Self::PinkHorizon => (false, 0xffedf6, 0xfffafd, 0xefdce6, 0x9e3467),
+            Self::BrownHorizon => (true, 0x25180e, 0x302318, 0x443225, 0xefc8a6),
+            Self::GoldHorizon => (true, 0x271d07, 0x302610, 0x403417, 0xf4d386),
+            Self::BlackHorizon => (true, 0x020202, 0x111111, 0x202020, 0xd9d9d9),
+            Self::WhiteHorizon => (false, 0xffffff, 0xfdfdfd, 0xe5e5e5, 0x3e3e3e),
+            Self::GreyHorizon => (false, 0xe8e8e8, 0xfafafa, 0xdddddd, 0x444444),
         };
         let rgb = |hex: u32| Color32::from_rgb((hex >> 16) as u8, (hex >> 8) as u8, hex as u8);
         let (window, panel, surface, accent) = (rgb(window), rgb(panel), rgb(surface), rgb(accent));
-        let text = if dark { rgb(0xf6f3ff) } else { rgb(0x21192e) };
+        let monochrome = matches!(
+            self,
+            Self::MotionBlack
+                | Self::MotionWhite
+                | Self::MotionGrey
+                | Self::BlackHorizon
+                | Self::WhiteHorizon
+                | Self::GreyHorizon
+        );
+        let text = match (dark, monochrome) {
+            (true, true) => rgb(0xf4f4f4),
+            (false, true) => rgb(0x202020),
+            (true, false) => rgb(0xf6f3ff),
+            (false, false) => rgb(0x21192e),
+        };
         let mix = |a: Color32, b: Color32, amount: f32| {
             let channel = |a: u8, b: u8| {
                 (f32::from(a) * (1.0 - amount) + f32::from(b) * amount).round() as u8
@@ -1578,7 +1936,11 @@ impl MotionTheme {
             dim: mix(text, window, 0.42),
             accent,
             accent_hover: mix(accent, text, 0.14),
-            on_accent: if dark { rgb(0x160e22) } else { Color32::WHITE },
+            on_accent: match (dark, monochrome) {
+                (true, true) => rgb(0x181818),
+                (true, false) => rgb(0x160e22),
+                (false, _) => Color32::WHITE,
+            },
             danger: if dark { rgb(0xff8c9d) } else { rgb(0xb82845) },
             warning: if dark { rgb(0xf5cd7e) } else { rgb(0x805509) },
             overlay: panel,
@@ -1665,14 +2027,14 @@ mod tests {
                 .iter()
                 .filter(|theme| !theme.palette().dark)
                 .count(),
-            55
+            63
         );
     }
 
     #[test]
-    fn all_180_themes_have_unique_stable_identities_and_expected_collections() {
+    fn all_212_themes_have_unique_stable_identities_and_expected_collections() {
         let mut filenames = std::collections::BTreeSet::new();
-        assert_eq!(MotionTheme::ALL.len(), 180);
+        assert_eq!(MotionTheme::ALL.len(), 212);
         assert_eq!(MotionTheme::FAMILIES.len(), 12);
         for theme in MotionTheme::ALL {
             assert!(
@@ -1685,18 +2047,18 @@ mod tests {
         }
         assert_eq!(MotionTheme::from_filename("Prism Night.json"), None);
         for (family, expected) in [
-            ("Red", 12),
-            ("Orange", 10),
-            ("Yellow", 8),
-            ("Green", 12),
-            ("Teal", 6),
-            ("Cyan", 7),
-            ("Blue", 8),
-            ("Purple", 20),
-            ("Pink", 12),
-            ("Brown", 8),
-            ("Monochrome", 9),
-            ("Gradients", 68),
+            ("Red", 13),
+            ("Orange", 11),
+            ("Yellow", 10),
+            ("Green", 14),
+            ("Teal", 7),
+            ("Cyan", 8),
+            ("Blue", 10),
+            ("Purple", 21),
+            ("Pink", 13),
+            ("Brown", 9),
+            ("Monochrome", 12),
+            ("Gradients", 84),
         ] {
             assert_eq!(
                 MotionTheme::ALL
@@ -1726,7 +2088,7 @@ mod tests {
     }
 
     #[test]
-    fn sixty_eight_gradients_keep_text_readable_across_the_whole_canvas() {
+    fn eighty_four_gradients_keep_text_readable_across_the_whole_canvas() {
         let mut dark = 0;
         let mut light = 0;
         for theme in MotionTheme::ALL {
@@ -1769,7 +2131,7 @@ mod tests {
                 }
             }
         }
-        assert_eq!((dark, light), (46, 22));
+        assert_eq!((dark, light), (58, 26));
     }
 
     #[test]
@@ -1813,6 +2175,115 @@ mod tests {
             }
         }
         assert_eq!((dark, light), (8, 4));
+    }
+
+    #[test]
+    fn every_main_colour_has_a_named_solid_and_gradient_that_restore_and_search() {
+        assert_eq!(MotionTheme::MAIN_COLOURS.len(), 16);
+        assert_eq!(MotionTheme::MAIN_GRADIENTS.len(), 16);
+        for (pair_index, (colour, solid, gradient)) in [
+            ("red", MotionTheme::MotionRed, MotionTheme::RedHorizon),
+            (
+                "orange",
+                MotionTheme::MotionOrange,
+                MotionTheme::OrangeHorizon,
+            ),
+            (
+                "yellow",
+                MotionTheme::MotionYellow,
+                MotionTheme::YellowHorizon,
+            ),
+            ("lime", MotionTheme::MotionLime, MotionTheme::LimeHorizon),
+            ("green", MotionTheme::MotionGreen, MotionTheme::GreenHorizon),
+            ("teal", MotionTheme::MotionTeal, MotionTheme::TealHorizon),
+            ("cyan", MotionTheme::MotionCyan, MotionTheme::CyanHorizon),
+            ("blue", MotionTheme::MotionBlue, MotionTheme::BlueHorizon),
+            (
+                "indigo",
+                MotionTheme::MotionIndigo,
+                MotionTheme::IndigoHorizon,
+            ),
+            (
+                "purple",
+                MotionTheme::MotionPurple,
+                MotionTheme::PurpleHorizon,
+            ),
+            ("pink", MotionTheme::MotionPink, MotionTheme::PinkHorizon),
+            ("brown", MotionTheme::MotionBrown, MotionTheme::BrownHorizon),
+            ("gold", MotionTheme::MotionGold, MotionTheme::GoldHorizon),
+            ("black", MotionTheme::MotionBlack, MotionTheme::BlackHorizon),
+            ("white", MotionTheme::MotionWhite, MotionTheme::WhiteHorizon),
+            ("grey", MotionTheme::MotionGrey, MotionTheme::GreyHorizon),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert_eq!(MotionTheme::MAIN_COLOURS[pair_index], solid);
+            assert_eq!(MotionTheme::MAIN_GRADIENTS[pair_index], gradient);
+            assert!(solid.name().starts_with("Motion "));
+            assert!(gradient.name().ends_with(" Horizon"));
+            assert!(MotionTheme::ALL.contains(&solid));
+            assert!(MotionTheme::ALL.contains(&gradient));
+            assert!(solid.gradient().is_none());
+            assert!(gradient.gradient().is_some());
+            assert_eq!(gradient.family(), "Gradients");
+            assert_ne!(solid.palette(), gradient.palette());
+            for theme in [solid, gradient] {
+                assert!(
+                    theme
+                        .colour_keywords()
+                        .split_whitespace()
+                        .any(|word| word == colour)
+                );
+                assert_eq!(MotionTheme::from_filename(theme.filename()), Some(theme));
+                let json = serde_json::to_string(&theme).unwrap();
+                assert_eq!(serde_json::from_str::<MotionTheme>(&json).unwrap(), theme);
+            }
+        }
+        for theme in [MotionTheme::MotionGrey, MotionTheme::GreyHorizon] {
+            assert!(
+                theme
+                    .colour_keywords()
+                    .split_whitespace()
+                    .any(|word| word == "gray")
+            );
+        }
+    }
+
+    #[test]
+    fn the_named_black_white_and_grey_themes_keep_core_colours_neutral() {
+        for theme in [
+            MotionTheme::MotionBlack,
+            MotionTheme::MotionWhite,
+            MotionTheme::MotionGrey,
+            MotionTheme::BlackHorizon,
+            MotionTheme::WhiteHorizon,
+            MotionTheme::GreyHorizon,
+        ] {
+            let p = theme.palette();
+            for colour in [
+                p.window,
+                p.panel,
+                p.surface,
+                p.surface_hover,
+                p.surface_active,
+                p.outline,
+                p.text,
+                p.secondary,
+                p.dim,
+                p.accent,
+                p.accent_hover,
+                p.on_accent,
+                p.overlay,
+                p.tint,
+            ]
+            .into_iter()
+            .chain(theme.gradient().into_iter().flatten())
+            {
+                assert_eq!(colour.r(), colour.g(), "{theme:?}: red and green");
+                assert_eq!(colour.g(), colour.b(), "{theme:?}: green and blue");
+            }
+        }
     }
 
     #[test]

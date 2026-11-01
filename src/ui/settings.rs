@@ -1895,17 +1895,18 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let milkdrop_rows = [
         RowText::new(
             milkdrop_window.clone(),
-            super::keys::platform_shortcut(
-                &gettext(
-                    locale,
-                    "A projectM visualiser for local playback. Open it here, from the top bar, with Ctrl+Shift+K, or from the mini player's V menu. Press ? or F1 for its shortcuts.",
-                ),
-                &gettext(
-                    locale,
-                    "A projectM visualiser for local playback. Open it here, from the top bar, with Cmd+Shift+K, or from the mini player's V menu. Press ? or F1 for its shortcuts.",
-                ),
-            )
-            .to_owned(),
+            if !crate::milkdrop::AVAILABLE {
+                gettext(locale, "MilkDrop is not included in this build. Use the full Motion Music download to open its projectM window.").into_owned()
+            } else {
+                super::keys::platform_shortcut(
+                    &gettext(locale, if cfg!(target_os = "windows") {
+                        "A projectM visualiser for local playback and Windows output audio. Open it here, from the top bar, with Ctrl+Shift+K, or from the mini player's V menu. Press ? or F1 for its shortcuts."
+                    } else {
+                        "A projectM visualiser for local playback. Open it here, from the top bar, with Ctrl+Shift+K, or from the mini player's V menu. Press ? or F1 for its shortcuts."
+                    }),
+                    &gettext(locale, "A projectM visualiser for local playback. Open it here, from the top bar, with Cmd+Shift+K, or from the mini player's V menu. Press ? or F1 for its shortcuts."),
+                ).to_owned()
+            },
         ),
         RowText::new(
             gettext(locale, "Presets"),
@@ -1913,7 +1914,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 0 => gettext(
                     locale,
                     // Translators: {folder} is the path of the MilkDrop presets folder.
-                    "None yet in {folder}. Add .milk files here. Motion Music downloads presets when MilkDrop first opens with an empty folder.",
+                    "Built-in Motion Music starter ready. Add .milk files in {folder}. Optional preset packs download when MilkDrop first opens with an empty folder.",
                 )
                 .replace("{folder}", &folder),
                 1 => gettext(
@@ -1982,9 +1983,11 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         section(ui, &palette, "MilkDrop", |ui| {
             filtered_row(ui, &palette, &needle, "MilkDrop", &milkdrop_rows[0], |ui| {
                 let mut open = app.settings.milkdrop_open;
-                if widgets::switch(ui, &palette, &milkdrop_window, &mut open).changed() {
-                    app.actions.push(Action::ToggleWinampMilkdrop);
-                }
+                ui.add_enabled_ui(crate::milkdrop::AVAILABLE, |ui| {
+                    if widgets::switch(ui, &palette, &milkdrop_window, &mut open).changed() {
+                        app.actions.push(Action::ToggleWinampMilkdrop);
+                    }
+                });
             });
             let downloading = app.winamp.presets.downloading();
             filtered_row(
@@ -2349,6 +2352,17 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                         .open_url(egui::OpenUrl::new_tab(env!("CARGO_PKG_REPOSITORY")));
                 }
             });
+            if crate::milkdrop::AVAILABLE {
+                ui.add_space(8.0);
+                ui.add(egui::Label::new(
+                    egui::RichText::new("Includes projectM and projectm-sys under LGPL. See Third-party licences and source for LGPL/GPL texts and rebuild material.")
+                        .font(theme::regular(12.0)).color(palette.secondary),
+                ).wrap());
+                ui.hyperlink_to(
+                    "Third-party licences and source",
+                    "https://github.com/MaybeMotion/Motion-Music/blob/main/THIRD-PARTY-NOTICES.md",
+                );
+            }
             ui.add_space(14.0);
             if widgets::credit(ui, &palette, locale) {
                 app.actions
@@ -2466,6 +2480,94 @@ fn start_with_computer_row(
 /// A band's frequency the short way: 60, 170, 1K, 16K.
 /// The interface language: System first, then each language by its own name,
 /// so a reader can find theirs whatever language the app is showing.
+// The first twelve indices retain their existing in-context identities.
+// The two quick collections overlap them and do not add saved settings.
+const MAIN_COLOURS_COLLECTION: usize = theme::MotionTheme::FAMILIES.len();
+const MAIN_GRADIENTS_COLLECTION: usize = MAIN_COLOURS_COLLECTION + 1;
+const MOTION_COLLECTION_COUNT: usize = MAIN_GRADIENTS_COLLECTION + 1;
+
+fn collection_contains(index: usize, preset: theme::MotionTheme) -> bool {
+    match index {
+        MAIN_COLOURS_COLLECTION => theme::MotionTheme::MAIN_COLOURS.contains(&preset),
+        MAIN_GRADIENTS_COLLECTION => theme::MotionTheme::MAIN_GRADIENTS.contains(&preset),
+        _ => theme::MotionTheme::FAMILIES
+            .get(index)
+            .is_some_and(|family| *family == preset.family()),
+    }
+}
+
+/// An explicit quick-collection query can also carry a hue or brightness.
+fn main_collection_query(needle: &str) -> Option<usize> {
+    let has_word = |choices: &[&str]| {
+        needle.split_whitespace().any(|word| {
+            choices
+                .iter()
+                .any(|choice| word.eq_ignore_ascii_case(choice))
+        })
+    };
+    if !has_word(&["main"]) {
+        return None;
+    }
+    if has_word(&["gradient", "gradients"]) {
+        Some(MAIN_GRADIENTS_COLLECTION)
+    } else if has_word(&["colour", "colours", "color", "colors"]) {
+        Some(MAIN_COLOURS_COLLECTION)
+    } else {
+        None
+    }
+}
+
+fn collection_matches(index: usize, needle: &str) -> bool {
+    theme::MotionTheme::ALL
+        .into_iter()
+        .any(|preset| collection_contains(index, preset) && motion_theme_matches(needle, preset))
+}
+
+fn active_motion_collection(
+    stored: Option<usize>,
+    selected: Option<theme::MotionTheme>,
+    needle: &str,
+) -> usize {
+    use theme::MotionTheme;
+    if let Some(quick) = main_collection_query(needle)
+        && collection_matches(quick, needle)
+    {
+        return quick;
+    }
+    let unfiltered =
+        needle.trim().is_empty() || needle.trim().eq_ignore_ascii_case("Motion themes");
+    let default = if unfiltered {
+        if selected.is_some_and(|preset| MotionTheme::MAIN_GRADIENTS.contains(&preset)) {
+            MAIN_GRADIENTS_COLLECTION
+        } else {
+            MAIN_COLOURS_COLLECTION
+        }
+    } else {
+        selected
+            .and_then(|preset| {
+                MotionTheme::FAMILIES
+                    .iter()
+                    .position(|family| *family == preset.family())
+            })
+            .unwrap_or(0)
+    };
+    let active = stored
+        .filter(|&index| index < MOTION_COLLECTION_COUNT)
+        .unwrap_or(default);
+    // Generic searches use a full colour family rather than accidentally
+    // narrowing a colour to just its one new main-palette representative.
+    if active < MOTION_COLLECTION_COUNT
+        && (unfiltered || active < MotionTheme::FAMILIES.len())
+        && collection_matches(active, needle)
+    {
+        active
+    } else {
+        (0..MOTION_COLLECTION_COUNT)
+            .find(|&index| collection_matches(index, needle))
+            .unwrap_or(MAIN_COLOURS_COLLECTION)
+    }
+}
+
 /// Search the bundled palettes as well as settings labels, so a colour or
 /// preset name always leads to an immediately usable choice.
 fn motion_theme_matches(needle: &str, preset: theme::MotionTheme) -> bool {
@@ -2480,6 +2582,11 @@ fn motion_theme_matches(needle: &str, preset: theme::MotionTheme) -> bool {
         .find(|choice| choice.name().eq_ignore_ascii_case(query))
     {
         return exact == preset;
+    }
+    if let Some(quick) = main_collection_query(query)
+        && !collection_contains(quick, preset)
+    {
+        return false;
     }
     let metadata = format!(
         "Motion themes Appearance colour colours color colors {} {} {} {}",
@@ -2557,32 +2664,23 @@ fn motion_theme_gallery(app: &mut App, ui: &mut egui::Ui, needle: &str) {
         _ => None,
     };
     let family_id = ui.make_persistent_id("motion-theme-family");
-    let default_family = selected.map_or(0, |preset| {
-        MotionTheme::FAMILIES
-            .iter()
-            .position(|family| *family == preset.family())
-            .unwrap_or(0)
-    });
-    let mut active = ui.data(|data| data.get_temp::<usize>(family_id).unwrap_or(default_family));
-    let family_matches = |index: usize| {
-        MotionTheme::ALL.into_iter().any(|preset| {
-            preset.family() == MotionTheme::FAMILIES[index] && motion_theme_matches(needle, preset)
-        })
-    };
-    if active >= MotionTheme::FAMILIES.len() || !family_matches(active) {
-        active = (0..MotionTheme::FAMILIES.len())
-            .find(|&index| family_matches(index))
-            .unwrap_or(0);
-    }
+    let stored = ui.data(|data| data.get_temp::<usize>(family_id));
+    let mut active = active_motion_collection(stored, selected, needle);
     ui.horizontal_wrapped(|ui| {
-        for (index, family) in MotionTheme::FAMILIES.iter().enumerate() {
+        let collections = [
+            (MAIN_COLOURS_COLLECTION, "Main colours"),
+            (MAIN_GRADIENTS_COLLECTION, "Main gradients"),
+        ]
+        .into_iter()
+        .chain(MotionTheme::FAMILIES.iter().copied().enumerate());
+        for (index, family) in collections {
             let label = gettext(locale, family);
             let count = MotionTheme::ALL
                 .iter()
-                .filter(|preset| preset.family() == MotionTheme::FAMILIES[index])
+                .filter(|&&preset| collection_contains(index, preset))
                 .count();
             let response = ui.add_enabled(
-                family_matches(index),
+                collection_matches(index, needle),
                 egui::Button::selectable(active == index, format!("{label} ({count})"))
                     .wrap_mode(egui::TextWrapMode::Extend),
             );
@@ -2590,14 +2688,26 @@ fn motion_theme_gallery(app: &mut App, ui: &mut egui::Ui, needle: &str) {
                 // Use the button's existing padding; colour cues never move
                 // the caption or its keyboard/click target.
                 let centre = egui::pos2(response.rect.left() + 6.0, response.rect.center().y);
-                ui.painter()
-                    .circle_filled(centre, 3.0, motion_family_colour(family));
-                if *family == "Gradients" {
-                    ui.painter().circle_filled(
-                        centre + egui::vec2(1.0, 0.8),
-                        1.7,
-                        egui::Color32::from_rgb(89, 208, 223),
-                    );
+                if index >= MAIN_COLOURS_COLLECTION {
+                    let colours = if index == MAIN_COLOURS_COLLECTION {
+                        [motion_family_colour("Red"), motion_family_colour("Blue")]
+                    } else {
+                        [motion_family_colour("Purple"), motion_family_colour("Cyan")]
+                    };
+                    ui.painter()
+                        .circle_filled(centre - egui::vec2(2.0, 0.0), 2.0, colours[0]);
+                    ui.painter()
+                        .circle_filled(centre + egui::vec2(2.0, 0.0), 2.0, colours[1]);
+                } else {
+                    ui.painter()
+                        .circle_filled(centre, 3.0, motion_family_colour(family));
+                    if family == "Gradients" {
+                        ui.painter().circle_filled(
+                            centre + egui::vec2(1.0, 0.8),
+                            1.7,
+                            egui::Color32::from_rgb(89, 208, 223),
+                        );
+                    }
                 }
             }
             if response.clicked() {
@@ -2615,8 +2725,7 @@ fn motion_theme_gallery(app: &mut App, ui: &mut egui::Ui, needle: &str) {
     let presets: Vec<_> = MotionTheme::ALL
         .into_iter()
         .filter(|preset| {
-            preset.family() == MotionTheme::FAMILIES[active]
-                && motion_theme_matches(needle, *preset)
+            collection_contains(active, *preset) && motion_theme_matches(needle, *preset)
         })
         .collect();
     // Explicit rows keep the computed number of columns. A wrapping layout
@@ -3124,6 +3233,129 @@ mod tests {
             "blue purple impossible",
             MotionTheme::CobaltInk
         ));
+    }
+
+    #[test]
+    fn main_colour_queries_only_match_their_named_solid_or_gradient_sets() {
+        use crate::theme::MotionTheme;
+        for (query, collection) in [
+            ("main colours", MotionTheme::MAIN_COLOURS),
+            ("MAIN COLORS", MotionTheme::MAIN_COLOURS),
+            ("main gradients", MotionTheme::MAIN_GRADIENTS),
+        ] {
+            let found: Vec<_> = MotionTheme::ALL
+                .into_iter()
+                .filter(|&preset| super::motion_theme_matches(query, preset))
+                .collect();
+            assert_eq!(found, collection);
+        }
+        assert!(super::motion_theme_matches(
+            "main colours blue",
+            MotionTheme::MotionBlue
+        ));
+        assert!(!super::motion_theme_matches(
+            "main colours blue",
+            MotionTheme::BlueHorizon
+        ));
+        assert!(super::motion_theme_matches(
+            "main gradients red",
+            MotionTheme::RedHorizon
+        ));
+        assert!(!super::motion_theme_matches(
+            "main gradients red",
+            MotionTheme::RubySilk
+        ));
+        assert!(!super::motion_theme_matches(
+            "main colours",
+            MotionTheme::CobaltInk
+        ));
+        assert!(!super::motion_theme_matches(
+            "main gradients",
+            MotionTheme::CandyCloud
+        ));
+    }
+
+    #[test]
+    fn quick_collection_queries_use_complete_words_without_case_or_spacing_limits() {
+        use super::main_collection_query as collection;
+        assert_eq!(collection("  MAIN  CoLoUrS  blue "), Some(12));
+        assert_eq!(collection("main colors"), Some(12));
+        assert_eq!(collection("main colour"), Some(12));
+        assert_eq!(collection("main gradient red"), Some(13));
+        assert_eq!(collection("main gradients"), Some(13));
+        assert_eq!(collection("domain colours"), None);
+        assert_eq!(collection("mainland gradients"), None);
+        assert_eq!(collection("red gradient"), None);
+        assert_eq!(collection("main"), None);
+    }
+
+    #[test]
+    fn quick_collections_keep_old_family_indices_and_match_every_main_colour() {
+        use crate::theme::MotionTheme;
+        assert_eq!(super::MAIN_COLOURS_COLLECTION, 12);
+        assert_eq!(super::MAIN_GRADIENTS_COLLECTION, 13);
+        for preset in MotionTheme::ALL {
+            for (index, family) in MotionTheme::FAMILIES.iter().enumerate() {
+                assert_eq!(
+                    super::collection_contains(index, preset),
+                    preset.family() == *family
+                );
+            }
+            assert_eq!(
+                super::collection_contains(12, preset),
+                MotionTheme::MAIN_COLOURS.contains(&preset)
+            );
+            assert_eq!(
+                super::collection_contains(13, preset),
+                MotionTheme::MAIN_GRADIENTS.contains(&preset)
+            );
+            assert!(!super::collection_contains(usize::MAX, preset));
+        }
+    }
+
+    #[test]
+    fn gallery_starts_with_main_colours_and_searches_full_matching_families() {
+        use super::active_motion_collection as active;
+        use crate::theme::MotionTheme;
+        assert_eq!(active(None, Some(MotionTheme::Amethyst), ""), 12);
+        assert_eq!(
+            active(None, Some(MotionTheme::Amethyst), "Motion themes"),
+            12
+        );
+        assert_eq!(
+            active(Some(13), Some(MotionTheme::RedHorizon), "Motion themes"),
+            13
+        );
+        assert_eq!(active(None, Some(MotionTheme::BlueHorizon), ""), 13);
+        assert_eq!(
+            active(Some(usize::MAX), Some(MotionTheme::MotionBlue), ""),
+            12
+        );
+        assert_eq!(
+            active(Some(usize::MAX), Some(MotionTheme::BlueHorizon), ""),
+            13
+        );
+        assert_eq!(active(Some(7), Some(MotionTheme::MotionBlue), ""), 7);
+        assert_eq!(active(Some(13), Some(MotionTheme::RedHorizon), ""), 13);
+        assert_eq!(
+            active(Some(12), Some(MotionTheme::MotionRed), "red gradient"),
+            11
+        );
+        assert_eq!(
+            active(Some(13), Some(MotionTheme::RedHorizon), "red gradient"),
+            11
+        );
+        assert_eq!(
+            active(Some(7), Some(MotionTheme::Amethyst), "main colours"),
+            12
+        );
+        assert_eq!(
+            active(Some(0), Some(MotionTheme::MotionRed), "main gradients red"),
+            13
+        );
+        assert_eq!(active(Some(usize::MAX), None, "Ruby Silk"), 11);
+        assert!(super::collection_contains(11, MotionTheme::RubySilk));
+        assert!(!super::collection_contains(13, MotionTheme::RubySilk));
     }
 
     #[test]

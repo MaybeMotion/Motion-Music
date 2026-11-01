@@ -2,48 +2,48 @@
 
 <h1 align="center">Motion Music</h1>
 
-<p align="center"><strong>Your music, in full colour.</strong><br>A native Spotify client with 180 curated themes and sixteen audio-reactive player-bar visualisers.</p>
+<p align="center"><strong>Your music, in full colour.</strong><br>A native Spotify client with 212 curated themes and sixteen audio-reactive player-bar visualisers.</p>
 
 Motion Music is a personal customisation of [Spotifast](https://github.com/crmne/spotifast), built with Rust, egui, fastframe, and librespot. Original copyright, licence, and upstream credits are retained. Upstream documentation and release links describe Spotifast; official downloads do not include these customisations.
 
-## Download Motion Music v8
+## Download Motion Music v9
 
-**[Download the Windows portable ZIP](https://github.com/MaybeMotion/Motion-Music/releases/download/motion-v8/Motion-Music-v8-Windows.zip)** or open the [Motion Music v8 release](https://github.com/MaybeMotion/Motion-Music/releases/tag/motion-v8) for the source archive and checksums. Extract the ZIP, keep `spotifast-portable.txt` beside `Motion Music v8.exe`, and fully quit an older running copy before opening it.
+**[Download the Windows portable ZIP](https://github.com/MaybeMotion/Motion-Music/releases/download/motion-v9/Motion-Music-v9-Windows.zip)** or open the [Motion Music v9 release](https://github.com/MaybeMotion/Motion-Music/releases/tag/motion-v9) for the source archive and checksums. Extract the ZIP, keep `spotifast-portable.txt` beside `Motion Music v9.exe`, and fully quit an older running copy before opening it.
 
-See the [v8 setup and visualiser guide](docs/MOTION-MUSIC-V8.md). Downloads are installed manually; the automatic updater remains disabled for this custom build. **motion-v8** identifies this customised portable edition. The underlying Cargo package and executable version remain **0.14.1**, matching the tested build.
+See the [v9 setup and visualiser guide](docs/MOTION-MUSIC-V9.md). Downloads are installed manually; the automatic updater remains disabled for this custom build. **motion-v9** identifies this customised portable edition. The underlying Cargo package and executable version remain **0.14.1**, matching the tested build.
 
 The inherited Spotifast publishing workflows are archived and inactive. See [GitHub upload notes](docs/GITHUB-UPLOAD.md) for the source and publishing details.
 
 ## Make it yours
 
-Open **Settings > Appearance > Motion themes**. The gallery has clearly labelled colour tabs with swatches: **Red, Orange, Yellow, Green, Teal, Cyan, Blue, Purple, Pink, Brown, Monochrome and Gradients**. Every colour collection has both dark and light choices. Click a preview to apply it. Settings search understands colour names and aliases such as **navy**, **aqua**, **grey**, **black** and **white**, as well as combinations such as **light blue** and **blue gradient**. All 180 palettes are built in and available without downloads. They also appear in the main Theme menu and matching Light mode theme or Dark mode theme picker.
+Open **Settings > Appearance > Motion themes**. Start with **Main colours (16)** or **Main gradients (16)** for red, orange, yellow, lime, green, teal, cyan, blue, indigo, purple, pink, brown, gold, black, white and grey. Each has a solid Motion palette and a matching Horizon gradient. Search **main colours** (or **main colors**) or **main gradients** to open these collections directly. The gallery has clearly labelled colour tabs with swatches: **Red, Orange, Yellow, Green, Teal, Cyan, Blue, Purple, Pink, Brown, Monochrome and Gradients**. Every colour collection has both dark and light choices. Click a preview to apply it. Settings search understands colour names and aliases such as **navy**, **aqua**, **grey**, **black** and **white**, as well as combinations such as **light blue** and **blue gradient**. All 212 palettes are built in and available without downloads. They also appear in the main Theme menu and matching Light mode theme or Dark mode theme picker.
 
 | Collection | Themes |
 | --- | --- |
-| Red (12) | Crimson, Cherry Bomb, Ruby, Scarlet, Blood Moon, Burgundy, Cherry Blossom, Vermilion, Red Velvet, Carmine, Merlot, Poppy Red |
-| Orange (10) | Ember, Inferno, Hot Lava, Peach Fuzz, Coral Flare, Tangerine, Apricot, Persimmon, Mandarin, Mango Milk |
-| Yellow (8) | Liquid Gold, Lemon Sorbet, Amber Room, Citron, Marigold, Buttercream, Sunflower, Daffodil |
-| Green (12) | Emerald, Toxic Mint, Jade Temple, Malachite, Mint Tea, Forest Canopy, Pine Needle, Olive Grove, Pistachio, Lime Wire, Matcha Latte, Racing Green |
-| Teal (6) | Northern Lights, Seafoam, Tidal Teal, Peacock, Viridian, Aqua Marine |
-| Cyan (7) | Arctic, Glacial Blue, Petrol Blue, Pacific Night, Lagoon Mist, Cyan Circuit, Ice Mint |
-| Blue (8) | Deep Ocean, Electric Blue, Glacier, Sapphire, Cobalt Ink, Powder Blue, Royal Navy, Cornflower |
-| Purple (20) | Amethyst, Purple Rain, Ultraviolet, Violet Hour, Nebula, Grape Soda, Cyber Orchid, Midnight Lilac, Blacklight, Lavender Milk, Lilac Cloud, Orchid Glass, Velvet Violet, Orchid Night, Electric Plum, Iris, Obsidian Violet, Wisteria, Lavender Ink, Lilac Petal |
-| Pink (12) | Plum Velvet, Synthwave, Cosmic Dusk, Rose Noir, Rose Quartz, Dragonfruit, Pomegranate, Blush Silk, Bubblegum, Pink Lemonade, Fuchsia Pulse, Sakura Silk |
-| Brown (8) | Bronze Age, Copper Wire, Desert Night, Espresso, Sandstone, Oat Milk, Terracotta, Toffee Cream |
-| Monochrome (9) | Graphite, Paper, Slate Steel, Carbon Mono, Silver Lining, True Black, Silver Mist, Pure White, Ash Stone |
-| Gradients (68) | Prism Night, Velvet Sunset, Aurora Borealis, Midnight Lagoon, Crimson Nebula, Neon Horizon, Purple Haze, Cherry Aurora, Deep Space, Molten Gold, Emerald Dream, Ocean Drive, Candy Cloud, Dawn Glow, Iridescent, Rosewater, Solar Flare, Boreal Sky, Sapphire Rose, Copper Twilight, Tropical Night, Amber Tide, Forest Ember, Pink Voltage, Blue Hour, Citrus Noir, Cobalt Ember, Opal Night, Desert Mirage, Moonlit Steel, Peacock Feather, Royal Spectrum, Sorbet Sky, Seaglass Dawn, Lemon Petal, Peach Lagoon, Pearl Prism, Sky Meadow, Coral Mist, Honey Lavender, Ruby Sunrise, Mango Wave, Lemon Lime, Jungle Current, Cyan Aurora, Indigo Spectrum, Fuchsia Lagoon, Bronze Ocean, Noir Prism, Copper Rose, Citrus Clouds, Aqua Bloom, Blue Porcelain, Rose Gold, Pistachio Peach, Arctic Pearl, Ruby Silk, Scarlet Ember, Garnet Glow, Cherry Lacquer, Rosefire, Crimson Tide, Velvet Ruby, Blood Orange, Strawberry Cream, Cherry Sorbet, Rose Satin, Coral Velvet |
+| Red (13) | Crimson, Cherry Bomb, Ruby, Scarlet, Blood Moon, Burgundy, Cherry Blossom, Vermilion, Red Velvet, Carmine, Merlot, Poppy Red, Motion Red |
+| Orange (11) | Ember, Inferno, Hot Lava, Peach Fuzz, Coral Flare, Tangerine, Apricot, Persimmon, Mandarin, Mango Milk, Motion Orange |
+| Yellow (10) | Liquid Gold, Lemon Sorbet, Amber Room, Citron, Marigold, Buttercream, Sunflower, Daffodil, Motion Yellow, Motion Gold |
+| Green (14) | Emerald, Toxic Mint, Jade Temple, Malachite, Mint Tea, Forest Canopy, Pine Needle, Olive Grove, Pistachio, Lime Wire, Matcha Latte, Racing Green, Motion Lime, Motion Green |
+| Teal (7) | Northern Lights, Seafoam, Tidal Teal, Peacock, Viridian, Aqua Marine, Motion Teal |
+| Cyan (8) | Arctic, Glacial Blue, Petrol Blue, Pacific Night, Lagoon Mist, Cyan Circuit, Ice Mint, Motion Cyan |
+| Blue (10) | Deep Ocean, Electric Blue, Glacier, Sapphire, Cobalt Ink, Powder Blue, Royal Navy, Cornflower, Motion Blue, Motion Indigo |
+| Purple (21) | Amethyst, Purple Rain, Ultraviolet, Violet Hour, Nebula, Grape Soda, Cyber Orchid, Midnight Lilac, Blacklight, Lavender Milk, Lilac Cloud, Orchid Glass, Velvet Violet, Orchid Night, Electric Plum, Iris, Obsidian Violet, Wisteria, Lavender Ink, Lilac Petal, Motion Purple |
+| Pink (13) | Plum Velvet, Synthwave, Cosmic Dusk, Rose Noir, Rose Quartz, Dragonfruit, Pomegranate, Blush Silk, Bubblegum, Pink Lemonade, Fuchsia Pulse, Sakura Silk, Motion Pink |
+| Brown (9) | Bronze Age, Copper Wire, Desert Night, Espresso, Sandstone, Oat Milk, Terracotta, Toffee Cream, Motion Brown |
+| Monochrome (12) | Graphite, Paper, Slate Steel, Carbon Mono, Silver Lining, True Black, Silver Mist, Pure White, Ash Stone, Motion Black, Motion White, Motion Grey |
+| Gradients (84) | Prism Night, Velvet Sunset, Aurora Borealis, Midnight Lagoon, Crimson Nebula, Neon Horizon, Purple Haze, Cherry Aurora, Deep Space, Molten Gold, Emerald Dream, Ocean Drive, Candy Cloud, Dawn Glow, Iridescent, Rosewater, Solar Flare, Boreal Sky, Sapphire Rose, Copper Twilight, Tropical Night, Amber Tide, Forest Ember, Pink Voltage, Blue Hour, Citrus Noir, Cobalt Ember, Opal Night, Desert Mirage, Moonlit Steel, Peacock Feather, Royal Spectrum, Sorbet Sky, Seaglass Dawn, Lemon Petal, Peach Lagoon, Pearl Prism, Sky Meadow, Coral Mist, Honey Lavender, Ruby Sunrise, Mango Wave, Lemon Lime, Jungle Current, Cyan Aurora, Indigo Spectrum, Fuchsia Lagoon, Bronze Ocean, Noir Prism, Copper Rose, Citrus Clouds, Aqua Bloom, Blue Porcelain, Rose Gold, Pistachio Peach, Arctic Pearl, Ruby Silk, Scarlet Ember, Garnet Glow, Cherry Lacquer, Rosefire, Crimson Tide, Velvet Ruby, Blood Orange, Strawberry Cream, Cherry Sorbet, Rose Satin, Coral Velvet, Red Horizon, Orange Horizon, Yellow Horizon, Lime Horizon, Green Horizon, Teal Horizon, Cyan Horizon, Blue Horizon, Indigo Horizon, Purple Horizon, Pink Horizon, Brown Horizon, Gold Horizon, Black Horizon, White Horizon, Grey Horizon |
 
-There are **112 solid palettes and 68 gradient themes**, including 55 light choices overall. The gradient collection has 46 dark and 22 light choices. Three-colour blends extend across the main background, library sidebar and player bar, with matching preview cards. These gradients are drawn natively and cached for smooth redraws; controls keep readable surfaces. Twelve more red-led gradients range from deep **Ruby Silk**, **Garnet Glow** and **Cherry Lacquer** to light **Strawberry Cream**, **Rose Satin** and **Coral Velvet**. Search **red gradient**, **dark red gradient** or **light red gradient** to find blends by colour and appearance. Existing favourites such as **Cyan Aurora**, **Lemon Lime**, **Rose Gold** and **Arctic Pearl** remain available. Solid choices include **Sunflower**, **Lime Wire**, **Cyan Circuit**, **Royal Navy**, **True Black** and **Pure White**.
+There are **128 solid palettes and 84 gradient themes**, including 63 light choices overall. The gradient collection has 58 dark and 26 light choices. Three-colour blends extend across the main background, library sidebar and player bar, with matching preview cards. These gradients are drawn natively and cached for smooth redraws; controls keep readable surfaces. Twelve more red-led gradients range from deep **Ruby Silk**, **Garnet Glow** and **Cherry Lacquer** to light **Strawberry Cream**, **Rose Satin** and **Coral Velvet**. Search **red gradient**, **dark red gradient** or **light red gradient** to find blends by colour and appearance. Existing favourites such as **Cyan Aurora**, **Lemon Lime**, **Rose Gold** and **Arctic Pearl** remain available. Solid choices include **Sunflower**, **Lime Wire**, **Cyan Circuit**, **Royal Navy**, **True Black** and **Pure White**.
 
 Each palette colours the page, panels, surfaces, highlights, buttons, outlines, and header tint. Following the system uses Amethyst in dark mode and Lavender Milk in light mode by default. Built-in palettes can also be assigned independently to the system light and dark appearances; no palette file or cached copy is required. Saved light/dark/system selections and existing custom themes still work.
 
 **Colour from album art** lets covers tint the page and visualisers. Turn it off in Appearance for colours driven by your selected theme.
 
-Load your own JSON palettes through **Open themes folder**, choose separate custom themes for light and dark appearances, or use the existing shared desktop presets. See [custom theme format](docs/_reference/settings-and-files.md#custom-themes). The existing custom-file picker supports up to 128 valid palettes; the 180 built-in Motion themes are separate.
+Load your own JSON palettes through **Open themes folder**, choose separate custom themes for light and dark appearances, or use the existing shared desktop presets. See [custom theme format](docs/_reference/settings-and-files.md#custom-themes). The existing custom-file picker supports up to 128 valid palettes; the 212 built-in Motion themes are separate.
 
 ## Smooth motion
 
-Interactive colours and press feedback ease over 160 ms. Switching pages, opening a playlist or album, visiting an artist, and using Back or Forward now chooses a short, eased transition from a shuffled set of six: the original **rise and fade**, **glide from the left**, **glide from the right**, **soft drop**, **diagonal lift** and **dissolve**. Playlist-to-playlist changes use the same mix. Each style appears once per shuffled set, and consecutive switches never repeat the same animation, including across sets. The sidebar, top bar and player controls stay anchored, and clicks and keyboard actions remain immediate. Theme collections keep their 200 ms arrival fade; changing the theme uses a soft circular reveal over 600 ms, alongside native menu and smooth-scroll transitions.
+Interactive colours and press feedback ease over 160 ms. Switching pages, opening a playlist or album, visiting an artist, and using Back or Forward now chooses a short, eased transition from a shuffled set of ten: the original **rise and fade**, **glide from the left**, **glide from the right**, **soft drop**, **diagonal lift** **dissolve**, **circle expanding from the centre**, **circle closing inward**, **diagonal sweep** and **horizontal curtain**. Playlist-to-playlist changes use the same mix. Each style appears once per shuffled set, and consecutive switches never repeat the same animation, including across sets. The original six arrivals keep their 260 ms easing; the four new reveals show the new page through the old page over 560 ms, inspired by circular and wiping wallpaper transitions. The sidebar, top bar and player controls stay anchored. Clicking a revealed control or using the keyboard completes the reveal immediately; covered controls cannot receive an accidental click. Theme collections keep their 200 ms arrival fade; changing the theme uses a soft circular reveal over 600 ms, alongside native menu and smooth-scroll transitions.
 
 These interface transitions stop requesting frames once they finish, so they add no idle animation loop. Loading more data, scrolling or resizing does not restart the page transition. Motion Music honours the operating system's reduced-motion preference and shows the final state immediately when motion is reduced. Existing audio visualisers keep their own frame-rate controls.
 
@@ -76,27 +76,27 @@ Visualisation starts off, preserving existing preferences. Click empty space in 
 
 Quiet Windows audio now gets an automatic sensitivity boost for the visualisers, so effects respond more strongly at low listening volumes. The boost eases back for louder peaks. It changes only the visualiser input, leaving music volume and Motion Music's own playback audio unchanged. Muted or silent Windows output still supplies no audio for the effects.
 
-This Windows input uses no microphone and does not save or upload audio. It closes when Motion Music is hidden or minimised, the PC locks, the active visualiser is Off, or the mini player is shaded. It follows changes to the default Windows output and lets the effects settle when the audio is silent or unavailable.
+This Windows input uses no microphone and makes no recording or audio upload. Bar and mini-player input stops when no visible effect needs it. It can continue while the main window is hidden if the separate MilkDrop window is visible, and stops when the PC locks or the display is off. It follows changes to the default Windows output and lets the effects settle when the audio is silent or unavailable.
 
 Motion Music's own playback keeps its post-EQ, pre-volume signal: its equalizer changes the picture and its volume control does not. Frame-rate limits and reduced-motion preferences still apply.
 
-The optional MilkDrop/projectM window continues to use Motion Music's own local playback and remains supported by the source's default feature. Builds made with **--no-default-features** include all sixteen player-bar effects and the mini player, but omit MilkDrop.
+The supplied Windows build now includes the real **MilkDrop/projectM window**. Open it in **Settings > MilkDrop**, from the top bar, or with **Ctrl+Shift+K**. An original built-in preset works offline immediately; existing optional community preset downloads still run in the background. MilkDrop uses native post-EQ, pre-volume sound while local playback is active, or default Windows output while it is idle. It needs an OpenGL 3.3 capable driver. Errors opening the window are shown instead of leaving its switch on. A short-lived local, file-backed shared-memory ring passes up to half a second of audio to the child window and is removed on close. Builds made with **--no-default-features** omit MilkDrop and show that it is unavailable. See **THIRD-PARTY-NOTICES.md** and **packaging/windows/MILKDROP-BUILD.md** for the included engine's licences and rebuild instructions.
 
 ## Build and run
 
 Spotify playback requires Spotify Premium. Sign in, then use the device menu's **Set up playback here** to approve local playback. Library browsing and playback have separate approvals.
 
-On Windows, with Rust and Visual Studio C++ tools installed:
+For the full Windows build, install Rust, Visual Studio C++ tools, CMake, libclang and vcpkg with static GLEW; follow [MilkDrop build instructions](packaging/windows/MILKDROP-BUILD.md). Then:
 
 ~~~powershell
-cargo build --locked --no-default-features
+cargo build --locked
 .\target\debug\motion-music.exe
 ~~~
 
 The repository pins Rust 1.98.0. If only a newer compatible stable toolchain is installed, use:
 
 ~~~powershell
-cargo +stable build --locked --no-default-features
+cargo +stable build --locked
 ~~~
 
 For a release build, add **--release**; the binary is **target/release/motion-music.exe** on Windows and **target/release/motion-music** on Linux/macOS. Native prerequisites are in the [upstream source guide](https://spotifast.rocks/getting-started/#build-from-source). Default features also need the libprojectM toolchain (CMake, libclang, GLEW).
@@ -113,7 +113,7 @@ Demo visual flags include **--demo-show motion-aurora**, **motion-radial**, **mo
 
 The executable, windows, tray/menu entries, playback device default, and native icons identify as Motion Music. Internal crate names, Spotify authentication identifiers, credential keys, profile folders, IPC identifiers, and package IDs remain compatible with Spotifast. Existing saved settings and sign-ins are preserved; custom device names are kept.
 
-Self-updates remain disabled for this custom build, preventing an upstream Spotifast download from replacing Motion Music. Update manually from [Motion Music releases](https://github.com/MaybeMotion/Motion-Music/releases), or rebuild this source. The custom v8 label identifies this portable update; the underlying package version remains 0.14.1.
+Self-updates remain disabled for this custom build, preventing an upstream Spotifast download from replacing Motion Music. Update manually from [Motion Music releases](https://github.com/MaybeMotion/Motion-Music/releases), or rebuild this source. The custom v9 label identifies this portable update; the underlying package version remains 0.14.1.
 
 ## Upstream and licence
 

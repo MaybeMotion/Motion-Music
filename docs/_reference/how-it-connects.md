@@ -732,3 +732,10 @@ session's own authorization. Spotify refuses the change if the playlist
 changed since. The request is sent once, never retried, and has a 20-second
 deadline. A row that is no longer
 in the playlist removes nothing; the playlist reloads and shows the error.
+
+
+## Motion Music MilkDrop audio
+
+The full Motion Music Windows build includes the projectM engine and one original embedded preset, so opening MilkDrop does not depend on a preset download. Optional preset packs keep their existing download routes. No new service, playback source, microphone or audio upload is added.
+
+MilkDrop takes Motion Music's post-EQ, pre-volume signal while native playback is active. Otherwise on Windows it can use the default output loopback, including Spotify and other audible apps, with automatic quiet-signal gain. It passes up to half a second of stereo PCM through a temporary local file-backed shared-memory ring to its child process, removed on close. Output capture remains active only while a visible effect needs it; an independently visible MilkDrop window can need audio while the main window is hidden. Locking the PC or turning the display off stops output capture.

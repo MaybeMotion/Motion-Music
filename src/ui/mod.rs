@@ -18,6 +18,7 @@ pub mod player_bar;
 mod prerelease;
 pub mod queue;
 pub mod radio;
+mod reveal;
 pub mod search;
 pub mod settings;
 pub mod show;
@@ -92,6 +93,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     toasts(app, ctx, theme::PLAYER_BAR_HEIGHT + 16.0);
     caption_buttons(ui, &app.palette, app.locale);
     fastframe_titlebar::resize(ui);
+    motion::finish(ctx);
 }
 
 /// The main window's narrowest width with these panels open: their least
@@ -334,6 +336,7 @@ fn central(app: &mut App, ui: &mut egui::Ui) {
                                 ui,
                                 Id::new("motion-page-arrival"),
                                 Id::new(page.encode()),
+                                Id::new((app.theme_gradient(), app.palette.tint)),
                                 |ui| match page {
                                     Page::Home => home::show(app, ui),
                                     Page::TopSongs => collection::top_songs(app, ui),

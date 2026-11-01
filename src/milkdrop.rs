@@ -6,7 +6,8 @@
 //! child through a shared-memory ring.
 //!
 //! [`Presets`] lists the config directory's `milkdrop` folder and downloads
-//! optional projectM preset packs. No presets are bundled.
+//! optional projectM preset packs. One original, texture-free starter preset is
+//! embedded so the first window works offline.
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
@@ -25,6 +26,9 @@ pub mod overlay;
 /// The shared-memory audio ring between the app and the MilkDrop child.
 #[cfg(feature = "milkdrop")]
 pub mod shm;
+
+/// Whether this executable includes the real projectM MilkDrop engine.
+pub const AVAILABLE: bool = cfg!(feature = "milkdrop");
 
 /// How long a preset plays before the next fades in.
 pub const DEFAULT_SECONDS: u32 = 10;

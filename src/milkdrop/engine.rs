@@ -1,9 +1,9 @@
 //! projectM rendering inside the MilkDrop window.
 //!
-//! Rendering runs inside egui's paint callback, where the OpenGL context is
-//! current. libprojectM 4.1 draws into the bottom-left of the window framebuffer,
-//! so the result is copied into the display area before egui draws the frame.
-//! The engine is dropped from eframe's exit hook while the context is current.
+//! Rendering runs while the child window's OpenGL context is current.
+//! libprojectM 4.1 draws into the bottom-left of the window framebuffer, so
+//! the result is copied into the display area before drawing the overlays.
+//! The live window drops its engine before releasing the current context.
 
 use std::ffi::{CStr, CString, c_char, c_void};
 use std::path::Path;
@@ -41,8 +41,8 @@ struct Copy {
     height: u32,
 }
 
-// SAFETY: only ever touched from the thread that owns the window's context,
-// which is where the paint callback runs; the mutex it sits in wants Send.
+// SAFETY: only ever touched from the thread that owns the window's current
+// context. Ownership may be transferred only together with that context.
 unsafe impl Send for Engine {}
 
 unsafe extern "C" fn switch_requested(is_hard_cut: bool, user_data: *mut c_void) {
@@ -89,11 +89,13 @@ impl Engine {
     pub fn new(gl: Arc<glow::Context>, texture_dirs: &[&Path], seconds: u32) -> Option<Self> {
         #[cfg(windows)]
         {
-            static GLEW: std::sync::Once = std::sync::Once::new();
-            // SAFETY: the context is current, which is all GLEW asks.
-            GLEW.call_once(|| unsafe {
-                glewInit();
-            });
+            // SAFETY: this engine's context is current. Reinitialise for
+            // every context, including a window moved to another GPU.
+            let status = unsafe { glewInit() };
+            if status != 0 {
+                log::warn!("MilkDrop could not initialise OpenGL extensions (GLEW {status})");
+                return None;
+            }
         }
         // SAFETY: the context is current; a null handle is the documented
         // way projectM says it cannot work in it.
@@ -133,6 +135,14 @@ impl Engine {
             locked: false,
         };
         engine.set_texture_dirs(texture_dirs);
+        // An original, self-contained preset responds immediately even
+        // offline. Downloaded/community presets can replace it as soon as
+        // their background directory listing is ready.
+        let starter = CString::new(include_str!("../../assets/motion-music-starter.milk"))
+            .expect("the built-in MilkDrop preset has no NUL bytes");
+        // SAFETY: a live handle and a string that lives for this call;
+        // projectM parses and owns the resulting preset.
+        unsafe { pm::projectm_load_preset_data(engine.handle, starter.as_ptr(), false) };
         Some(engine)
     }
 
@@ -293,7 +303,7 @@ impl Engine {
             gl.clear_color(0.0, 0.0, 0.0, 1.0);
             gl.clear(glow::COLOR_BUFFER_BIT);
             gl.color_mask(true, true, true, true);
-            // egui's painter puts the rest of its state back itself.
+            // The overlay painter sets the state it needs before drawing.
         }
     }
 

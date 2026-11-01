@@ -37,6 +37,7 @@ struct Control {
     fps: Option<u32>,
     seconds: Option<u32>,
     scale: Option<u32>,
+    lag: Option<usize>,
     /// The playing song, as lines to overlay when it changes.
     song: Option<Vec<String>>,
     close: Option<bool>,
@@ -47,6 +48,10 @@ struct Control {
 struct Event {
     #[serde(skip_serializing_if = "Option::is_none")]
     closed: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    visible: Option<bool>,
     /// What the window asks the app to do with the player.
     #[serde(skip_serializing_if = "Option::is_none")]
     command: Option<String>,
@@ -69,6 +74,7 @@ pub struct Args {
     pub fps: u32,
     pub seconds: u32,
     pub scale: u32,
+    pub lag: usize,
 }
 
 impl Args {
@@ -87,6 +93,7 @@ impl Args {
         let mut fps = DEFAULT_FPS;
         let mut seconds = DEFAULT_SECONDS;
         let mut scale = 1u32;
+        let mut lag = LAG;
         while let Some(arg) = all.next() {
             match arg.as_str() {
                 "--milkdrop-shm" => shm = all.next().map(PathBuf::from),
@@ -105,6 +112,9 @@ impl Args {
                 "--milkdrop-scale" => {
                     scale = all.next().and_then(|v| v.parse().ok()).unwrap_or(scale);
                 }
+                "--milkdrop-lag" => {
+                    lag = all.next().and_then(|v| v.parse().ok()).unwrap_or(lag);
+                }
                 _ => {}
             }
         }
@@ -117,6 +127,7 @@ impl Args {
             fps,
             seconds,
             scale,
+            lag: lag.min(super::shm::FRAMES),
         })
     }
 }
@@ -217,6 +228,11 @@ struct Child {
     /// Windows) or, on Wayland, suspended: nothing is drawn until it shows
     /// again.
     occluded: bool,
+    /// Last visibility sent to the host, so audio demand follows this window.
+    reported_visible: Option<bool>,
+    audio_lag: usize,
+    last_audio: Option<Instant>,
+    silence_sent: bool,
 }
 
 impl Child {
@@ -224,6 +240,7 @@ impl Child {
         let fps = args.fps;
         let scale = args.scale;
         let seconds = args.seconds;
+        let audio_lag = args.lag;
         Self {
             args,
             ring,
@@ -250,6 +267,10 @@ impl Child {
             #[cfg(target_os = "macos")]
             screen: None,
             occluded: false,
+            reported_visible: None,
+            audio_lag,
+            last_audio: None,
+            silence_sent: false,
         }
     }
 
@@ -313,6 +334,7 @@ impl Child {
                 eprintln!("MilkDrop: {error}");
                 report(&Event {
                     closed: Some(true),
+                    error: Some(error),
                     ..Default::default()
                 });
                 event_loop.exit();
@@ -337,7 +359,29 @@ impl Child {
         event_loop.exit();
     }
 
+    /// Clear projectM's retained waveform after a real pause, without
+    /// zeroing it between normal audio callbacks.
+    fn audio_at(&mut self, now: Instant) -> Vec<[f32; 2]> {
+        let frames = self.ring.since(&mut self.cursor, self.audio_lag);
+        if !frames.is_empty() {
+            self.last_audio = Some(now);
+            self.silence_sent = false;
+            frames
+        } else if !self.silence_sent
+            && self
+                .last_audio
+                .is_some_and(|at| now.saturating_duration_since(at) >= Duration::from_millis(350))
+        {
+            self.silence_sent = true;
+            // More than projectM 4.1's 576-frame waveform buffer.
+            vec![[0.0; 2]; 1024]
+        } else {
+            Vec::new()
+        }
+    }
+
     fn render(&mut self) {
+        let frames = self.audio_at(Instant::now());
         let Some(live) = &mut self.live else {
             return;
         };
@@ -358,7 +402,6 @@ impl Child {
         if let Some(Request::Load { path, smooth }) = self.presets.take_request() {
             live.engine.load(&path, smooth);
         }
-        let frames = self.ring.since(&mut self.cursor, LAG);
         live.engine.feed_frames(&frames);
         let size = live.window.inner_size();
         live.engine.render(
@@ -463,6 +506,9 @@ impl ApplicationHandler<Control> for Child {
     }
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, control: Control) {
+        if let Some(lag) = control.lag {
+            self.audio_lag = lag.min(super::shm::FRAMES);
+        }
         if let Some(scale) = control.scale {
             self.scale = scale.clamp(1, 4);
         }
@@ -530,6 +576,14 @@ impl ApplicationHandler<Control> for Child {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let visible = self.live.is_some() && !self.hidden();
+        if self.reported_visible != Some(visible) {
+            self.reported_visible = Some(visible);
+            report(&Event {
+                visible: Some(visible),
+                ..Default::default()
+            });
+        }
         let Some(live) = &self.live else {
             event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
             return;
@@ -1083,9 +1137,53 @@ mod tests {
                 fps: 30,
                 seconds: 30,
                 scale: 1,
+                lag: LAG,
             },
             ring,
         )
+    }
+
+    #[test]
+    fn loopback_audio_is_immediate_then_settles_when_callbacks_stop() {
+        let mut child = headless_child();
+        child.audio_lag = 0;
+        let start = Instant::now();
+        child.ring.push(&[0.25, -0.25, 0.5, -0.5]);
+        assert_eq!(child.audio_at(start), [[0.25, -0.25], [0.5, -0.5]]);
+        assert!(
+            child
+                .audio_at(start + Duration::from_millis(100))
+                .is_empty(),
+            "ordinary callback gaps retain the current waveform"
+        );
+        let silence = child.audio_at(start + Duration::from_millis(350));
+        assert_eq!(silence.len(), 1024);
+        assert!(silence.iter().all(|frame| *frame == [0.0; 2]));
+        assert!(
+            child.audio_at(start + Duration::from_secs(1)).is_empty(),
+            "one clear is enough until new sound arrives"
+        );
+        child.ring.push(&[0.125, -0.125]);
+        assert_eq!(
+            child.audio_at(start + Duration::from_secs(2)),
+            [[0.125, -0.125]]
+        );
+        let folder = child.args.presets.clone();
+        drop(child);
+        std::fs::remove_dir_all(folder).unwrap();
+    }
+
+    #[test]
+    fn native_audio_retains_its_speaker_queue_alignment() {
+        let mut child = headless_child();
+        let mut samples = vec![0.0; (LAG + 1) * 2];
+        samples[0] = 0.375;
+        samples[1] = -0.375;
+        child.ring.push(&samples);
+        assert_eq!(child.audio_at(Instant::now()), [[0.375, -0.375]]);
+        let folder = child.args.presets.clone();
+        drop(child);
+        std::fs::remove_dir_all(folder).unwrap();
     }
 
     /// The limit is the number it was given, and nothing at zero.

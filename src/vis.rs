@@ -84,6 +84,10 @@ impl AudioTap {
     /// Connects the tap to MilkDrop's shared-memory ring. `None` detaches it.
     #[cfg(feature = "milkdrop")]
     pub fn set_shm(&self, ring: Option<std::sync::Arc<crate::milkdrop::shm::Ring>>) {
+        // Quiesce an in-flight push before detaching. A MilkDrop source
+        // handoff must never leave the old and new audio callbacks writing
+        // its single-producer ring at the same time. Lock in push's order.
+        let _samples = self.samples.lock().unwrap_or_else(|p| p.into_inner());
         *self.shm.lock().unwrap_or_else(|p| p.into_inner()) = ring;
     }
 

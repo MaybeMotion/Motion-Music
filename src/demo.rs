@@ -1739,10 +1739,12 @@ impl Default for MotionTour {
 #[cfg(feature = "demo")]
 impl MotionTour {
     fn phase(elapsed: std::time::Duration) -> usize {
-        [320, 920, 1520, 2120, 2720, 3320, 3920, 4320]
-            .into_iter()
-            .take_while(|&at| elapsed.as_millis() >= at)
-            .count()
+        [
+            480, 1280, 2080, 2880, 3680, 4480, 5280, 6080, 6880, 7680, 8480, 9120,
+        ]
+        .into_iter()
+        .take_while(|&at| elapsed.as_millis() >= at)
+        .count()
     }
 
     /// Each scheduled navigation is opened once. The fixture uses only
@@ -1776,30 +1778,39 @@ impl MotionTour {
                     ctx.data_mut(|data| {
                         data.insert_temp(
                             egui::Id::new("settings-filter"),
-                            "Motion themes".to_string(),
-                        )
+                            "main colours".to_string(),
+                        );
                     });
                 }
                 6 => app.open(Page::Queue),
-                7 => {
+                7 => app.open(Page::Home),
+                8 => app.open(Page::Playlist("pl0".into())),
+                9 => app.open(Page::Queue),
+                10 => {
                     app.open(Page::Settings);
                     ctx.data_mut(|data| {
                         data.insert_temp(
                             egui::Id::new("settings-filter"),
-                            "Motion themes".to_string(),
-                        )
+                            "main gradients".to_string(),
+                        );
                     });
                 }
-                8 => ctx.data_mut(|data| {
-                    data.insert_temp(egui::Id::new("settings-filter"), "red gradient".to_string());
+                11 => ctx.data_mut(|data| {
+                    data.insert_temp(egui::Id::new("settings-filter"), "main colours".to_string());
+                }),
+                12 => ctx.data_mut(|data| {
+                    data.insert_temp(
+                        egui::Id::new("settings-filter"),
+                        "main gradients".to_string(),
+                    );
                 }),
                 _ => {}
             }
         }
         let point = match phase {
             1..=4 => egui::pos2(470.0, 465.0),
-            5 | 7..=8 => egui::pos2(530.0, if size.x < 900.0 { 620.0 } else { 520.0 }),
-            6 => egui::pos2(470.0, 465.0),
+            5 | 10..=12 => egui::pos2(530.0, if size.x < 900.0 { 620.0 } else { 520.0 }),
+            6..=9 => egui::pos2(470.0, 465.0),
             _ => egui::pos2(650.0, 90.0),
         };
         vec![egui::Event::PointerMoved(egui::pos2(
@@ -6380,7 +6391,8 @@ mod tests {
     ) -> egui::Rect {
         let top = crate::theme::top_bar_height() + 4.0;
         let bottom = size.y - crate::theme::PLAYER_BAR_HEIGHT;
-        for _ in 0..24 {
+        let mut reset_to_top = false;
+        for _ in 0..32 {
             let painted = view_frame_sized(ctx, app, vec![], App::frame_ui, size);
             let found = painted
                 .iter()
@@ -6392,7 +6404,10 @@ mod tests {
             {
                 return rect;
             }
-            let delta = if found.is_some_and(|rect| rect.top() < top) {
+            let delta = if found.is_none() && !reset_to_top {
+                reset_to_top = true;
+                10000.0
+            } else if found.is_some_and(|rect| rect.top() < top) {
                 160.0
             } else {
                 -160.0
@@ -6521,11 +6536,7 @@ mod tests {
             assert!(caption.height() < 24.0, "{label}: {caption:?}");
             assert!(caption.right() <= size.x, "{label}: {caption:?}");
         }
-        let first_family: Vec<_> = crate::theme::MotionTheme::ALL
-            .into_iter()
-            .filter(|preset| preset.family() == crate::theme::MotionTheme::FAMILIES[0])
-            .take(3)
-            .collect();
+        let first_family = &crate::theme::MotionTheme::MAIN_COLOURS[..3];
         assert_eq!(
             first_family.len(),
             3,
@@ -6540,6 +6551,51 @@ mod tests {
         );
         assert!(second.left() > first.right());
         assert!(third.top() > first.bottom());
+    }
+
+    #[test]
+    fn main_colour_and_gradient_collections_apply_and_restore_at_native_widths() {
+        use crate::settings::ThemeChoice;
+        use crate::theme::MotionTheme;
+        for size in [egui::vec2(720.0, 900.0), egui::vec2(1280.0, 900.0)] {
+            let (ctx, mut app) = accessible_app(&format!("main-colour-quick-{}", size.x));
+            app.backend.shutdown();
+            app.open(Page::Settings);
+            ctx.data_mut(|data| {
+                data.insert_temp(
+                    egui::Id::new("settings-filter"),
+                    "Motion themes".to_string(),
+                )
+            });
+            for (caption, preset) in [
+                ("Main colours (16)", MotionTheme::MotionRed),
+                ("Main gradients (16)", MotionTheme::WhiteHorizon),
+            ] {
+                let tab = motion_gallery_visible_text(&ctx, &mut app, size, caption);
+                assert!(tab.height() < 24.0 && tab.right() <= size.x);
+                view_frame_sized(
+                    &ctx,
+                    &mut app,
+                    pointer_click(tab.center(), egui::PointerButton::Primary),
+                    App::frame_ui,
+                    size,
+                );
+                let card = motion_gallery_visible_text(&ctx, &mut app, size, preset.name());
+                view_frame_sized(
+                    &ctx,
+                    &mut app,
+                    pointer_click(card.center(), egui::PointerButton::Primary),
+                    App::frame_ui,
+                    size,
+                );
+                assert_eq!(app.settings.theme, ThemeChoice::Motion(preset));
+                assert_eq!(app.palette, preset.palette());
+                assert_eq!(app.theme_gradient(), preset.gradient());
+                let stored = serde_json::to_string(&app.settings).unwrap();
+                let restored: Settings = serde_json::from_str(&stored).unwrap();
+                assert_eq!(restored.theme, ThemeChoice::Motion(preset));
+            }
+        }
     }
 
     /// Every hue has its own visible, working tab, including the light
@@ -6894,6 +6950,43 @@ mod tests {
         }
     }
 
+    fn visible_settings_frame(
+        ctx: &egui::Context,
+        app: &mut App,
+        events: Vec<egui::Event>,
+        view: fn(&mut App, &mut egui::Ui),
+    ) -> Vec<(String, egui::Rect)> {
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1280.0, 2200.0),
+                )),
+                events,
+                ..Default::default()
+            },
+            |ui| view(app, ui),
+        );
+        output.textures_delta.clear();
+        fn walk(shape: &egui::Shape, clip: egui::Rect, text: &mut Vec<(String, egui::Rect)>) {
+            match shape {
+                egui::Shape::Text(shape) => {
+                    let rect = shape.galley.rect.translate(shape.pos.to_vec2());
+                    if clip.contains_rect(rect) {
+                        text.push((shape.galley.job.text.clone(), rect));
+                    }
+                }
+                egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| walk(shape, clip, text)),
+                _ => {}
+            }
+        }
+        let mut text = Vec::new();
+        for shape in &output.shapes {
+            walk(&shape.shape, shape.clip_rect, &mut text);
+        }
+        text
+    }
+
     /// Follow system offers the bundled colours too, with only palettes of
     /// the picker base, and preserves the chosen name in its displayed value.
     #[test]
@@ -6934,21 +7027,21 @@ mod tests {
                     data.insert_temp(egui::Id::new("settings-filter"), title.to_string())
                 });
                 for _ in 0..3 {
-                    view_frame(&ctx, &mut app, vec![], App::frame_ui);
+                    visible_settings_frame(&ctx, &mut app, vec![], App::frame_ui);
                 }
-                let painted = view_frame(&ctx, &mut app, vec![], App::frame_ui);
+                let painted = visible_settings_frame(&ctx, &mut app, vec![], App::frame_ui);
                 let picker = sidebar_text(&painted, own).center();
-                view_frame(
+                visible_settings_frame(
                     &ctx,
                     &mut app,
                     pointer_click(picker, egui::PointerButton::Primary),
                     App::frame_ui,
                 );
-                let painted = view_frame(&ctx, &mut app, vec![], App::frame_ui);
+                let painted = visible_settings_frame(&ctx, &mut app, vec![], App::frame_ui);
                 assert!(painted.iter().all(|(text, _)| text != wrong.name()));
                 let mut choice = None;
                 for _ in 0..48 {
-                    let painted = view_frame(&ctx, &mut app, vec![], App::frame_ui);
+                    let painted = visible_settings_frame(&ctx, &mut app, vec![], App::frame_ui);
                     if let Some((_, rect)) = painted
                         .iter()
                         .find(|(text, rect)| text == wanted.name() && rect.center().y > picker.y)
@@ -6958,7 +7051,7 @@ mod tests {
                     }
                     // Colours are grouped by hue, so light and dark solids
                     // can be below the first menu viewport too.
-                    view_frame(
+                    visible_settings_frame(
                         &ctx,
                         &mut app,
                         vec![
@@ -6973,13 +7066,13 @@ mod tests {
                         App::frame_ui,
                     );
                     for _ in 0..30 {
-                        view_frame(&ctx, &mut app, vec![], App::frame_ui);
+                        visible_settings_frame(&ctx, &mut app, vec![], App::frame_ui);
                     }
                 }
                 let choice = choice.unwrap_or_else(|| {
                     panic!("{} must remain reachable in {title}", wanted.name(),)
                 });
-                view_frame(
+                visible_settings_frame(
                     &ctx,
                     &mut app,
                     pointer_click(choice, egui::PointerButton::Primary),
@@ -7000,7 +7093,7 @@ mod tests {
                 let stored = serde_json::to_string(&app.settings).unwrap();
                 let restored: Settings = serde_json::from_str(&stored).unwrap();
                 assert_eq!(restored.theme_pair.filename(base), Some(wanted.filename()));
-                let painted = view_frame(&ctx, &mut app, vec![], App::frame_ui);
+                let painted = visible_settings_frame(&ctx, &mut app, vec![], App::frame_ui);
                 sidebar_text(&painted, wanted.name());
             }
         }
@@ -12279,13 +12372,16 @@ mod tests {
         let size = egui::vec2(1280.0, 900.0);
         for (at, expected) in [
             (0, Page::Home),
-            (320, Page::Playlist("pl0".into())),
-            (920, Page::Playlist("pl1".into())),
-            (1520, Page::Album("alb0".into())),
-            (2120, Page::Artist("art0".into())),
-            (2720, Page::Settings),
-            (3320, Page::Queue),
-            (3920, Page::Settings),
+            (480, Page::Playlist("pl0".into())),
+            (1280, Page::Playlist("pl1".into())),
+            (2080, Page::Album("alb0".into())),
+            (2880, Page::Artist("art0".into())),
+            (3680, Page::Settings),
+            (4480, Page::Queue),
+            (5280, Page::Home),
+            (6080, Page::Playlist("pl0".into())),
+            (6880, Page::Queue),
+            (7680, Page::Settings),
         ] {
             let events = tour.events(&mut app, &ctx, Some(Duration::from_millis(at)), size);
             assert!(matches!(events.as_slice(), [egui::Event::PointerMoved(_)]));
@@ -12293,11 +12389,11 @@ mod tests {
         }
         // Staying in a phase does not reopen its page over an interaction.
         app.open(Page::Home);
-        tour.events(&mut app, &ctx, Some(Duration::from_millis(4000)), size);
+        tour.events(&mut app, &ctx, Some(Duration::from_millis(8000)), size);
         assert_eq!(app.page(), &Page::Home);
         app.offline = false;
         assert!(
-            tour.events(&mut app, &ctx, Some(Duration::from_millis(4320)), size)
+            tour.events(&mut app, &ctx, Some(Duration::from_millis(8480)), size)
                 .is_empty()
         );
         assert_eq!(app.page(), &Page::Home);
