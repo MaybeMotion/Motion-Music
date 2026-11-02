@@ -584,14 +584,21 @@ pub(crate) fn run() -> eframe::Result<()> {
         }
     }
     #[cfg(feature = "demo")]
-    let motion_theme_demo = demo
-        && cli.demo_show.as_deref().is_some_and(|surfaces| {
-            surfaces
-                .split(',')
-                .any(|surface| surface.trim() == "motion-themes")
-        });
+    let demo_settings_filter = demo
+        .then(|| {
+            cli.demo_show.as_deref().and_then(|surfaces| {
+                surfaces
+                    .split(',')
+                    .find_map(|surface| match surface.trim() {
+                        "motion-themes" => Some("Motion themes"),
+                        "discord-settings" => Some("Discord"),
+                        _ => None,
+                    })
+            })
+        })
+        .flatten();
     #[cfg(feature = "demo")]
-    if motion_theme_demo {
+    if demo_settings_filter.is_some() {
         app.open(spotifast::model::Page::Settings);
     }
     #[cfg(feature = "demo")]
@@ -727,12 +734,9 @@ pub(crate) fn run() -> eframe::Result<()> {
                     }
                 }
                 #[cfg(feature = "demo")]
-                if motion_theme_demo {
+                if let Some(filter) = demo_settings_filter {
                     cc.egui_ctx.data_mut(|data| {
-                        data.insert_temp(
-                            egui::Id::new("settings-filter"),
-                            "Motion themes".to_owned(),
-                        );
+                        data.insert_temp(egui::Id::new("settings-filter"), filter.to_owned());
                     });
                 }
                 app.attach(&cc.egui_ctx);

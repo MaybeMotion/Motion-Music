@@ -14,8 +14,14 @@ const EDGE: f32 = 1.25;
 pub(super) enum Kind {
     CircleOut,
     CircleIn,
+    CornerCircle,
     Diagonal,
     Curtain,
+    SwipeLeft,
+    SwipeRight,
+    SwipeUp,
+    SwipeDown,
+    Diamond,
 }
 
 #[derive(Clone, Copy)]
@@ -258,14 +264,63 @@ impl Mask {
             progress: progress.clamp(0.0, 1.0),
         }
     }
+    fn is_circle(&self) -> bool {
+        matches!(
+            self.kind,
+            Kind::CircleOut | Kind::CircleIn | Kind::CornerCircle
+        )
+    }
+    fn circle_sides(&self) -> usize {
+        // Corner reveals travel twice as far as centre circles. Keep their
+        // feather just as smooth without increasing existing circle costs.
+        if self.kind == Kind::CornerCircle {
+            CIRCLE_SIDES * 2
+        } else {
+            CIRCLE_SIDES
+        }
+    }
+    fn origin(&self) -> Pos2 {
+        if self.kind == Kind::CornerCircle {
+            self.rect.min
+        } else {
+            self.rect.center()
+        }
+    }
     fn radius(&self) -> f32 {
-        let reach = self.rect.size().length() * 0.5 + EDGE * 2.0;
+        let reach = self.rect.size().length()
+            * if self.kind == Kind::CornerCircle {
+                1.0
+            } else {
+                0.5
+            }
+            + EDGE * 2.0;
         reach
             * if self.kind == Kind::CircleIn {
                 1.0 - self.progress
             } else {
                 self.progress
             }
+    }
+    fn horizontal_boundary(&self) -> f32 {
+        let travel = (self.rect.width() + EDGE * 4.0) * self.progress;
+        if self.kind == Kind::SwipeLeft {
+            self.rect.right() + EDGE * 2.0 - travel
+        } else {
+            self.rect.left() - EDGE * 2.0 + travel
+        }
+    }
+    fn vertical_boundary(&self) -> f32 {
+        let travel = (self.rect.height() + EDGE * 4.0) * self.progress;
+        if self.kind == Kind::SwipeUp {
+            self.rect.bottom() + EDGE * 2.0 - travel
+        } else {
+            self.rect.top() - EDGE * 2.0 + travel
+        }
+    }
+    fn diamond_radius(&self) -> f32 {
+        ((self.rect.width() + self.rect.height()) * 0.5 * std::f32::consts::FRAC_1_SQRT_2
+            + EDGE * 2.0)
+            * self.progress
     }
     fn projection(&self, p: Pos2) -> f32 {
         (p.x - self.rect.left()) + (p.y - self.rect.top()) * 0.65
@@ -274,15 +329,41 @@ impl Mask {
         (self.rect.width() + self.rect.height() * 0.65 + EDGE * 4.0) * self.progress - EDGE * 2.0
     }
     fn alpha(&self, p: Pos2) -> f32 {
+        if self.progress <= 0.0 {
+            return 1.0;
+        }
+        if self.progress >= 1.0 {
+            return 0.0;
+        }
         match self.kind {
-            Kind::CircleOut => ((p.distance(self.rect.center()) - self.radius() + EDGE)
-                / (EDGE * 2.0))
-                .clamp(0.0, 1.0),
+            Kind::CircleOut | Kind::CornerCircle => {
+                ((p.distance(self.origin()) - self.radius() + EDGE) / (EDGE * 2.0)).clamp(0.0, 1.0)
+            }
             Kind::CircleIn => ((self.radius() - p.distance(self.rect.center()) + EDGE)
                 / (EDGE * 2.0))
                 .clamp(0.0, 1.0),
             Kind::Diagonal => {
                 ((self.projection(p) - self.boundary() + EDGE) / (EDGE * 2.0)).clamp(0.0, 1.0)
+            }
+            Kind::SwipeLeft => {
+                ((self.horizontal_boundary() - p.x + EDGE) / (EDGE * 2.0)).clamp(0.0, 1.0)
+            }
+            Kind::SwipeRight => {
+                ((p.x - self.horizontal_boundary() + EDGE) / (EDGE * 2.0)).clamp(0.0, 1.0)
+            }
+            Kind::SwipeUp => {
+                ((self.vertical_boundary() - p.y + EDGE) / (EDGE * 2.0)).clamp(0.0, 1.0)
+            }
+            Kind::SwipeDown => {
+                ((p.y - self.vertical_boundary() + EDGE) / (EDGE * 2.0)).clamp(0.0, 1.0)
+            }
+            Kind::Diamond => {
+                let delta = p - self.rect.center();
+                (((delta.x.abs() + delta.y.abs()) * std::f32::consts::FRAC_1_SQRT_2
+                    - self.diamond_radius()
+                    + EDGE)
+                    / (EDGE * 2.0))
+                    .clamp(0.0, 1.0)
             }
             Kind::Curtain => {
                 let half = (self.rect.width() * 0.5 + EDGE * 2.0) * self.progress;
@@ -291,10 +372,10 @@ impl Mask {
         }
     }
     fn circle(&self, radius: f32) -> Vec<Plane> {
-        let center = self.rect.center().to_vec2();
-        (0..CIRCLE_SIDES)
+        let center = self.origin().to_vec2();
+        (0..self.circle_sides())
             .map(|n| {
-                let angle = n as f32 * std::f32::consts::TAU / CIRCLE_SIDES as f32;
+                let angle = n as f32 * std::f32::consts::TAU / self.circle_sides() as f32;
                 let normal = Vec2::new(angle.cos(), angle.sin());
                 Plane {
                     normal,
@@ -306,14 +387,14 @@ impl Mask {
     fn ring_sectors(&self) -> Vec<(Rect, [Plane; 4])> {
         let radius = self.radius();
         let inner = (radius - EDGE).max(0.0);
-        let outer = (radius + EDGE) / (std::f32::consts::PI / CIRCLE_SIDES as f32).cos();
-        (0..CIRCLE_SIDES)
+        let outer = (radius + EDGE) / (std::f32::consts::PI / self.circle_sides() as f32).cos();
+        (0..self.circle_sides())
             .map(|n| {
-                let a = (n as f32 - 0.5) * std::f32::consts::TAU / CIRCLE_SIDES as f32;
-                let b = (n as f32 + 0.5) * std::f32::consts::TAU / CIRCLE_SIDES as f32;
+                let a = (n as f32 - 0.5) * std::f32::consts::TAU / self.circle_sides() as f32;
+                let b = (n as f32 + 0.5) * std::f32::consts::TAU / self.circle_sides() as f32;
                 let a = Vec2::new(a.cos(), a.sin());
                 let b = Vec2::new(b.cos(), b.sin());
-                let center = self.rect.center();
+                let center = self.origin();
                 let corners = [
                     center + a * inner,
                     center + a * outer,
@@ -332,6 +413,98 @@ impl Mask {
             })
             .collect()
     }
+    fn bands(&self) -> Vec<(Plane, Vec<Plane>)> {
+        match self.kind {
+            Kind::Diagonal => vec![(
+                Plane {
+                    normal: Vec2::new(-1.0, -0.65),
+                    offset: -(self.rect.left() + self.rect.top() * 0.65 + self.boundary()) + EDGE,
+                },
+                Vec::new(),
+            )],
+            Kind::Curtain => {
+                let center = self.rect.center().x;
+                let half = (self.rect.width() * 0.5 + EDGE * 2.0) * self.progress;
+                vec![
+                    (
+                        Plane {
+                            normal: Vec2::X,
+                            offset: center - half + EDGE,
+                        },
+                        vec![Plane {
+                            normal: Vec2::X,
+                            offset: center,
+                        }],
+                    ),
+                    (
+                        Plane {
+                            normal: -Vec2::X,
+                            offset: -(center + half) + EDGE,
+                        },
+                        vec![Plane {
+                            normal: -Vec2::X,
+                            offset: -center,
+                        }],
+                    ),
+                ]
+            }
+            Kind::SwipeLeft => vec![(
+                Plane {
+                    normal: Vec2::X,
+                    offset: self.horizontal_boundary() + EDGE,
+                },
+                Vec::new(),
+            )],
+            Kind::SwipeRight => vec![(
+                Plane {
+                    normal: -Vec2::X,
+                    offset: -self.horizontal_boundary() + EDGE,
+                },
+                Vec::new(),
+            )],
+            Kind::SwipeUp => vec![(
+                Plane {
+                    normal: Vec2::Y,
+                    offset: self.vertical_boundary() + EDGE,
+                },
+                Vec::new(),
+            )],
+            Kind::SwipeDown => vec![(
+                Plane {
+                    normal: -Vec2::Y,
+                    offset: -self.vertical_boundary() + EDGE,
+                },
+                Vec::new(),
+            )],
+            Kind::Diamond => {
+                let center = self.rect.center().to_vec2();
+                let radius = self.diamond_radius();
+                [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)]
+                    .into_iter()
+                    .map(|(x, y)| {
+                        let normal = Vec2::new(x, y) * std::f32::consts::FRAC_1_SQRT_2;
+                        (
+                            Plane {
+                                normal: -normal,
+                                offset: -normal.dot(center) - radius + EDGE,
+                            },
+                            vec![
+                                Plane {
+                                    normal: Vec2::new(-x, 0.0),
+                                    offset: -x * center.x,
+                                },
+                                Plane {
+                                    normal: Vec2::new(0.0, -y),
+                                    offset: -y * center.y,
+                                },
+                            ],
+                        )
+                    })
+                    .collect()
+            }
+            Kind::CircleOut | Kind::CircleIn | Kind::CornerCircle => Vec::new(),
+        }
+    }
     fn mesh(&self, source: &Mesh) -> Mesh {
         if self.progress <= 0.0 {
             return source.clone();
@@ -341,13 +514,14 @@ impl Mask {
         }
         let mut output = Mesh::with_texture(source.texture_id);
         // Build circle planes once per mesh, not for every glyph triangle.
-        let circle = matches!(self.kind, Kind::CircleOut | Kind::CircleIn);
+        let circle = self.is_circle();
         let radius = self.radius();
         // Inscribe the solid/empty inner edge in the true circle so the
         // feather starts at zero alpha without a polygon-shaped seam.
         let inner = if circle {
             self.circle(
-                (radius - EDGE).max(0.0) * (std::f32::consts::PI / CIRCLE_SIDES as f32).cos(),
+                (radius - EDGE).max(0.0)
+                    * (std::f32::consts::PI / self.circle_sides() as f32).cos(),
             )
         } else {
             Vec::new()
@@ -362,6 +536,7 @@ impl Mask {
         } else {
             Vec::new()
         };
+        let bands = self.bands();
         for triangle in source.indices.as_chunks::<3>().0 {
             let points = [
                 source.vertices[triangle[0] as usize],
@@ -373,15 +548,15 @@ impl Mask {
                 continue;
             }
             if circle {
-                let center = self.rect.center();
+                let center = self.origin();
                 let closest = center.clamp(bounds.min, bounds.max);
                 let outside = closest.distance(center)
-                    > (radius + EDGE) / ((std::f32::consts::PI / CIRCLE_SIDES as f32).cos());
+                    > (radius + EDGE) / ((std::f32::consts::PI / self.circle_sides() as f32).cos());
                 let inside = points
                     .iter()
                     .all(|v| v.pos.distance(center) <= (radius - EDGE).max(0.0));
                 if outside || inside {
-                    let visible = if self.kind == Kind::CircleOut {
+                    let visible = if self.kind != Kind::CircleIn {
                         outside
                     } else {
                         inside
@@ -391,7 +566,7 @@ impl Mask {
                     }
                     continue;
                 }
-                if self.kind == Kind::CircleOut {
+                if self.kind != Kind::CircleIn {
                     for polygon in difference(points.to_vec(), &outer) {
                         emit(&mut output, &polygon);
                     }
@@ -413,44 +588,9 @@ impl Mask {
                     emit(&mut output, &polygon);
                 }
             } else {
-                let components = match self.kind {
-                    Kind::Diagonal => vec![Plane {
-                        normal: Vec2::new(-1.0, -0.65),
-                        offset: -(self.rect.left() + self.rect.top() * 0.65 + self.boundary())
-                            + EDGE,
-                    }],
-                    Kind::Curtain => {
-                        let half = (self.rect.width() * 0.5 + EDGE * 2.0) * self.progress;
-                        vec![
-                            Plane {
-                                normal: Vec2::X,
-                                offset: self.rect.center().x - half + EDGE,
-                            },
-                            Plane {
-                                normal: -Vec2::X,
-                                offset: -(self.rect.center().x + half) + EDGE,
-                            },
-                        ]
-                    }
-                    _ => unreachable!(),
-                };
-                for (index, plane) in components.into_iter().enumerate() {
-                    let points = if self.kind == Kind::Curtain {
-                        clip(
-                            points.to_vec(),
-                            Plane {
-                                normal: if index == 0 { Vec2::X } else { -Vec2::X },
-                                offset: if index == 0 {
-                                    self.rect.center().x
-                                } else {
-                                    -self.rect.center().x
-                                },
-                            },
-                            true,
-                        )
-                    } else {
-                        points.to_vec()
-                    };
+                for (plane, partition) in &bands {
+                    let plane = *plane;
+                    let points = intersection(points.to_vec(), partition);
                     // Split at both ends of the feather, retaining exact texture UVs.
                     let solid = clip(
                         points.clone(),
@@ -574,11 +714,17 @@ fn emit(mesh: &mut Mesh, polygon: &[Vertex]) {
 mod tests {
     use super::*;
 
-    const KINDS: [Kind; 4] = [
+    const KINDS: [Kind; 10] = [
         Kind::CircleOut,
         Kind::CircleIn,
+        Kind::CornerCircle,
         Kind::Diagonal,
         Kind::Curtain,
+        Kind::SwipeLeft,
+        Kind::SwipeRight,
+        Kind::SwipeUp,
+        Kind::SwipeDown,
+        Kind::Diamond,
     ];
 
     fn page_mesh(rect: Rect) -> Mesh {
@@ -658,6 +804,10 @@ mod tests {
         let rect = Rect::from_min_size(Pos2::ZERO, egui::vec2(640.0, 480.0));
         let original = page_mesh(rect);
         for kind in KINDS {
+            for point in [rect.center(), rect.min, rect.max] {
+                assert_eq!(Mask::new(rect, kind, 0.0).alpha(point), 1.0);
+                assert_eq!(Mask::new(rect, kind, 1.0).alpha(point), 0.0);
+            }
             assert_eq!(Mask::new(rect, kind, 0.0).mesh(&original), original);
             let finished = Mask::new(rect, kind, 1.0).mesh(&original);
             assert!(finished.indices.is_empty());
@@ -683,6 +833,122 @@ mod tests {
         ));
         assert!(revealed(rect, Kind::Curtain, 0.5, center));
         assert!(!revealed(rect, Kind::Curtain, 0.5, corner));
+    }
+
+    #[test]
+    fn corner_circle_feather_stays_smooth_at_wide_and_narrow_native_sizes() {
+        for size in [
+            egui::vec2(720.0, 900.0),
+            egui::vec2(1280.0, 900.0),
+            egui::vec2(1920.0, 1080.0),
+        ] {
+            let rect = Rect::from_min_size(egui::pos2(30.0, 50.0), size);
+            for progress in [0.1, 0.35, 0.7, 0.9] {
+                let mask = Mask::new(rect, Kind::CornerCircle, progress);
+                assert_eq!(mask.circle_sides(), 192);
+                assert_eq!(
+                    Mask::new(rect, Kind::CircleOut, progress).circle_sides(),
+                    96
+                );
+                let mesh = mask.mesh(&page_mesh(rect));
+                for angle in [0.01_f32, 0.17, 0.39, 0.64, 0.91, 1.27, 1.55] {
+                    let direction = Vec2::new(angle.cos(), angle.sin());
+                    for edge_offset in [-0.7, 0.0, 0.7] {
+                        let point = rect.min + direction * (mask.radius() + edge_offset);
+                        if rect.contains(point) {
+                            let expected = mask.alpha(point);
+                            let actual = sampled_alpha(&mesh, point);
+                            assert!(
+                                (expected - actual).abs() < 0.18,
+                                "corner circle at {size:?}, {progress}: expected {expected}, got {actual}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn directional_swipes_reveal_without_translating_texture_coordinates() {
+        let rect = Rect::from_min_size(egui::pos2(30.0, 50.0), egui::vec2(640.0, 480.0));
+        for (kind, first, last) in [
+            (
+                Kind::SwipeRight,
+                rect.left_center() + Vec2::X * 30.0,
+                rect.right_center() - Vec2::X * 30.0,
+            ),
+            (
+                Kind::SwipeLeft,
+                rect.right_center() - Vec2::X * 30.0,
+                rect.left_center() + Vec2::X * 30.0,
+            ),
+            (
+                Kind::SwipeDown,
+                rect.center_top() + Vec2::Y * 30.0,
+                rect.center_bottom() - Vec2::Y * 30.0,
+            ),
+            (
+                Kind::SwipeUp,
+                rect.center_bottom() - Vec2::Y * 30.0,
+                rect.center_top() + Vec2::Y * 30.0,
+            ),
+        ] {
+            let mask = Mask::new(rect, kind, 0.5);
+            assert_eq!(mask.alpha(first), 0.0, "{kind:?} reveals its starting edge");
+            assert_eq!(mask.alpha(last), 1.0, "{kind:?} retains its finishing edge");
+            for progress in [0.0, 0.1, 0.5, 0.9, 1.0] {
+                let mesh = Mask::new(rect, kind, progress).mesh(&page_mesh(rect));
+                for vertex in &mesh.vertices {
+                    assert!(
+                        (vertex.uv.to_vec2() - (vertex.pos - rect.min) / rect.size()).length()
+                            < 0.0001
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn corner_circle_and_diamond_open_from_their_actual_origins() {
+        let rect = Rect::from_min_size(egui::pos2(30.0, 50.0), egui::vec2(640.0, 480.0));
+        let near = rect.min + Vec2::splat(4.0);
+        let far = rect.max - Vec2::splat(4.0);
+        assert!(revealed(rect, Kind::CornerCircle, 0.25, near));
+        assert!(!revealed(rect, Kind::CornerCircle, 0.25, far));
+        assert!(revealed(rect, Kind::Diamond, 0.5, rect.center()));
+        for corner in [rect.min, rect.max, rect.left_bottom(), rect.right_top()] {
+            assert!(!revealed(rect, Kind::Diamond, 0.5, corner));
+        }
+        // A diamond edge is halfway between opposite quadrant boundaries.
+        let mask = Mask::new(rect, Kind::Diamond, 0.5);
+        let edge = rect.center() + Vec2::X * mask.diamond_radius() * std::f32::consts::SQRT_2;
+        assert!((mask.alpha(edge) - 0.5).abs() < 0.0001);
+    }
+
+    #[test]
+    fn every_mask_progressively_exposes_the_page_and_has_exact_endpoints() {
+        let rect = Rect::from_min_size(egui::pos2(30.0, 50.0), egui::vec2(640.0, 480.0));
+        for kind in KINDS {
+            for y in 0..7 {
+                for x in 0..9 {
+                    let point = rect.min
+                        + rect.size()
+                            * egui::vec2((x as f32 + 0.37) / 9.0, (y as f32 + 0.41) / 7.0);
+                    let mut previous = 1.0;
+                    for step in 0..=20 {
+                        let alpha = Mask::new(rect, kind, step as f32 / 20.0).alpha(point);
+                        assert!(
+                            alpha <= previous + 0.0001,
+                            "{kind:?} must not re-cover an exposed point"
+                        );
+                        previous = alpha;
+                    }
+                    assert_eq!(Mask::new(rect, kind, 0.0).alpha(point), 1.0);
+                    assert_eq!(Mask::new(rect, kind, 1.0).alpha(point), 0.0);
+                }
+            }
+        }
     }
 
     #[test]

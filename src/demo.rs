@@ -704,6 +704,7 @@ pub fn populate(app: &mut App) {
             id: Some("local-demo".into()),
             name: "Motion Music".into(),
             is_active: false,
+            is_private_session: false,
             is_restricted: false,
             volume_percent: Some(70),
             supports_volume: Some(true),
@@ -713,6 +714,7 @@ pub fn populate(app: &mut App) {
             id: Some("remote1".into()),
             name: "Kitchen speaker".into(),
             is_active: true,
+            is_private_session: false,
             is_restricted: false,
             volume_percent: Some(62),
             supports_volume: Some(true),
@@ -722,6 +724,7 @@ pub fn populate(app: &mut App) {
             id: Some("remote2".into()),
             name: "Pixel 9".into(),
             is_active: false,
+            is_private_session: false,
             is_restricted: false,
             volume_percent: Some(40),
             supports_volume: Some(true),
@@ -822,6 +825,7 @@ fn sonos_devices(app: &mut App, active: bool) {
             id: Some("office".into()),
             name: "Office".into(),
             is_active: true,
+            is_private_session: false,
             is_restricted: true,
             volume_percent: Some(8),
             supports_volume: Some(true),
@@ -6595,6 +6599,65 @@ mod tests {
                 let restored: Settings = serde_json::from_str(&stored).unwrap();
                 assert_eq!(restored.theme, ThemeChoice::Motion(preset));
             }
+        }
+    }
+
+    #[test]
+    fn discord_settings_are_accessible_at_native_widths_and_persist() {
+        use egui::accesskit::{Action as AccessibleAction, Role};
+        for width in [720.0, 1280.0] {
+            let (ctx, mut app) = accessible_app(&format!("discord-settings-{width}"));
+            app.backend.shutdown();
+            app.open(Page::Settings);
+            ctx.data_mut(|data| {
+                data.insert_temp(egui::Id::new("settings-filter"), "Discord".to_owned())
+            });
+            let frame = |app: &mut App, events| {
+                let mut output = ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(width, 900.0),
+                        )),
+                        events,
+                        ..Default::default()
+                    },
+                    |ui| app.frame_ui(ui),
+                );
+                output.textures_delta.clear();
+                output.platform_output.accesskit_update.unwrap()
+            };
+            frame(&mut app, vec![]);
+            let tree = frame(&mut app, vec![]);
+            let toggle = accessible_node(&tree, "Show listening activity", Role::CheckBox);
+            let tree = frame(
+                &mut app,
+                vec![accessible_action(toggle, AccessibleAction::Click, None)],
+            );
+            assert!(app.settings.discord_presence);
+            let field = accessible_node(&tree, "Discord Application ID", Role::TextInput);
+            frame(
+                &mut app,
+                vec![accessible_action(field, AccessibleAction::Focus, None)],
+            );
+            let tree = frame(
+                &mut app,
+                vec![
+                    keyboard(egui::Key::A, egui::Modifiers::COMMAND),
+                    egui::Event::Text("123456789012345678".into()),
+                ],
+            );
+            let save = accessible_node(&tree, "Save Application ID", Role::Button);
+            frame(
+                &mut app,
+                vec![accessible_action(save, AccessibleAction::Click, None)],
+            );
+            assert_eq!(app.settings.discord_application_id, "123456789012345678");
+            assert!(app.discord_status_text().contains("Preview only"));
+            let restored: Settings =
+                serde_json::from_str(&serde_json::to_string(&app.settings).unwrap()).unwrap();
+            assert!(restored.discord_presence);
+            assert_eq!(restored.discord_application_id, "123456789012345678");
         }
     }
 

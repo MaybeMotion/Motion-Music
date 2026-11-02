@@ -310,6 +310,10 @@ pub struct App {
     last_settings_save: Instant,
     pub backend: Backend,
     media_controls: Option<MediaControls>,
+    discord: crate::discord::Client,
+    discord_projection: crate::discord_activity::Projection,
+    /// Offline demos and isolated tests never contact the user's Discord client.
+    discord_live: bool,
     /// The desktop's light or dark preference, for "Follow system".
     #[cfg(target_os = "linux")]
     pub(crate) system_appearance: Option<crate::appearance::SystemAppearance>,
@@ -1054,6 +1058,9 @@ impl App {
             last_settings_save: Instant::now(),
             backend,
             media_controls,
+            discord: crate::discord::Client::default(),
+            discord_projection: crate::discord_activity::Projection::default(),
+            discord_live: options.restore_sign_in && options.media_controls,
             #[cfg(target_os = "linux")]
             system_appearance,
             media_art: None,
@@ -1345,6 +1352,7 @@ impl App {
     pub fn attach(&mut self, ctx: &egui::Context) {
         theme::install(ctx);
         self.desktop_audio.set_repaint_context(ctx.clone());
+        self.discord.attach(ctx);
         ctx.add_bytes_loader(std::sync::Arc::new(self.backend.art().clone()));
         ctx.add_image_loader(std::sync::Arc::new(self.backend.art().scaler()));
         // The covers the last window's egui held are gone with it.
@@ -4720,6 +4728,76 @@ impl App {
     /// Whether to offer hiding the mini player's taskbar entry.
     pub fn taskbar_setting_visible(&self) -> bool {
         self.taskbar_hiding_supported || self.windows_controls_visible()
+    }
+
+    /// Sends only confirmed catalog playback, never a resume preview,
+    /// local-file path, grant, device identity or audio sample.
+    fn sync_discord(&mut self) {
+        if !self.discord_live
+            || self.offline
+            || !self.settings.discord_presence
+            || self.user_id().is_none()
+        {
+            self.discord_projection.update(None, false, 0);
+            self.discord.update(None, None);
+            return;
+        }
+        let private = self
+            .remote_fresh()
+            .and_then(|remote| remote.state.device.as_ref())
+            .is_some_and(|device| device.is_private_session)
+            || self
+                .devices
+                .iter()
+                .any(|device| device.is_active && device.is_private_session);
+        let now = self.now_playing_live().map(|mut now| {
+            // Optimistic Play must not publish a song that has not started.
+            // Optimistic Pause may clear immediately, before its reply arrives.
+            now.playing &= if now.local {
+                self.local.playback == Playback::Playing
+            } else {
+                self.remote_fresh()
+                    .is_some_and(|remote| remote.state.is_playing)
+            };
+            now
+        });
+        let activity = self.discord_projection.update(
+            now.as_ref(),
+            private,
+            jiff::Timestamp::now().as_second(),
+        );
+        let id = self.settings.discord_application_id.trim();
+        self.discord
+            .update((!id.is_empty()).then_some(id), activity);
+    }
+
+    pub fn discord_status_text(&self) -> String {
+        let message = if self.offline || !self.discord_live {
+            "Preview only. Discord is not contacted."
+        } else if !self.settings.discord_presence {
+            "Off. Your listening activity is not shared."
+        } else if !crate::discord::valid_application_id(self.settings.discord_application_id.trim())
+        {
+            "Add a valid Discord Application ID to connect."
+        } else if self.user_id().is_none() {
+            "Sign in to Spotify to share your listening activity."
+        } else {
+            match self.discord.status() {
+                crate::discord::Status::Disabled => "Starting Discord connection.",
+                crate::discord::Status::Waiting => {
+                    "Open the Discord desktop app. Motion Music reconnects automatically."
+                }
+                crate::discord::Status::Connecting => "Connecting to Discord…",
+                crate::discord::Status::Connected if self.discord_projection.is_sharing() => {
+                    "Connected. Sharing your current track."
+                }
+                crate::discord::Status::Connected => {
+                    "Connected. Nothing is shared while playback is paused or private."
+                }
+                crate::discord::Status::Error(error) => return format!("Discord: {error}"),
+            }
+        };
+        gettext(self.locale, message).into_owned()
     }
 
     fn sync_media_controls(&mut self, ctx: &egui::Context) {
@@ -11702,6 +11780,24 @@ impl App {
             Action::OpenThemesFolder => {
                 self.backend.send(Command::OpenThemesFolder);
             }
+            Action::SetDiscordPresence(enabled) => {
+                self.settings.discord_presence = enabled;
+                self.mark_settings_dirty();
+                self.sync_discord();
+            }
+            Action::SetDiscordApplicationId(value) => {
+                let value = value.trim();
+                if value.is_empty() || crate::discord::valid_application_id(value) {
+                    self.settings.discord_application_id = value.to_owned();
+                    self.mark_settings_dirty();
+                    self.sync_discord();
+                } else {
+                    self.toast_error(gettext(
+                        self.locale,
+                        "Enter the numeric Application ID from Discord's Developer Portal.",
+                    ));
+                }
+            }
             Action::SettingsChanged => {
                 self.settings_dirty = true;
                 ctx.set_theme(self.theme_preference());
@@ -12432,6 +12528,7 @@ impl App {
         self.apply_actions(ctx);
         self.sync_desktop_audio();
         self.sync_media_controls(ctx);
+        self.sync_discord();
         self.sync_window_title(ctx);
         self.remember_geometry(ctx);
         #[cfg(target_os = "macos")]
@@ -12808,6 +12905,7 @@ impl App {
         self.refresh_frame_now();
         self.sync_desktop_audio();
         self.sync_media_controls(ctx);
+        self.sync_discord();
 
         if !self.toasts.is_empty() {
             ctx.request_repaint_after(TOAST_FRAME);
@@ -12975,6 +13073,7 @@ impl App {
 
     /// Final teardown at real quit.
     pub fn shutdown(&mut self) {
+        self.discord.shutdown();
         self.desktop_audio.set_enabled(false);
         self.save_state();
         self.flush_files();
@@ -13490,6 +13589,84 @@ mod tests {
     use crate::api::models::{
         Episode, Image, Page as ApiPage, ResumePoint, SavedEpisode, SavedTrack, SearchResults,
     };
+
+    #[test]
+    fn discord_demo_and_test_runs_never_contact_the_desktop_client() {
+        let mut app = test_app("discord-inert");
+        crate::demo::populate(&mut app);
+        app.apply(Action::SetDiscordPresence(true), &egui::Context::default());
+        assert_eq!(app.discord.status(), crate::discord::Status::Disabled);
+        assert!(!app.discord_projection.is_sharing());
+        assert!(app.discord_status_text().contains("Preview only"));
+        let previous = app.settings.discord_application_id.clone();
+        app.apply(
+            Action::SetDiscordApplicationId("not-a-token-or-id".into()),
+            &egui::Context::default(),
+        );
+        assert_eq!(app.settings.discord_application_id, previous);
+        assert!(!app.toasts.last().unwrap().message.contains("not-a-token"));
+        app.backend.shutdown();
+    }
+
+    #[test]
+    fn discord_publication_requires_confirmed_nonprivate_playback() {
+        let mut app = test_app("discord-confirmed-playback");
+        crate::demo::populate(&mut app);
+        app.offline = false;
+        app.discord_live = true;
+        app.settings.discord_presence = true;
+        // An absent app ID keeps the transport inert while testing projection.
+        app.settings.discord_application_id.clear();
+        app.local.track = None;
+        app.local.playback = Playback::Stopped;
+        app.remote = Some(RemoteSnapshot {
+            state: PlaybackState {
+                device: Some(Device {
+                    is_active: true,
+                    ..Device::default()
+                }),
+                is_playing: true,
+                item: Some(PlayableItem::Track(Track {
+                    id: Some("0123456789ABCDEFGHIJKL".into()),
+                    uri: "spotify:track:0123456789ABCDEFGHIJKL".into(),
+                    name: "Synthetic catalog song".into(),
+                    duration_ms: 180000,
+                    ..Track::default()
+                })),
+                ..PlaybackState::default()
+            },
+            received_at: Instant::now(),
+        });
+        app.sync_discord();
+        assert!(app.discord_projection.is_sharing());
+        app.remote
+            .as_mut()
+            .unwrap()
+            .state
+            .device
+            .as_mut()
+            .unwrap()
+            .is_private_session = true;
+        app.sync_discord();
+        assert!(!app.discord_projection.is_sharing());
+        app.remote
+            .as_mut()
+            .unwrap()
+            .state
+            .device
+            .as_mut()
+            .unwrap()
+            .is_private_session = false;
+        app.remote.as_mut().unwrap().state.is_playing = false;
+        app.optimistic_playing = Some((true, Instant::now()));
+        app.sync_discord();
+        assert!(
+            !app.discord_projection.is_sharing(),
+            "optimistic Play is not confirmed playback"
+        );
+        assert_eq!(app.discord.status(), crate::discord::Status::Disabled);
+        app.backend.shutdown();
+    }
 
     #[cfg(not(feature = "milkdrop"))]
     #[test]

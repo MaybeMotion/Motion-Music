@@ -2193,6 +2193,143 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         });
     }
 
+    let discord_title = gettext(locale, "Discord");
+    let discord_presence = gettext(locale, "Show listening activity");
+    let discord_rows = [
+        RowText::new(
+            discord_presence.clone(),
+            gettext(
+                locale,
+                "Share the current song, artist, artwork and progress as Listening to Motion Music in Discord. Requires the Discord desktop app. Paused, private and local-file playback is not shared.",
+            ),
+        ),
+        RowText::new(
+            gettext(locale, "Application ID"),
+            gettext(
+                locale,
+                "Motion Music is ready to use. Only change this public ID if you use your own Discord application. No bot token or client secret is needed.",
+            ),
+        ),
+        RowText::new(
+            gettext(locale, "Connection status"),
+            app.discord_status_text(),
+        ),
+    ];
+    if section_matches(&needle, &discord_title, &discord_rows) {
+        any_visible = true;
+        section(ui, &palette, &discord_title, |ui| {
+            filtered_row(
+                ui,
+                &palette,
+                &needle,
+                &discord_title,
+                &discord_rows[0],
+                |ui| {
+                    let mut enabled = app.settings.discord_presence;
+                    if widgets::switch(ui, &palette, &discord_presence, &mut enabled).changed() {
+                        app.actions.push(Action::SetDiscordPresence(enabled));
+                    }
+                },
+            );
+            filtered_row(
+                ui,
+                &palette,
+                &needle,
+                &discord_title,
+                &discord_rows[2],
+                |_| {},
+            );
+            if discord_rows[1].matches(&needle, &discord_title) {
+                let draft_id = ui.make_persistent_id("discord-application-id-draft");
+                let mut draft = ui
+                    .data(|data| data.get_temp::<String>(draft_id))
+                    .unwrap_or_else(|| app.settings.discord_application_id.clone());
+                theme::text(
+                    ui,
+                    discord_rows[1].title.as_ref(),
+                    theme::semibold(13.0),
+                    palette.text,
+                );
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(discord_rows[1].description.as_ref())
+                            .font(theme::regular(12.0))
+                            .color(palette.secondary),
+                    )
+                    .wrap(),
+                );
+                ui.add_space(6.0);
+                let field = widgets::text_edit(
+                    ui,
+                    locale,
+                    egui::TextEdit::singleline(&mut draft)
+                        .id(draft_id)
+                        .hint_text(gettext(locale, "Discord Application ID"))
+                        .desired_width(ui.available_width())
+                        .char_limit(32),
+                );
+                field.widget_info(|| {
+                    egui::WidgetInfo::labeled(
+                        egui::WidgetType::TextEdit,
+                        ui.is_enabled(),
+                        "Discord Application ID",
+                    )
+                });
+                let valid =
+                    draft.trim().is_empty() || crate::discord::valid_application_id(draft.trim());
+                let different = draft.trim() != app.settings.discord_application_id;
+                let enter =
+                    field.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter));
+                let save = ui
+                    .add_enabled_ui(valid && different, |ui| {
+                        theme::soft_button(
+                            ui,
+                            &palette,
+                            Some(Icon::Check),
+                            &gettext(locale, "Save Application ID"),
+                            false,
+                        )
+                    })
+                    .inner
+                    .clicked();
+                if valid && different && (save || enter) {
+                    draft = draft.trim().to_owned();
+                    app.actions
+                        .push(Action::SetDiscordApplicationId(draft.clone()));
+                }
+                if !valid {
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(gettext(
+                                locale,
+                                "Use the numeric Application ID, not a token or secret.",
+                            ))
+                            .font(theme::regular(12.0))
+                            .color(palette.danger),
+                        )
+                        .wrap(),
+                    );
+                }
+                ui.data_mut(|data| data.insert_temp(draft_id, draft));
+                ui.add_space(6.0);
+                if theme::soft_button(
+                    ui,
+                    &palette,
+                    Some(Icon::ExternalLink),
+                    &gettext(locale, "Discord Developer Portal"),
+                    false,
+                )
+                .clicked()
+                {
+                    app.actions.push(Action::OpenUrl(
+                        "https://discord.com/developers/applications".to_owned(),
+                    ));
+                }
+                ui.add_space(6.0);
+            }
+        });
+    }
+
     let storage = gettext(locale, "Storage");
     let storage_rows = [
         RowText::new(

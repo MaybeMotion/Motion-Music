@@ -745,6 +745,10 @@ pub struct Device {
     pub name: String,
     #[serde(default)]
     pub is_active: bool,
+    /// Supplied by Spotify's existing playback/device reads. Never publish
+    /// this device's track to Discord during a private session.
+    #[serde(default)]
+    pub is_private_session: bool,
     #[serde(default)]
     pub is_restricted: bool,
     #[serde(default)]
@@ -1127,5 +1131,22 @@ mod tests {
         let playlists = results.playlists.unwrap();
         assert_eq!(playlists.items.len(), 1);
         assert_eq!(playlists.next_offset(), Some(2));
+    }
+    #[test]
+    fn private_session_flag_survives_existing_device_and_playback_reads() {
+        let state: PlaybackState = serde_json::from_str(
+            r#"{"device":{"id":"private-device","is_private_session":true},"is_playing":true}"#,
+        )
+        .unwrap();
+        assert!(state.device.unwrap().is_private_session);
+        let old: Device = serde_json::from_str(r#"{"id":"old-device"}"#).unwrap();
+        assert!(!old.is_private_session);
+        let device = Device {
+            is_private_session: true,
+            ..Device::default()
+        };
+        let restored: Device =
+            serde_json::from_str(&serde_json::to_string(&device).unwrap()).unwrap();
+        assert!(restored.is_private_session);
     }
 }

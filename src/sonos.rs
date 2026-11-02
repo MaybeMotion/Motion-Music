@@ -136,6 +136,7 @@ pub fn device_row(receiver: &crate::zeroconf::Receiver, active: bool) -> Option<
         id: Some(receiver.device_id.clone().filter(|id| !id.is_empty())?),
         name: receiver.name.clone(),
         is_active: active,
+        is_private_session: false,
         is_restricted: false,
         volume_percent: None,
         supports_volume: Some(true),

@@ -739,3 +739,14 @@ in the playlist removes nothing; the playlist reloads and shows the error.
 The full Motion Music Windows build includes the projectM engine and one original embedded preset, so opening MilkDrop does not depend on a preset download. Optional preset packs keep their existing download routes. No new service, playback source, microphone or audio upload is added.
 
 MilkDrop takes Motion Music's post-EQ, pre-volume signal while native playback is active. Otherwise on Windows it can use the default output loopback, including Spotify and other audible apps, with automatic quiet-signal gain. It passes up to half a second of stereo PCM through a temporary local file-backed shared-memory ring to its child process, removed on close. Output capture remains active only while a visible effect needs it; an independently visible MilkDrop window can need audio while the main window is hidden. Locking the PC or turning the display off stops output capture.
+
+
+## Motion Music Discord listening activity
+
+Discord sharing is opt-in and starts off. Settings, Discord, Show listening activity enables a background connection to the local Discord desktop client. The included Motion Music application is identified by public ID `1566813127557783714`. No Discord account login, bot token, client secret, Discord OAuth grant or new Spotify authorization is used. A personal Discord application's public ID can be entered instead.
+
+The integration uses the confirmed now-playing catalogue metadata already held by Motion Music. It sends a custom Listening activity with track or episode title, artist or show, album text, supported public Spotify artwork, progress timestamps and a Spotify catalogue link. It does not ask Spotify for additional data, identify songs from Windows audio, or send audio, local-file paths, device identity or credentials. Only supported public Spotify artwork and catalogue hosts are accepted. Discord's desktop client receives the metadata over local IPC and publishes it using Discord's normal activity controls.
+
+Paused, private, local-file, signed-out, loading and resume-preview states are not shared. Disabling sharing or quitting clears the activity. Updates are coalesced and rate-limited; if a privacy clear cannot be sent within the rate limit, the connection closes rather than retaining the activity. The client reconnects when Discord starts. Socket work and reconnect delays do not run on the interface thread. Offline demo and isolated test modes never contact the user's Discord client.
+
+This integration provides Motion Music's custom Listening activity. Discord's native Spotify card and Listen Along are separate features of its Spotify account connection; Motion Music does not impersonate that integration.

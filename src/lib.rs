@@ -15,6 +15,8 @@ pub mod credentials;
 pub mod demo;
 pub mod desktop_audio;
 pub mod device_history;
+pub mod discord;
+pub mod discord_activity;
 pub mod emoji;
 pub mod eq;
 pub mod history;

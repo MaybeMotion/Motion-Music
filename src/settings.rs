@@ -392,6 +392,11 @@ pub struct Settings {
     /// How many frames a second the player bar's visualizer and the mini
     /// player's analyser draw; 0 is uncapped. MilkDrop has its own.
     pub visualizer_fps: u32,
+    /// Opt-in publishing of catalog listening metadata to the desktop Discord client.
+    pub discord_presence: bool,
+    /// Public Discord Application ID. Never a bot token or client secret.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub discord_application_id: String,
     /// Last local volume, 0..=65535.
     pub volume: u16,
     /// Whether the library sidebar is visible.
@@ -577,6 +582,8 @@ impl Default for Settings {
             player_bar_vis: PlayerBarVis::Off,
             player_bar_vis_click: true,
             visualizer_fps: crate::milkdrop::DEFAULT_FPS,
+            discord_presence: false,
+            discord_application_id: crate::discord_activity::DEFAULT_APPLICATION_ID.to_owned(),
             volume: (u16::MAX as u32 * 70 / 100) as u16,
             sidebar_visible: true,
             art_expanded: false,
@@ -1090,6 +1097,27 @@ impl ManualProxy {
 #[cfg(test)]
 mod tests {
     use super::Settings;
+
+    #[test]
+    fn discord_presence_is_opt_in_and_old_settings_remain_readable() {
+        let old: super::Settings = serde_json::from_str(r#"{"volume":1000}"#).unwrap();
+        assert!(!old.discord_presence);
+        assert_eq!(
+            old.discord_application_id,
+            crate::discord_activity::DEFAULT_APPLICATION_ID
+        );
+        let mut configured = old;
+        configured.discord_presence = true;
+        configured.discord_application_id = "123456789012345678".into();
+        let restored: super::Settings =
+            serde_json::from_str(&serde_json::to_string(&configured).unwrap()).unwrap();
+        assert!(restored.discord_presence);
+        assert_eq!(
+            restored.discord_application_id,
+            configured.discord_application_id
+        );
+        assert_eq!(restored.volume, 1000);
+    }
 
     #[test]
     fn bundled_system_pairs_survive_missing_or_corrupt_caches_without_files() {

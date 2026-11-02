@@ -57,80 +57,52 @@ pub(crate) fn arrival(ui: &Ui, id: Id, key: Id) -> f32 {
     opacity
 }
 
-/// The body of a newly selected page, including a different playlist or album.
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct PagePresentation {
-    opacity: f32,
-    offset: Vec2,
-}
-
-impl PagePresentation {
-    const SETTLED: Self = Self {
-        opacity: 1.0,
-        offset: Vec2::ZERO,
-    };
-}
-
-/// Short arrivals and wallpaper-style reveals share one shuffled mix.
+/// Every page transition reveals a fixed-layout new page through the old one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PageTransition {
-    Rise,
-    GlideLeft,
-    GlideRight,
-    SoftDrop,
-    DiagonalLift,
-    Dissolve,
     CircleOut,
     CircleIn,
+    CornerCircle,
     DiagonalSweep,
     Curtain,
+    SwipeLeft,
+    SwipeRight,
+    SwipeUp,
+    SwipeDown,
+    DiamondIris,
 }
 
 impl PageTransition {
     const ALL: [Self; 10] = [
-        Self::Rise,
-        Self::GlideLeft,
-        Self::GlideRight,
-        Self::SoftDrop,
-        Self::DiagonalLift,
-        Self::Dissolve,
         Self::CircleOut,
         Self::CircleIn,
+        Self::CornerCircle,
         Self::DiagonalSweep,
         Self::Curtain,
+        Self::SwipeLeft,
+        Self::SwipeRight,
+        Self::SwipeUp,
+        Self::SwipeDown,
+        Self::DiamondIris,
     ];
 
-    fn reveal(self) -> Option<reveal::Kind> {
+    fn reveal(self) -> reveal::Kind {
         match self {
-            Self::CircleOut => Some(reveal::Kind::CircleOut),
-            Self::CircleIn => Some(reveal::Kind::CircleIn),
-            Self::DiagonalSweep => Some(reveal::Kind::Diagonal),
-            Self::Curtain => Some(reveal::Kind::Curtain),
-            _ => None,
+            Self::CircleOut => reveal::Kind::CircleOut,
+            Self::CircleIn => reveal::Kind::CircleIn,
+            Self::CornerCircle => reveal::Kind::CornerCircle,
+            Self::DiagonalSweep => reveal::Kind::Diagonal,
+            Self::Curtain => reveal::Kind::Curtain,
+            Self::SwipeLeft => reveal::Kind::SwipeLeft,
+            Self::SwipeRight => reveal::Kind::SwipeRight,
+            Self::SwipeUp => reveal::Kind::SwipeUp,
+            Self::SwipeDown => reveal::Kind::SwipeDown,
+            Self::DiamondIris => reveal::Kind::Diamond,
         }
     }
 
     fn seconds(self) -> f32 {
-        if self.reveal().is_some() { 0.56 } else { 0.26 }
-    }
-
-    fn presentation(self, remaining: f32) -> PagePresentation {
-        let (offset, fade) = match self {
-            // Keep the original v7 slide and fade exactly as one choice.
-            Self::Rise => (egui::vec2(0.0, 18.0), 0.58),
-            Self::GlideLeft => (egui::vec2(-26.0, 0.0), 0.48),
-            Self::GlideRight => (egui::vec2(26.0, 0.0), 0.48),
-            Self::SoftDrop => (egui::vec2(0.0, -18.0), 0.52),
-            Self::DiagonalLift => (egui::vec2(18.0, 14.0), 0.50),
-            Self::Dissolve => (Vec2::ZERO, 0.72),
-            Self::CircleOut | Self::CircleIn | Self::DiagonalSweep | Self::Curtain => {
-                return PagePresentation::SETTLED;
-            }
-        };
-        PagePresentation {
-            opacity: 1.0 - fade * remaining,
-            offset: offset * remaining,
-        }
+        0.56
     }
 }
 
@@ -214,21 +186,9 @@ impl PageArrival {
         Self {
             key,
             started: None,
-            transition: PageTransition::Rise,
+            transition: PageTransition::CircleOut,
             choices: PageTransitions::default(),
         }
-    }
-
-    fn presentation(self, now: f64, seconds: f32) -> PagePresentation {
-        let Some(started) = self.started else {
-            return PagePresentation::SETTLED;
-        };
-        let elapsed = now - started;
-        if seconds <= 0.0 || !elapsed.is_finite() || elapsed >= f64::from(seconds) {
-            return PagePresentation::SETTLED;
-        }
-        let t = (elapsed.max(0.0) / f64::from(seconds)).clamp(0.0, 1.0) as f32;
-        self.transition.presentation((1.0 - t).powi(3))
     }
 }
 
@@ -286,9 +246,14 @@ pub(crate) fn finish(ctx: &egui::Context) {
 }
 
 fn reveal_progress(state: PageArrival, now: f64) -> f32 {
-    let t = state.started.map_or(1.0, |start| {
-        ((now - start) / f64::from(state.transition.seconds())).clamp(0.0, 1.0) as f32
-    });
+    let Some(start) = state.started else {
+        return 1.0;
+    };
+    let elapsed = now - start;
+    if !elapsed.is_finite() {
+        return 1.0;
+    }
+    let t = (elapsed / f64::from(state.transition.seconds())).clamp(0.0, 1.0) as f32;
     t * t * (3.0 - 2.0 * t)
 }
 
@@ -310,8 +275,8 @@ fn interrupt_reveal(ui: &Ui) -> bool {
     })
 }
 
-/// Page bodies use the original six arrivals and four native wallpaper-style
-/// reveals. Fixed chrome stays outside the cached viewport. Only the previous
+/// Page bodies use ten native wallpaper-style reveals without moving or fading
+/// their contents. Fixed chrome stays outside the cached viewport. Only the previous
 /// body is retained; geometry and existing textures stay in memory, with no
 /// screenshot, readback, file operation or new renderer dependency.
 ///
@@ -341,27 +306,25 @@ pub(crate) fn page<R>(
         if !reduced {
             state.transition = next_page_transition(ui.ctx(), &mut state.choices);
             state.started = Some(now);
-            if state.transition.reveal().is_some() {
-                let source = ui.data(|data| data.get_temp::<reveal::Snapshot>(snapshot_id));
-                if !was_active
-                    && source
-                        .as_ref()
-                        .is_some_and(|s| s.matches(ui, previous, scene))
-                {
-                    active = Some(PageReveal {
-                        source,
-                        picture: None,
-                        previous,
-                    });
-                } else {
-                    state.started = None;
-                }
+            let source = ui.data(|data| data.get_temp::<reveal::Snapshot>(snapshot_id));
+            if !was_active
+                && source
+                    .as_ref()
+                    .is_some_and(|s| s.matches(ui, previous, scene))
+            {
+                active = Some(PageReveal {
+                    source,
+                    picture: None,
+                    previous,
+                });
+            } else {
+                state.started = None;
             }
         } else {
             state.started = None;
         }
     }
-    if reduced || interrupt_reveal(ui) && state.transition.reveal().is_some() {
+    if reduced || interrupt_reveal(ui) {
         state.started = None;
         active = None;
     }
@@ -388,9 +351,8 @@ pub(crate) fn page<R>(
         .input(|input| input.pointer.interact_pos())
         .filter(|&point| ui.clip_rect().contains(point));
     let covered_pointer = active.is_some()
-        && body_pointer.is_some_and(|point| {
-            kind.is_some_and(|kind| !reveal::revealed(ui.clip_rect(), kind, progress, point))
-        });
+        && body_pointer
+            .is_some_and(|point| !reveal::revealed(ui.clip_rect(), kind, progress, point));
     if active.is_some()
         && body_pointer.is_some()
         && !covered_pointer
@@ -400,21 +362,17 @@ pub(crate) fn page<R>(
         active = None;
         progress = 1.0;
     }
-    let presentation = state.presentation(now, seconds);
     if state.started.is_some() {
         ui.ctx().request_repaint();
     }
     let clip = ui.clip_rect();
-    let rect = ui
-        .available_rect_before_wrap()
-        .translate(presentation.offset);
+    let rect = ui.available_rect_before_wrap();
     let mut child = ui.new_child(
         egui::UiBuilder::new()
             .id_salt("page-motion-body")
             .max_rect(rect),
     );
     child.set_clip_rect(clip);
-    child.multiply_opacity(presentation.opacity);
     if covered_pointer {
         let opacity = child.opacity();
         child.disable();
@@ -423,7 +381,7 @@ pub(crate) fn page<R>(
         child.set_opacity(opacity);
     }
     let result = add_contents(&mut child);
-    let measured = child.min_rect().translate(-presentation.offset);
+    let measured = child.min_rect();
     drop(child);
     ui.advance_cursor_after_rect(measured);
     // On a new reveal this runs after text layout, so it uses the font atlas
@@ -440,7 +398,7 @@ pub(crate) fn page<R>(
         }
         // The new body can grow the font atlas during this very draw. Never
         // paint a cached mesh with UVs normalized for its previous size.
-        if let (Some(picture), Some(kind)) = (&reveal.picture, kind) {
+        if let Some(picture) = &reveal.picture {
             if picture.valid(ui, scene) {
                 let shapes = picture.paint(ui, kind, progress);
                 let pending = PendingOverlay {
@@ -662,48 +620,28 @@ mod tests {
     }
 
     #[test]
-    fn original_rise_stays_in_the_mix_and_playlist_changes_start_new_arrivals() {
+    fn circular_playlist_changes_keep_the_body_fixed_and_start_fresh_reveals() {
         let ctx = egui::Context::default();
         seed_page_transitions(&ctx, 7);
         let (home, header, extent, alpha) = page_frame(&ctx, 0.0, "home", vec![]);
         assert_eq!(alpha, 255, "the first page starts fully visible");
-        choose_next(&ctx, PageTransition::Rise);
-        let (first, first_header, first_extent, first_alpha) =
-            page_frame(&ctx, 1.0, "playlist:first", vec![]);
-        assert!((first.rect.top() - home.rect.top() - 18.0).abs() < 0.01);
-        assert!(
-            first_alpha > 0 && first_alpha < 160,
-            "the original visible fade"
-        );
-        assert_eq!(first_header, header);
-        assert_eq!(first_extent, extent, "scroll content height stays constant");
-        let (middle, _, middle_extent, middle_alpha) =
-            page_frame(&ctx, 1.13, "playlist:first", vec![]);
-        assert!((middle.rect.top() - home.rect.top() - 2.25).abs() < 0.01);
-        assert!(middle_alpha > first_alpha && middle_alpha < 255);
-        assert_eq!(middle_extent, extent);
-        let (settled, _, settled_extent, settled_alpha) =
-            page_frame(&ctx, 1.3, "playlist:first", vec![]);
-        assert_eq!(settled.rect, home.rect);
-        assert_eq!(settled_extent, extent);
-        assert_eq!(settled_alpha, 255);
-        let (_, _, _, second_alpha) = page_frame(&ctx, 1.4, "playlist:second", vec![]);
+        choose_next(&ctx, PageTransition::CircleOut);
+        for time in [1.0, 1.13, 1.28, 1.57] {
+            let (page, page_header, page_extent, alpha) =
+                page_frame(&ctx, time, "playlist:first", vec![]);
+            assert_eq!(page.rect, home.rect, "page content never slides");
+            assert_eq!(page_header, header);
+            assert_eq!(page_extent, extent, "scroll content height stays constant");
+            assert_eq!(alpha, 255, "new page contents never fade");
+        }
+        assert!(page_state(&ctx).started.is_none());
+        let (second, _, _, alpha) = page_frame(&ctx, 1.7, "playlist:second", vec![]);
         let state = page_state(&ctx);
         assert_eq!(state.key, Id::new("playlist:second"));
-        assert_eq!(state.started, Some(1.4));
-        assert_ne!(
-            state.transition,
-            PageTransition::Rise,
-            "a different arrival is next"
-        );
-        if state.transition.reveal().is_some() {
-            assert_eq!(
-                second_alpha, 255,
-                "a reveal keeps the new page fully painted"
-            );
-        } else {
-            assert!(second_alpha > 0 && second_alpha < 255);
-        }
+        assert_eq!(state.started, Some(1.7));
+        assert_ne!(state.transition, PageTransition::CircleOut);
+        assert_eq!(second.rect, home.rect);
+        assert_eq!(alpha, 255);
     }
 
     #[test]
@@ -725,56 +663,33 @@ mod tests {
     }
 
     #[test]
-    fn all_arrivals_keep_controls_clickable_at_their_painted_positions() {
-        for transition in PageTransition::ALL
-            .into_iter()
-            .filter(|t| t.reveal().is_none())
-        {
+    fn every_transition_keeps_real_control_and_scroll_geometry_fixed() {
+        for transition in PageTransition::ALL {
             let ctx = egui::Context::default();
-            seed_page_transitions(&ctx, 7);
             let (original, header, extent, _) = page_frame(&ctx, 0.0, "home", vec![]);
             choose_next(&ctx, transition);
-            let (moved, moved_header, moved_extent, alpha) =
-                page_frame(&ctx, 1.0, "playlist:click", vec![egui::Event::PointerGone]);
-            let expected = transition.presentation(1.0).offset;
-            assert!((moved.rect.min - original.rect.min - expected).length() < 0.01);
-            assert_eq!(moved_header, header);
-            assert_eq!(moved_extent, extent);
-            assert!(alpha > 0 && alpha < 255);
-            let point = if expected.x > 0.0 {
-                egui::pos2(moved.rect.right() - 3.0, moved.rect.center().y)
-            } else if expected.x < 0.0 {
-                egui::pos2(moved.rect.left() + 3.0, moved.rect.center().y)
-            } else if expected.y > 0.0 {
-                egui::pos2(moved.rect.center().x, moved.rect.bottom() - 3.0)
-            } else if expected.y < 0.0 {
-                egui::pos2(moved.rect.center().x, moved.rect.top() + 3.0)
-            } else {
-                moved.rect.center()
-            };
-            if expected != Vec2::ZERO {
-                assert!(
-                    !original.rect.contains(point),
-                    "a newly exposed edge for {transition:?}"
+            for time in [1.0, 1.05, 1.2, 1.4, 1.57] {
+                let (page, page_header, page_extent, alpha) =
+                    page_frame(&ctx, time, "playlist:fixed", vec![egui::Event::PointerGone]);
+                assert_eq!(
+                    page.rect, original.rect,
+                    "{transition:?} never translates controls"
                 );
+                assert_eq!(page_header, header);
+                assert_eq!(page_extent, extent);
+                assert_eq!(alpha, 255, "{transition:?} never fades the new page");
             }
-            assert!(moved.rect.contains(point));
-            let (clicked, _, _, _) = page_frame(&ctx, 1.001, "playlist:click", click_events(point));
+            assert!(page_state(&ctx).started.is_none());
+            let (clicked, _, _, _) = page_frame(
+                &ctx,
+                1.6,
+                "playlist:fixed",
+                click_events(original.rect.center()),
+            );
             assert!(
                 clicked.clicked(),
-                "the painted {transition:?} target acts immediately"
+                "settled controls still act at their actual positions"
             );
-            let (middle, _, middle_extent, middle_alpha) =
-                page_frame(&ctx, 1.13, "playlist:click", vec![]);
-            assert!((middle.rect.min - original.rect.min - expected * 0.125).length() < 0.01);
-            assert!(middle_alpha > alpha && middle_alpha < 255);
-            assert_eq!(middle_extent, extent);
-            let (settled, _, settled_extent, settled_alpha) =
-                page_frame(&ctx, 1.3, "playlist:click", vec![]);
-            assert_eq!(settled.rect, original.rect);
-            assert_eq!(settled_extent, extent);
-            assert_eq!(settled_alpha, 255);
-            assert!(page_state(&ctx).started.is_none());
         }
     }
 
@@ -855,32 +770,27 @@ mod tests {
 
     #[test]
     fn every_style_finishes_exactly_and_nonfinite_timing_cannot_leave_it_running() {
-        for transition in PageTransition::ALL
-            .into_iter()
-            .filter(|t| t.reveal().is_none())
-        {
+        for transition in PageTransition::ALL {
             let mut state = PageArrival::new(Id::new("timing"));
             state.transition = transition;
             state.started = Some(1.0);
-            assert_eq!(state.presentation(1.26, 0.26), PagePresentation::SETTLED);
-            assert_eq!(state.presentation(1.0, 0.0), PagePresentation::SETTLED);
-            assert_eq!(
-                state.presentation(f64::NAN, 0.26),
-                PagePresentation::SETTLED
-            );
-            assert_eq!(
-                state.presentation(f64::INFINITY, 0.26),
-                PagePresentation::SETTLED
-            );
+            assert_eq!(reveal_progress(state, 1.0), 0.0);
+            assert_eq!(reveal_progress(state, 1.56), 1.0);
+            assert_eq!(reveal_progress(state, f64::NAN), 1.0);
+            assert_eq!(reveal_progress(state, f64::INFINITY), 1.0);
+            assert_eq!(reveal_progress(state, 0.0), 0.0);
+            let ctx = egui::Context::default();
+            page_frame(&ctx, 0.0, "home", vec![]);
+            choose_next(&ctx, transition);
+            page_frame(&ctx, 1.0, "playlist:finish", vec![]);
+            page_frame(&ctx, 1.57, "playlist:finish", vec![]);
+            assert!(page_state(&ctx).started.is_none());
         }
     }
 
     #[test]
     fn reveals_keep_layout_and_full_paint_and_block_covered_clicks() {
-        for transition in PageTransition::ALL
-            .into_iter()
-            .filter(|t| t.reveal().is_some())
-        {
+        for transition in PageTransition::ALL {
             let ctx = egui::Context::default();
             let (original, header, extent, _) = page_frame(&ctx, 0.0, "home", vec![]);
             choose_next(&ctx, transition);
@@ -924,45 +834,45 @@ mod tests {
 
     #[test]
     fn clicking_a_revealed_control_finishes_the_reveal_and_acts_immediately() {
-        for transition in PageTransition::ALL
-            .into_iter()
-            .filter(|t| t.reveal().is_some())
-        {
+        for transition in PageTransition::ALL {
             let ctx = egui::Context::default();
             page_frame(&ctx, 0.0, "home", vec![]);
             choose_next(&ctx, transition);
             page_frame(&ctx, 1.0, "playlist:reveal", vec![]);
-            let time = if transition == PageTransition::DiagonalSweep {
-                1.16
-            } else {
-                1.28
-            };
-            let (response, _, _, _) = page_frame(
-                &ctx,
-                time,
-                "playlist:reveal",
-                vec![egui::Event::PointerGone],
-            );
-            let state = page_state(&ctx);
-            let progress = reveal_progress(state, time);
-            let point = (1..10)
-                .flat_map(|y| {
-                    (1..10).map(move |x| {
-                        egui::pos2(
-                            response.rect.left() + response.rect.width() * x as f32 / 10.0,
-                            response.rect.top() + response.rect.height() * y as f32 / 10.0,
-                        )
+            let mut exposed = None;
+            for step in 1..10 {
+                let time = 1.0 + 0.056 * f64::from(step);
+                let (response, _, _, _) = page_frame(
+                    &ctx,
+                    time,
+                    "playlist:reveal",
+                    vec![egui::Event::PointerGone],
+                );
+                assert!(page_state(&ctx).started.is_some());
+                let progress = reveal_progress(page_state(&ctx), time);
+                let point = (1..10)
+                    .flat_map(|y| {
+                        (1..10).map(move |x| {
+                            egui::pos2(
+                                response.rect.left() + response.rect.width() * x as f32 / 10.0,
+                                response.rect.top() + response.rect.height() * y as f32 / 10.0,
+                            )
+                        })
                     })
-                })
-                .find(|&point| {
-                    reveal::revealed(
-                        egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(640.0, 480.0)),
-                        transition.reveal().unwrap(),
-                        progress,
-                        point,
-                    )
-                })
-                .expect("the control has a newly revealed portion");
+                    .find(|&point| {
+                        reveal::revealed(
+                            egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(640.0, 480.0)),
+                            transition.reveal(),
+                            progress,
+                            point,
+                        )
+                    });
+                if let Some(point) = point {
+                    exposed = Some((time, point));
+                    break;
+                }
+            }
+            let (time, point) = exposed.expect("the control is exposed before the reveal ends");
             let (clicked, _, _, _) =
                 page_frame(&ctx, time + 0.001, "playlist:reveal", click_events(point));
             assert!(

@@ -435,6 +435,7 @@ pub fn popup(app: &mut App, ctx: &egui::Context) {
                             // Named without its suffix; the row below adds it.
                             name: app.settings.device_name.clone(),
                             is_active: app.local.is_active(),
+                            is_private_session: false,
                             is_restricted: false,
                             volume_percent: Some(crate::app::volume_to_percent(app.local.volume)),
                             supports_volume: Some(true),
