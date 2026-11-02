@@ -1728,6 +1728,7 @@ pub fn apply_flags(app: &mut App, page: Option<&str>, show: Option<&str>) {
 pub struct MotionTour {
     started: Instant,
     phase: Option<usize>,
+    stress: bool,
 }
 
 #[cfg(feature = "demo")]
@@ -1736,12 +1737,77 @@ impl Default for MotionTour {
         Self {
             started: Instant::now(),
             phase: None,
+            stress: false,
         }
     }
 }
 
 #[cfg(feature = "demo")]
 impl MotionTour {
+    /// Repeat clicks and change destinations while a reveal is still running.
+    /// Used only by an isolated offline native capture, never OS input.
+    pub fn stress() -> Self {
+        Self {
+            stress: true,
+            ..Self::default()
+        }
+    }
+
+    fn stress_events(
+        &mut self,
+        app: &mut App,
+        ctx: &egui::Context,
+        elapsed: std::time::Duration,
+        size: egui::Vec2,
+    ) -> Vec<egui::Event> {
+        let phase = [480, 640, 800, 960, 1120, 1280, 1440, 1600, 2240, 3040]
+            .into_iter()
+            .take_while(|&at| elapsed.as_millis() >= at)
+            .count();
+        let changed = self.phase != Some(phase);
+        if changed {
+            self.phase = Some(phase);
+            match phase {
+                0 => {
+                    crate::ui::motion::seed_page_transitions(ctx, 7);
+                    app.open(Page::Home);
+                    app.settings.accent_from_art = false;
+                    app.settings.player_bar_vis = crate::settings::PlayerBarVis::Off;
+                }
+                1..=3 | 7 => app.open(Page::Playlist("pl0".into())),
+                4 => app.open(Page::Playlist("pl1".into())),
+                5 => app.open(Page::Album("alb0".into())),
+                6 => app.open(Page::Artist("art0".into())),
+                8 => app.open(Page::Queue),
+                9 => app.open(Page::Home),
+                10 => {
+                    app.open(Page::Settings);
+                    ctx.data_mut(|data| {
+                        data.insert_temp(
+                            egui::Id::new("settings-filter"),
+                            "main colours".to_owned(),
+                        )
+                    });
+                }
+                _ => {}
+            }
+        }
+        // Empty space in the collection hero: presses must not cancel a reveal.
+        let pos = egui::pos2((size.x - 35.0).max(280.0), 110.0);
+        let mut events = vec![egui::Event::PointerMoved(pos)];
+        if changed && matches!(phase, 2 | 3) {
+            for pressed in [true, false] {
+                events.push(egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                });
+            }
+        }
+        events
+    }
+
     fn phase(elapsed: std::time::Duration) -> usize {
         [
             480, 1280, 2080, 2880, 3680, 4480, 5280, 6080, 6880, 7680, 8480, 9120,
@@ -1762,6 +1828,14 @@ impl MotionTour {
     ) -> Vec<egui::Event> {
         if !app.offline {
             return Vec::new();
+        }
+        if self.stress {
+            return self.stress_events(
+                app,
+                ctx,
+                clock.unwrap_or_else(|| self.started.elapsed()),
+                size,
+            );
         }
         let phase = Self::phase(clock.unwrap_or_else(|| self.started.elapsed()));
         if self.phase != Some(phase) {

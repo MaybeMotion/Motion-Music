@@ -1,21 +1,21 @@
 # Motion Music GitHub upload
 
-This repository contains the tested Motion Music v10 customisation of
+This repository contains the tested Motion Music v11 customisation of
 [Spotifast](https://github.com/crmne/spotifast). The original MIT licence and
 upstream credits are retained. Native product source files are unchanged from
-the supplied Motion Music v10 source archive.
+the supplied Motion Music v11 source archive.
 
 ## Downloads and version
 
-The [motion-v10 release](https://github.com/MaybeMotion/Motion-Music/releases/tag/motion-v10)
-provides the Windows portable ZIP, source archive and checksums. `motion-v10` is
+The [motion-v11 release](https://github.com/MaybeMotion/Motion-Music/releases/tag/motion-v11)
+provides the Windows portable ZIP, source archive and checksums. `motion-v11` is
 the custom edition label. The underlying Cargo package and executable version
 remain `0.14.1`; the automatic updater remains disabled. Updates are downloaded
 manually from this repository.
 
 The supplied Windows build includes optional desktop Discord Listening activity,
 using the included public application ID with no OAuth or secret. Sharing starts
-off. Ten shuffled fixed-page reveals replace slide-ins. It retains all sixteen player-bar visualisers and the
+off. Ten shuffled fixed-page reveals retain complete backgrounds, survive repeated clicks and retarget rapid navigation continuously. The approved Vortex Bloom icon has matching transparent native exports. It retains all sixteen player-bar visualisers and the
 real MilkDrop/projectM window. It was validated on Windows x86_64 with default
 MilkDrop features and the demo feature. Separate builds without MilkDrop also
 retain an honest unavailable-engine control. Test and lint results are recorded

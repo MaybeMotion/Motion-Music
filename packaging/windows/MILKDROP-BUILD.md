@@ -1,8 +1,8 @@
 # Windows MilkDrop build and library source
 
 MilkDrop is part of the default feature set. Use the source/rebuild guide in
-`Motion-Music-v10-MilkDrop-source.zip`, published beside the matching application
-source on the [v10 release](https://github.com/MaybeMotion/Motion-Music/releases/tag/motion-v10).
+`Motion-Music-v11-MilkDrop-source.zip`, published beside the matching application
+source on the [v11 release](https://github.com/MaybeMotion/Motion-Music/releases/tag/motion-v11).
 That guide identifies all native source revisions, toolchain versions and
 relink instructions. The archive includes full projectm-sys/libprojectM source,
 vcpkg recipes/patches and the native source used by this build.

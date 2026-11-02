@@ -11,10 +11,10 @@ Original upstream declarations are retained, including differing licence
 version declarations in the projectM package metadata and licence files.
 
 Download the matching application and library source from the
-[Motion Music v10 release](https://github.com/MaybeMotion/Motion-Music/releases/tag/motion-v10):
+[Motion Music v11 release](https://github.com/MaybeMotion/Motion-Music/releases/tag/motion-v11):
 
-- `Motion-Music-v10-source.zip`: the application source, assets and Cargo.lock.
-- `Motion-Music-v10-MilkDrop-source.zip`: pinned projectm-sys/libprojectM source,
+- `Motion-Music-v11-source.zip`: the application source, assets and Cargo.lock.
+- `Motion-Music-v11-MilkDrop-source.zip`: pinned projectm-sys/libprojectM source,
   native dependency source and patches, MPL Rust source, full notices and
   rebuild instructions.
 

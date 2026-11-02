@@ -614,7 +614,13 @@ pub(crate) fn run() -> eframe::Result<()> {
     let demo_tour = cli.demo_show.as_deref().is_some_and(|surfaces| {
         surfaces
             .split(',')
-            .any(|surface| surface.trim() == "motion-tour")
+            .any(|surface| matches!(surface.trim(), "motion-tour" | "motion-stress"))
+    });
+    #[cfg(feature = "demo")]
+    let demo_stress = cli.demo_show.as_deref().is_some_and(|surfaces| {
+        surfaces
+            .split(',')
+            .any(|surface| surface.trim() == "motion-stress")
     });
     #[cfg(feature = "demo")]
     let demo_drag = cli
@@ -766,7 +772,13 @@ pub(crate) fn run() -> eframe::Result<()> {
                     #[cfg(feature = "demo")]
                     drag: demo_drag,
                     #[cfg(feature = "demo")]
-                    tour: demo_tour.then(spotifast::demo::MotionTour::default),
+                    tour: demo_tour.then(|| {
+                        if demo_stress {
+                            spotifast::demo::MotionTour::stress()
+                        } else {
+                            spotifast::demo::MotionTour::default()
+                        }
+                    }),
                     stalls: fastframe_shell::StallWatch::default(),
                     screen_asked: None,
                 }))

@@ -1,5 +1,5 @@
 //! CPU geometry for short native page reveals. No renderer callbacks or screenshots.
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use egui::epaint::{ClippedPrimitive, ClippedShape, Mesh, Primitive, Vertex};
 use egui::{Color32, Pos2, Rect, Shape, Vec2};
@@ -35,6 +35,27 @@ impl Plane {
     }
 }
 
+/// Body metadata recorded while its Ui exists. Shapes are collected only
+/// after the enclosing Frame has replaced its background placeholder.
+#[derive(Clone)]
+pub(super) struct Capture {
+    key: egui::Id,
+    scene: egui::Id,
+    rect: Rect,
+    pixels_per_point: f32,
+    appearance: egui::Visuals,
+    layer: egui::LayerId,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct Cover {
+    pub kind: Kind,
+    pub progress: f32,
+    pub first_shape: usize,
+    pub last_shape: usize,
+    pub opaque: bool,
+}
+
 #[derive(Clone)]
 pub(super) struct Snapshot {
     key: egui::Id,
@@ -43,6 +64,11 @@ pub(super) struct Snapshot {
     pixels_per_point: f32,
     appearance: egui::Visuals,
     shapes: Arc<[ClippedShape]>,
+    font_size: [usize; 2],
+    opaque: bool,
+    // The underlay precedes the cached old-page overlay. On retarget we can
+    // discard only its safely occluded geometry, rather than stacking pages.
+    cover: Option<(Kind, f32, usize, usize)>,
     // Keep album art alive even when navigation drops its last application handle.
     textures: Arc<[egui::TextureHandle]>,
 }
@@ -54,6 +80,7 @@ pub(super) struct Picture {
     pixels_per_point: f32,
     appearance: egui::Visuals,
     meshes: Arc<[ClippedPrimitive]>,
+    opaque: bool,
     textures: Arc<[(egui::TextureId, [usize; 2])]>,
     _handles: Arc<[egui::TextureHandle]>,
 }
@@ -103,41 +130,111 @@ fn retain_textures(
     )
 }
 
-/// The current layer includes the page canvas painted before the body. Clip
-/// that canvas and all content to the body viewport, excluding fixed chrome.
-pub(super) fn capture(ui: &egui::Ui, key: egui::Id, scene: egui::Id) -> Option<Snapshot> {
+pub(super) fn prepare(ui: &egui::Ui, key: egui::Id, scene: egui::Id) -> Option<Capture> {
     let rect = ui.clip_rect();
-    if !rect.is_finite() || !rect.is_positive() {
-        return None;
-    }
-    let shapes = ui.ctx().graphics(|g| {
-        let list = g.get(ui.layer_id())?;
-        let mut shapes = Vec::new();
-        for entry in list.all_entries() {
-            if entry.clip_rect.intersects(rect)
-                && entry.shape.visual_bounding_rect().intersects(rect)
-            {
-                if shapes.len() == MAX_SHAPES {
-                    return None;
-                }
-                shapes.push(ClippedShape {
-                    clip_rect: entry.clip_rect.intersect(rect),
-                    shape: entry.shape.clone(),
-                });
-            }
-        }
-        Some(shapes)
-    })?;
-    let textures = retain_textures(ui.ctx(), &shapes)?;
-    Some(Snapshot {
+    (rect.is_finite() && rect.is_positive()).then(|| Capture {
         key,
         scene,
         rect,
         pixels_per_point: ui.pixels_per_point(),
         appearance: ui.visuals().clone(),
-        shapes: shapes.into(),
-        textures,
+        layer: ui.layer_id(),
     })
+}
+
+fn mesh_budget(shape: &Shape) -> (usize, usize) {
+    match shape {
+        Shape::Mesh(mesh) => (mesh.vertices.len(), mesh.indices.len()),
+        Shape::Vec(shapes) => shapes.iter().map(mesh_budget).fold((0, 0), |a, b| {
+            (a.0.saturating_add(b.0), a.1.saturating_add(b.1))
+        }),
+        _ => (0, 0),
+    }
+}
+
+impl Capture {
+    pub(super) fn complete(&self, ctx: &egui::Context, cover: Option<Cover>) -> Option<Snapshot> {
+        let rect = self.rect;
+        let (shapes, underlay_end, overlay_end, opaque) = ctx.graphics(|g| {
+            let list = g.get(self.layer)?;
+            let mut shapes = Vec::new();
+            let (mut underlay_end, mut overlay_end) = (0, 0);
+            let (mut vertices, mut indices) = (0_usize, 0_usize);
+            let mut opaque = false;
+            for (index, entry) in list.all_entries().enumerate() {
+                if entry.clip_rect.intersects(rect)
+                    && entry.shape.visual_bounding_rect().intersects(rect)
+                {
+                    let cost = mesh_budget(&entry.shape);
+                    vertices = vertices.saturating_add(cost.0);
+                    indices = indices.saturating_add(cost.1);
+                    if shapes.len() == MAX_SHAPES
+                        || vertices > MAX_VERTICES
+                        || indices > MAX_INDICES
+                    {
+                        return None;
+                    }
+                    if let Shape::Rect(background) = &entry.shape {
+                        opaque |= background.fill.a() == 255
+                            && background.corner_radius == egui::CornerRadius::ZERO
+                            && background.brush.is_none()
+                            && background.blur_width == 0.0
+                            && background.angle == 0.0
+                            && background.rect.contains_rect(rect)
+                            && entry.clip_rect.contains_rect(rect);
+                    }
+                    if cover.is_some_and(|cover| index < cover.first_shape) {
+                        underlay_end += 1;
+                    }
+                    if cover.is_some_and(|cover| index <= cover.last_shape) {
+                        overlay_end += 1;
+                    }
+                    shapes.push(ClippedShape {
+                        clip_rect: entry.clip_rect.intersect(rect),
+                        shape: entry.shape.clone(),
+                    });
+                }
+            }
+            Some((shapes, underlay_end, overlay_end, opaque))
+        })?;
+        let textures = retain_textures(ctx, &shapes)?;
+        Some(Snapshot {
+            key: self.key,
+            scene: self.scene,
+            rect,
+            pixels_per_point: self.pixels_per_point,
+            appearance: self.appearance.clone(),
+            shapes: shapes.into(),
+            font_size: ctx.fonts(|fonts| fonts.font_image_size()),
+            opaque,
+            cover: cover
+                .filter(|cover| cover.opaque)
+                .map(|cover| (cover.kind, cover.progress, underlay_end, overlay_end)),
+            textures,
+        })
+    }
+}
+
+#[cfg(test)]
+fn capture(ui: &egui::Ui, key: egui::Id, scene: egui::Id) -> Option<Snapshot> {
+    prepare(ui, key, scene)?.complete(ui.ctx(), None)
+}
+
+fn renormalize_font_meshes(shape: &mut Shape, old: [usize; 2], new: [usize; 2]) {
+    match shape {
+        Shape::Mesh(mesh) if mesh.texture_id == egui::TextureId::default() && old != new => {
+            let scale = egui::vec2(old[0] as f32 / new[0] as f32, old[1] as f32 / new[1] as f32);
+            for vertex in &mut Arc::make_mut(mesh).vertices {
+                vertex.uv = (vertex.uv.to_vec2() * scale).to_pos2();
+            }
+        }
+        Shape::Vec(shapes) => {
+            for shape in shapes {
+                renormalize_font_meshes(shape, old, new);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn matching(ui: &egui::Ui, rect: Rect, ppp: f32, colours: &egui::Visuals) -> bool {
@@ -161,16 +258,50 @@ impl Snapshot {
         if !self.matches(ui, previous, scene) {
             return None;
         }
-        let meshes = ui
-            .ctx()
-            .tessellate(self.shapes.to_vec(), self.pixels_per_point);
+        let font_size = ui.ctx().fonts(|fonts| fonts.font_image_size());
+        let mut shapes = self.shapes.to_vec();
+        // Composite snapshots include normalized glyph meshes from the prior
+        // reveal as well as raw text. Atlas growth preserves glyph pixels,
+        // so only the existing meshes need their UV denominator updated.
+        for shape in &mut shapes {
+            renormalize_font_meshes(&mut shape.shape, self.font_size, font_size);
+        }
+        let meshes = if let Some((kind, progress, underlay_end, overlay_end)) = self.cover {
+            let mut result = Vec::new();
+            if progress > 0.0 {
+                let underlay = ui
+                    .ctx()
+                    .tessellate(shapes[..underlay_end].to_vec(), self.pixels_per_point);
+                let mask = Mask::new(self.rect, kind, progress);
+                for mut primitive in underlay {
+                    let Primitive::Mesh(mesh) = &primitive.primitive else {
+                        return None;
+                    };
+                    let mesh = mask.underlay(mesh);
+                    if !mesh.indices.is_empty() {
+                        primitive.primitive = Primitive::Mesh(mesh);
+                        result.push(primitive);
+                    }
+                }
+            }
+            result.extend(ui.ctx().tessellate(
+                shapes[underlay_end..overlay_end].to_vec(),
+                self.pixels_per_point,
+            ));
+            result.extend(
+                ui.ctx()
+                    .tessellate(shapes[overlay_end..].to_vec(), self.pixels_per_point),
+            );
+            result
+        } else {
+            ui.ctx().tessellate(shapes, self.pixels_per_point)
+        };
         let mut vertices = 0;
         let mut indices = 0;
         let mut textures = Vec::new();
         // The texture manager receives the atlas update at end_pass. During
         // layout the font image already has its new size, which tessellate
         // uses to normalize glyph UVs.
-        let font_size = ui.ctx().fonts(|fonts| fonts.font_image_size());
         let manager = ui.ctx().tex_manager();
         let manager = manager.read();
         for primitive in &meshes {
@@ -199,6 +330,7 @@ impl Snapshot {
             pixels_per_point: self.pixels_per_point,
             appearance: self.appearance.clone(),
             meshes: meshes.into(),
+            opaque: self.opaque,
             textures: textures.into(),
             _handles: self.textures.clone(),
         })
@@ -206,6 +338,15 @@ impl Snapshot {
 }
 
 impl Picture {
+    pub(super) fn opaque(&self) -> bool {
+        self.opaque
+    }
+
+    #[cfg(test)]
+    pub(super) fn primitives(&self) -> &[ClippedPrimitive] {
+        &self.meshes
+    }
+
     pub(super) fn valid(&self, ui: &egui::Ui, scene: egui::Id) -> bool {
         if self.scene != scene || !matching(ui, self.rect, self.pixels_per_point, &self.appearance)
         {
@@ -505,6 +646,79 @@ impl Mask {
             Kind::CircleOut | Kind::CircleIn | Kind::CornerCircle => Vec::new(),
         }
     }
+    fn underlay(&self, source: &Mesh) -> Mesh {
+        if self.progress <= 0.0 {
+            return Mesh::with_texture(source.texture_id);
+        }
+        if self.progress >= 1.0 {
+            return source.clone();
+        }
+        let mut output = Mesh::with_texture(source.texture_id);
+        let circle = self.is_circle();
+        // A whole extra feather width keeps all partially transparent edge
+        // pixels backed by the original new page, with no double attenuation.
+        let radius = if self.kind == Kind::CircleIn {
+            (self.radius() - EDGE * 2.0).max(0.0)
+                * (std::f32::consts::PI / self.circle_sides() as f32).cos()
+        } else {
+            self.radius() + EDGE * 2.0
+        };
+        let planes = if circle {
+            self.circle(radius)
+        } else {
+            Vec::new()
+        };
+        let bands = self.bands();
+        for triangle in source.indices.as_chunks::<3>().0 {
+            let points = triangle.map(|index| source.vertices[index as usize]);
+            let bounds = Rect::from_points(&points.map(|vertex| vertex.pos));
+            if !bounds.intersects(self.rect) {
+                continue;
+            }
+            if circle {
+                let center = self.origin();
+                let outside = center.clamp(bounds.min, bounds.max).distance(center)
+                    > radius / (std::f32::consts::PI / self.circle_sides() as f32).cos();
+                let inside = points
+                    .iter()
+                    .all(|vertex| vertex.pos.distance(center) <= radius);
+                if outside || inside {
+                    if (self.kind == Kind::CircleIn && outside)
+                        || (self.kind != Kind::CircleIn && inside)
+                    {
+                        emit(&mut output, &points);
+                    }
+                    continue;
+                }
+            }
+            let polygons = if circle {
+                if self.kind == Kind::CircleIn {
+                    difference(points.to_vec(), &planes)
+                } else {
+                    vec![intersection(points.to_vec(), &planes)]
+                }
+            } else {
+                let mut remaining = vec![points.to_vec()];
+                for (plane, partition) in &bands {
+                    let mut opaque = partition.clone();
+                    opaque.push(Plane {
+                        offset: plane.offset - EDGE * 3.0,
+                        ..*plane
+                    });
+                    remaining = remaining
+                        .into_iter()
+                        .flat_map(|polygon| difference(polygon, &opaque))
+                        .collect();
+                }
+                remaining
+            };
+            for polygon in polygons {
+                emit(&mut output, &polygon);
+            }
+        }
+        compact_mesh(output)
+    }
+
     fn mesh(&self, source: &Mesh) -> Mesh {
         if self.progress <= 0.0 {
             return source.clone();
@@ -620,7 +834,7 @@ impl Mask {
                 }
             }
         }
-        output
+        compact_mesh(output)
     }
 }
 
@@ -708,6 +922,47 @@ fn emit(mesh: &mut Mesh, polygon: &[Vertex]) {
     for n in 1..polygon.len() - 1 {
         mesh.add_triangle(start, start + n as u32, start + n as u32 + 1);
     }
+}
+
+/// Clipping adjacent triangles repeatedly otherwise retains three copies of
+/// shared corners and zero-area fan triangles on every retarget. Re-index only
+/// exactly identical vertices, preserving positions, colours, UVs and draw order.
+fn compact_mesh(source: Mesh) -> Mesh {
+    let mut mesh = Mesh::with_texture(source.texture_id);
+    let mut vertices = HashMap::with_capacity(source.vertices.len());
+    let mut remap = vec![None; source.vertices.len()];
+    for triangle in source.indices.as_chunks::<3>().0 {
+        let [a, b, c] = triangle.map(|index| source.vertices[index as usize]);
+        let cross = f64::from(b.pos.x - a.pos.x) * f64::from(c.pos.y - a.pos.y)
+            - f64::from(b.pos.y - a.pos.y) * f64::from(c.pos.x - a.pos.x);
+        if cross == 0.0
+            || [a, b, c]
+                .iter()
+                .all(|vertex| vertex.color == Color32::TRANSPARENT)
+        {
+            continue;
+        }
+        for &index in triangle {
+            let mapped = *remap[index as usize].get_or_insert_with(|| {
+                let vertex = source.vertices[index as usize];
+                let bits = |value: f32| if value == 0.0 { 0 } else { value.to_bits() };
+                let key = [
+                    bits(vertex.pos.x),
+                    bits(vertex.pos.y),
+                    bits(vertex.uv.x),
+                    bits(vertex.uv.y),
+                    u32::from_le_bytes(vertex.color.to_array()),
+                ];
+                *vertices.entry(key).or_insert_with(|| {
+                    let index = mesh.vertices.len() as u32;
+                    mesh.vertices.push(vertex);
+                    index
+                })
+            });
+            mesh.indices.push(mapped);
+        }
+    }
+    mesh
 }
 
 #[cfg(test)]
@@ -967,6 +1222,212 @@ mod tests {
         assert_eq!(middle.pos, egui::pos2(2.0, 1.0));
         assert_eq!(middle.uv, egui::pos2(0.25, 0.125));
         assert_eq!(middle.color.to_array(), [40, 60, 80, 125]);
+    }
+
+    #[test]
+    fn exact_mesh_compaction_preserves_additive_colours_uvs_and_overdraw_order() {
+        let mut source = Mesh::default();
+        source.add_rect_with_uv(
+            Rect::from_min_size(Pos2::ZERO, egui::vec2(40.0, 30.0)),
+            Rect::from_min_max(egui::pos2(0.2, 0.3), egui::pos2(0.4, 0.7)),
+            Color32::from_rgb_additive(120, 80, 30),
+        );
+        let expected = source
+            .indices
+            .iter()
+            .map(|&index| source.vertices[index as usize])
+            .collect::<Vec<_>>();
+        source.vertices.extend(source.vertices.clone());
+        source
+            .indices
+            .extend(source.indices.clone().into_iter().map(|index| index + 4));
+        // Degenerate and wholly invisible triangles may disappear. Repeated
+        // visible triangles must remain: their overdraw affects compositing.
+        source.indices.extend([0, 0, 1]);
+        source.add_colored_rect(
+            Rect::from_min_size(egui::pos2(50.0, 50.0), egui::vec2(10.0, 10.0)),
+            Color32::TRANSPARENT,
+        );
+        let compact = compact_mesh(source);
+        assert_eq!(compact.vertices.len(), 4);
+        assert_eq!(compact.indices.len(), 12);
+        let actual = compact
+            .indices
+            .iter()
+            .map(|&index| compact.vertices[index as usize])
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected.repeat(2));
+    }
+
+    #[test]
+    fn pruning_hidden_underlay_preserves_an_opaque_composite_including_large_circle_edges() {
+        for size in [egui::vec2(640.0, 480.0), egui::vec2(3840.0, 2160.0)] {
+            let rect = Rect::from_min_size(egui::pos2(17.0, 31.0), size);
+            let mut source = page_mesh(rect);
+            for vertex in &mut source.vertices {
+                vertex.color = Color32::WHITE;
+            }
+            for kind in KINDS {
+                for progress in [0.001, 0.02, 0.3, 0.6, 0.95, 0.999] {
+                    let mask = Mask::new(rect, kind, progress);
+                    let old = mask.mesh(&source);
+                    let new = mask.underlay(&source);
+                    let mut points = (0..12)
+                        .flat_map(|y| {
+                            (0..16).map(move |x| {
+                                rect.min
+                                    + egui::vec2(
+                                        (x as f32 + 0.37) * size.x / 16.0,
+                                        (y as f32 + 0.61) * size.y / 12.0,
+                                    )
+                            })
+                        })
+                        .collect::<Vec<_>>();
+                    if mask.is_circle() {
+                        for angle in 0..mask.circle_sides() * 2 {
+                            let angle =
+                                angle as f32 * std::f32::consts::PI / mask.circle_sides() as f32;
+                            for edge in [-2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0] {
+                                let point = mask.origin()
+                                    + egui::vec2(angle.cos(), angle.sin())
+                                        * (mask.radius() + EDGE * edge);
+                                if rect.shrink(0.01).contains(point) {
+                                    points.push(point);
+                                }
+                            }
+                        }
+                    }
+                    for point in points {
+                        // sampled_alpha's existing helper normalizes by its
+                        // usual 240-alpha fixture; these canvases are 255.
+                        let old = (sampled_alpha(&old, point) * 240.0 / 255.0).clamp(0.0, 1.0);
+                        let new = (sampled_alpha(&new, point) * 240.0 / 255.0).clamp(0.0, 1.0);
+                        assert!(
+                            old + new * (1.0 - old) > 0.995,
+                            "{kind:?}, {size:?}, {progress}, {point:?}: old {old}, new {new}"
+                        );
+                        if old < 0.99 {
+                            assert!(
+                                new > 0.995,
+                                "partially transparent feathers retain the complete underlay"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn composite_font_meshes_keep_their_glyph_pixels_after_real_atlas_growth() {
+        let ctx = egui::Context::default();
+        let key = egui::Id::new("composite");
+        let scene = egui::Id::new("font composite scene");
+        let mut snapshot = None;
+        let mut original = None;
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            ui.label("Raw new text");
+            let glyphs = ui.painter().layout_no_wrap(
+                "Cached old text".to_owned(),
+                egui::FontId::proportional(18.0),
+                Color32::WHITE,
+            );
+            let shapes = vec![ClippedShape {
+                clip_rect: ui.clip_rect(),
+                shape: Shape::galley(ui.cursor().min, glyphs, Color32::WHITE),
+            }];
+            let primitives = ctx.tessellate(shapes, ui.pixels_per_point());
+            let Primitive::Mesh(mesh) = &primitives[0].primitive else {
+                unreachable!()
+            };
+            original = Some((mesh.clone(), ctx.fonts(|fonts| fonts.font_image_size())));
+            ui.painter().add(Shape::mesh(mesh.clone()));
+            snapshot = capture(ui, key, scene);
+        });
+        output.textures_delta.clear();
+        let snapshot = snapshot.unwrap();
+        assert!(
+            snapshot
+                .shapes
+                .iter()
+                .any(|shape| matches!(shape.shape, Shape::Text(_)))
+        );
+        assert!(
+            snapshot
+                .shapes
+                .iter()
+                .any(|shape| matches!(shape.shape, Shape::Mesh(_)))
+        );
+        let (original, old_size) = original.unwrap();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            ui.label(
+                egui::RichText::new(
+                    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+                )
+                .size(160.0),
+            );
+            let size = ctx.fonts(|fonts| fonts.font_image_size());
+            assert_ne!(old_size, size, "the fixture really grows the atlas");
+            let picture = snapshot.picture(ui, key, scene).unwrap();
+            assert!(picture.valid(ui, scene));
+            let cached = picture
+                .meshes
+                .iter()
+                .find_map(|primitive| {
+                    let Primitive::Mesh(mesh) = &primitive.primitive else {
+                        return None;
+                    };
+                    mesh.vertices
+                        .windows(original.vertices.len())
+                        .find(|vertices| {
+                            vertices
+                                .iter()
+                                .zip(&original.vertices)
+                                .all(|(a, b)| a.pos == b.pos)
+                        })
+                })
+                .expect("the cached glyph mesh is retained beside the re-tessellated raw text");
+            for (cached, old) in cached.iter().zip(&original.vertices) {
+                assert!(
+                    (cached.uv.x * size[0] as f32 - old.uv.x * old_size[0] as f32).abs() < 0.001
+                );
+                assert!(
+                    (cached.uv.y * size[1] as f32 - old.uv.y * old_size[1] as f32).abs() < 0.001
+                );
+            }
+        });
+        output.textures_delta.clear();
+    }
+
+    #[test]
+    fn opacity_proof_rejects_rounding_blur_rotation_and_textured_rectangles() {
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let square = egui::epaint::RectShape::filled(ui.clip_rect(), 0, Color32::WHITE);
+            for variant in 0..5 {
+                let mut shape = square.clone();
+                match variant {
+                    1 => shape.corner_radius = 12.into(),
+                    2 => shape.blur_width = 10.0,
+                    3 => shape.angle = 0.2,
+                    4 => {
+                        shape.brush = Some(Arc::new(egui::epaint::Brush {
+                            fill_texture_id: egui::TextureId::default(),
+                            uv: Rect::from_min_max(Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                        }))
+                    }
+                    _ => {}
+                }
+                let index = ui.painter().add(Shape::Rect(shape));
+                let snapshot =
+                    capture(ui, egui::Id::new("proof"), egui::Id::new("proof scene")).unwrap();
+                assert_eq!(snapshot.opaque, variant == 0);
+                ctx.graphics_mut(|graphics| {
+                    graphics.get_mut(ui.layer_id()).unwrap().reset_shape(index)
+                });
+            }
+        });
+        output.textures_delta.clear();
     }
 
     #[test]

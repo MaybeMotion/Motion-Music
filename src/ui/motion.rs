@@ -206,31 +206,31 @@ struct PendingOverlay {
     shapes: Vec<egui::layers::ShapeIdx>,
     font_size: [usize; 2],
     arrival: Id,
+    kind: reveal::Kind,
+    progress: f32,
+    opaque: bool,
+}
+
+#[derive(Clone)]
+struct PendingCapture {
+    pass: u64,
+    request: reveal::Capture,
+    snapshot: Id,
+    arrival: Id,
+}
+
+fn pending_capture_id() -> Id {
+    Id::new("motion-page-pending-capture")
 }
 
 fn pending_overlay_id() -> Id {
     Id::new("motion-page-pending-overlay")
 }
 
-/// Later dialogs and toasts can add new glyphs after the central page. Drop
-/// only its old-page overlay if their atlas growth invalidated cached UVs.
-pub(crate) fn finish(ctx: &egui::Context) {
-    let pending = ctx.data_mut(|data| {
-        let pending = data.get_temp::<PendingOverlay>(pending_overlay_id());
-        data.remove::<PendingOverlay>(pending_overlay_id());
-        pending
-    });
-    let Some(pending) = pending else {
-        return;
-    };
-    if pending.pass != ctx.cumulative_pass_nr()
-        || pending.font_size == ctx.fonts(|fonts| fonts.font_image_size())
-    {
-        return;
-    }
+fn discard_overlay(ctx: &egui::Context, pending: &PendingOverlay) {
     ctx.graphics_mut(|graphics| {
         if let Some(layer) = graphics.get_mut(pending.layer) {
-            for index in pending.shapes {
+            for &index in &pending.shapes {
                 layer.reset_shape(index);
             }
         }
@@ -243,6 +243,52 @@ pub(crate) fn finish(ctx: &egui::Context) {
         data.remove::<PageReveal>(pending.arrival.with("active-page-reveal"));
     });
     ctx.request_repaint();
+}
+
+/// Finish after enclosing frames paint their backgrounds and later labels lay
+/// out glyphs. The one snapshot is the complete currently displayed body,
+/// including an in-progress reveal, so a retarget starts from that image.
+pub(crate) fn finish(ctx: &egui::Context) {
+    let (overlay, capture) = ctx.data_mut(|data| {
+        let overlay = data.get_temp::<PendingOverlay>(pending_overlay_id());
+        let capture = data.get_temp::<PendingCapture>(pending_capture_id());
+        data.remove::<PendingOverlay>(pending_overlay_id());
+        data.remove::<PendingCapture>(pending_capture_id());
+        (overlay, capture)
+    });
+    let mut overlay = overlay.filter(|pending| pending.pass == ctx.cumulative_pass_nr());
+    if overlay
+        .as_ref()
+        .is_some_and(|pending| pending.font_size != ctx.fonts(|fonts| fonts.font_image_size()))
+    {
+        discard_overlay(ctx, overlay.as_ref().unwrap());
+        overlay = None;
+    }
+    let Some(capture) = capture.filter(|pending| pending.pass == ctx.cumulative_pass_nr()) else {
+        return;
+    };
+    let cover = overlay
+        .as_ref()
+        .filter(|pending| pending.arrival == capture.arrival)
+        .and_then(|pending| {
+            Some(reveal::Cover {
+                kind: pending.kind,
+                progress: pending.progress,
+                first_shape: pending.shapes.first()?.0,
+                last_shape: pending.shapes.last()?.0,
+                opaque: pending.opaque,
+            })
+        });
+    if let Some(snapshot) = capture.request.complete(ctx, cover) {
+        ctx.data_mut(|data| data.insert_temp(capture.snapshot, snapshot));
+    } else {
+        // An unsupported callback or oversized scene must not grow the cache
+        // indefinitely. Settle this exceptional frame and recover next draw.
+        ctx.data_mut(|data| data.remove::<reveal::Snapshot>(capture.snapshot));
+        if let Some(pending) = overlay.as_ref() {
+            discard_overlay(ctx, pending);
+        }
+    }
 }
 
 fn reveal_progress(state: PageArrival, now: f64) -> f32 {
@@ -277,12 +323,13 @@ fn interrupt_reveal(ui: &Ui) -> bool {
 
 /// Page bodies use ten native wallpaper-style reveals without moving or fading
 /// their contents. Fixed chrome stays outside the cached viewport. Only the previous
-/// body is retained; geometry and existing textures stay in memory, with no
+/// displayed composite is retained; geometry and existing textures stay in memory, with no
 /// screenshot, readback, file operation or new renderer dependency.
 ///
 /// New controls already have their actual layout. A covered pointer cannot
-/// activate them. Keyboard/scroll input and a click on a revealed control
-/// finish the reveal immediately, preserving responsive navigation.
+/// activate them. Clicking an exposed control works without skipping the
+/// animation, and repeated clicks never restart its clock. Keyboard and scroll
+/// input can still settle a reveal immediately.
 pub(crate) fn page<R>(
     ui: &mut Ui,
     id: Id,
@@ -300,17 +347,15 @@ pub(crate) fn page<R>(
     let mut active = ui.data(|data| data.get_temp::<PageReveal>(reveal_id));
     if state.key != key {
         let previous = state.key;
-        let was_active = state.started.is_some();
         state.key = key;
         active = None;
         if !reduced {
             state.transition = next_page_transition(ui.ctx(), &mut state.choices);
             state.started = Some(now);
             let source = ui.data(|data| data.get_temp::<reveal::Snapshot>(snapshot_id));
-            if !was_active
-                && source
-                    .as_ref()
-                    .is_some_and(|s| s.matches(ui, previous, scene))
+            if source
+                .as_ref()
+                .is_some_and(|s| s.matches(ui, previous, scene))
             {
                 active = Some(PageReveal {
                     source,
@@ -345,7 +390,7 @@ pub(crate) fn page<R>(
         state.started = None;
         active = None;
     }
-    let mut progress = reveal_progress(state, now);
+    let progress = reveal_progress(state, now);
     let kind = state.transition.reveal();
     let body_pointer = ui
         .input(|input| input.pointer.interact_pos())
@@ -353,15 +398,6 @@ pub(crate) fn page<R>(
     let covered_pointer = active.is_some()
         && body_pointer
             .is_some_and(|point| !reveal::revealed(ui.clip_rect(), kind, progress, point));
-    if active.is_some()
-        && body_pointer.is_some()
-        && !covered_pointer
-        && ui.input(|input| input.pointer.any_pressed())
-    {
-        state.started = None;
-        active = None;
-        progress = 1.0;
-    }
     if state.started.is_some() {
         ui.ctx().request_repaint();
     }
@@ -407,6 +443,9 @@ pub(crate) fn page<R>(
                     shapes,
                     font_size: ui.ctx().fonts(|fonts| fonts.font_image_size()),
                     arrival: id,
+                    kind,
+                    progress,
+                    opaque: picture.opaque(),
                 };
                 ui.data_mut(|data| data.insert_temp(pending_overlay_id(), pending));
             } else {
@@ -416,14 +455,24 @@ pub(crate) fn page<R>(
     }
     if state.started.is_none() {
         active = None;
-        // Capture only clean, settled content, before any old-page overlay.
-        // The fixed-size cache replaces the last page instead of retaining a
-        // picture for every visited playlist.
-        if let Some(snapshot) = reveal::capture(ui, key, scene) {
-            ui.data_mut(|data| data.insert_temp(snapshot_id, snapshot));
-        } else {
-            ui.data_mut(|data| data.remove::<reveal::Snapshot>(snapshot_id));
-        }
+    }
+    // Enclosing Frames still hold Noop background slots at this point. Keep
+    // only metadata now and collect painted shapes in finish(), not here.
+    if let Some(request) = reveal::prepare(ui, key, scene) {
+        let pass = ui.ctx().cumulative_pass_nr();
+        ui.data_mut(|data| {
+            data.insert_temp(
+                pending_capture_id(),
+                PendingCapture {
+                    pass,
+                    request,
+                    snapshot: snapshot_id,
+                    arrival: id,
+                },
+            )
+        });
+    } else {
+        ui.data_mut(|data| data.remove::<reveal::Snapshot>(snapshot_id));
     }
     ui.data_mut(|data| {
         data.insert_temp(id, state);
@@ -565,6 +614,7 @@ mod tests {
                     },
                 );
                 result = Some((response, header, ui.cursor().min.y - before));
+                finish(ui.ctx());
             },
         );
         let (response, header, extent) = result.unwrap();
@@ -833,7 +883,7 @@ mod tests {
     }
 
     #[test]
-    fn clicking_a_revealed_control_finishes_the_reveal_and_acts_immediately() {
+    fn clicking_a_revealed_control_acts_without_skipping_the_reveal() {
         for transition in PageTransition::ALL {
             let ctx = egui::Context::default();
             page_frame(&ctx, 0.0, "home", vec![]);
@@ -879,7 +929,7 @@ mod tests {
                 clicked.clicked(),
                 "the revealed {transition:?} control acts immediately"
             );
-            assert!(page_state(&ctx).started.is_none());
+            assert_eq!(page_state(&ctx).started, Some(1.0));
         }
     }
 
@@ -912,23 +962,24 @@ mod tests {
     }
 
     #[test]
-    fn rapid_reveal_retargeting_drops_the_old_picture_instead_of_replaying_it() {
+    fn rapid_retargeting_reveals_from_the_current_composite_without_snapping() {
         let ctx = egui::Context::default();
         page_frame(&ctx, 0.0, "home", vec![]);
         choose_next(&ctx, PageTransition::CircleOut);
         page_frame(&ctx, 1.0, "playlist:first", vec![]);
+        page_frame(&ctx, 1.1, "playlist:first", vec![]);
         choose_next(&ctx, PageTransition::CircleIn);
-        page_frame(&ctx, 1.1, "playlist:second", vec![]);
-        assert!(page_state(&ctx).started.is_none());
+        page_frame(&ctx, 1.11, "playlist:second", vec![]);
+        assert_eq!(page_state(&ctx).started, Some(1.11));
         assert!(
             ctx.data(|data| data
                 .get_temp::<PageReveal>(Id::new("page-slide-test").with("active-page-reveal")))
-                .is_none()
+                .is_some()
         );
         let state = page_state(&ctx);
         page_frame(&ctx, 1.2, "playlist:second", vec![]);
         assert_eq!(page_state(&ctx).choices, state.choices);
-        assert!(page_state(&ctx).started.is_none());
+        assert_eq!(page_state(&ctx).started, Some(1.11));
     }
 
     #[test]
@@ -968,7 +1019,8 @@ mod tests {
                         Id::new(key),
                         Id::new("button-theme"),
                         |ui| ui.add_sized([200.0, 44.0], egui::Button::new("Play album")),
-                    ))
+                    ));
+                    finish(ui.ctx());
                 },
             );
             let response = response.unwrap();
@@ -1072,5 +1124,321 @@ mod tests {
             },
         );
         output.textures_delta.clear();
+    }
+
+    // Sample the real tessellated paint, including glyph coverage from the
+    // current atlas. This catches a missing canvas that layout-only tests miss.
+    fn sample_paint(
+        ctx: &egui::Context,
+        primitives: &[egui::epaint::ClippedPrimitive],
+        points: &[egui::Pos2],
+    ) -> Vec<[f32; 4]> {
+        let atlas = ctx.fonts(|fonts| fonts.image());
+        let cross = |a: Vec2, b: Vec2| a.x * b.y - a.y * b.x;
+        points
+            .iter()
+            .map(|&point| {
+                let mut colour = [0.0; 4];
+                for primitive in primitives {
+                    if !primitive.clip_rect.contains(point) {
+                        continue;
+                    }
+                    let egui::epaint::Primitive::Mesh(mesh) = &primitive.primitive else {
+                        panic!("the native body has no renderer callbacks");
+                    };
+                    assert_eq!(mesh.texture_id, egui::TextureId::default());
+                    for triangle in mesh.indices.as_chunks::<3>().0 {
+                        let [a, b, c] = triangle.map(|index| mesh.vertices[index as usize]);
+                        let area = cross(b.pos - a.pos, c.pos - a.pos);
+                        if area.abs() < 0.00001 {
+                            continue;
+                        }
+                        let wa = cross(b.pos - point, c.pos - point) / area;
+                        let wb = cross(c.pos - point, a.pos - point) / area;
+                        let wc = 1.0 - wa - wb;
+                        if wa < 0.0 || wb < 0.0 || wc < 0.0 {
+                            continue;
+                        }
+                        let uv = a.uv.to_vec2() * wa + b.uv.to_vec2() * wb + c.uv.to_vec2() * wc;
+                        let x = ((uv.x * atlas.size[0] as f32) as usize).min(atlas.size[0] - 1);
+                        let y = ((uv.y * atlas.size[1] as f32) as usize).min(atlas.size[1] - 1);
+                        let texel = atlas[(x, y)].to_array();
+                        let a = a.color.to_array();
+                        let b = b.color.to_array();
+                        let c = c.color.to_array();
+                        let source: [f32; 4] = std::array::from_fn(|channel| {
+                            (f32::from(a[channel]) * wa
+                                + f32::from(b[channel]) * wb
+                                + f32::from(c[channel]) * wc)
+                                * f32::from(texel[channel])
+                                / (255.0 * 255.0)
+                        });
+                        for channel in 0..4 {
+                            colour[channel] = source[channel] + colour[channel] * (1.0 - source[3]);
+                        }
+                    }
+                }
+                colour
+            })
+            .collect()
+    }
+
+    fn paint_points() -> Vec<egui::Pos2> {
+        (0..12)
+            .flat_map(|y| {
+                (0..16).map(move |x| egui::pos2(31.37 + x as f32 * 35.0, 73.61 + y as f32 * 31.0))
+            })
+            .collect()
+    }
+
+    fn framed_page(
+        ctx: &egui::Context,
+        time: f64,
+        index: usize,
+        fill: egui::Color32,
+        gradient: bool,
+        probe_placeholder: bool,
+    ) -> (Vec<[f32; 4]>, Option<bool>) {
+        let mut before_frame_end = None;
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(640.0, 480.0),
+                )),
+                time: Some(time),
+                ..Default::default()
+            },
+            |ui| {
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::new().fill(fill))
+                    .show(ui, |ui| {
+                        if gradient {
+                            let rect = ui.max_rect();
+                            let mut mesh = egui::epaint::Mesh::default();
+                            mesh.add_colored_rect(rect, fill);
+                            mesh.vertices[2].color = egui::Color32::from_rgb(115, 23, 63);
+                            mesh.vertices[3].color = egui::Color32::from_rgb(115, 23, 63);
+                            ui.painter().add(egui::Shape::mesh(mesh));
+                        }
+                        ui.add_space(52.0);
+                        ui.set_clip_rect(egui::Rect::from_min_max(
+                            egui::pos2(20.0, 60.0),
+                            egui::pos2(620.0, 460.0),
+                        ));
+                        let key = Id::new(("framed page", index));
+                        let scene = Id::new(("framed scene", gradient));
+                        page(ui, Id::new("page-slide-test"), key, scene, |ui| {
+                            let origin = egui::pos2(30.0, 66.0 + (index % 3) as f32 * 17.0);
+                            for row in 0..16 {
+                                ui.painter().text(
+                                    origin + egui::vec2(0.0, row as f32 * 22.0),
+                                    egui::Align2::LEFT_TOP,
+                                    format!("Playlist {index}, song {row}: abcdefghijklmnopqrstuvwxyz 0123456789"),
+                                    egui::FontId::proportional(16.0),
+                                    if fill.r() > 200 { egui::Color32::BLACK } else { egui::Color32::WHITE },
+                                );
+                            }
+                            ui.painter().rect_filled(
+                                egui::Rect::from_min_size(
+                                    egui::pos2(440.0, 100.0 + (index % 4) as f32 * 65.0),
+                                    egui::vec2(150.0, 50.0),
+                                ),
+                                6,
+                                egui::Color32::from_rgb(60 + (index % 5) as u8 * 30, 50, 90),
+                            );
+                        });
+                        if probe_placeholder {
+                            let pending = ctx.data(|data| data.get_temp::<PendingCapture>(pending_capture_id())).unwrap();
+                            before_frame_end = Some(
+                                pending.request.complete(ctx, None).unwrap()
+                                    .picture(ui, key, scene).unwrap().opaque(),
+                            );
+                        }
+                    });
+                // The real show() calls finish at this stage, after the
+                // CentralPanel's delayed background replacement.
+                finish(ctx);
+            },
+        );
+        let primitives = ctx.tessellate(std::mem::take(&mut output.shapes), ctx.pixels_per_point());
+        let samples = sample_paint(ctx, &primitives, &paint_points());
+        output.textures_delta.clear();
+        (samples, before_frame_end)
+    }
+
+    fn assert_same_paint(before: &[[f32; 4]], after: &[[f32; 4]], context: &str) {
+        assert_eq!(before.len(), after.len());
+        for (index, (before, after)) in before.iter().zip(after).enumerate() {
+            for channel in 0..4 {
+                assert!(
+                    (before[channel] - after[channel]).abs() < 0.025,
+                    "{context}: sample {index}, channel {channel}: {before:?} -> {after:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn delayed_panel_canvas_is_captured_before_old_and_new_text_are_composited() {
+        for fill in [
+            egui::Color32::from_rgb(26, 15, 22),
+            egui::Color32::from_rgb(246, 245, 250),
+        ] {
+            for gradient in [false, true] {
+                for transition in PageTransition::ALL {
+                    let ctx = egui::Context::default();
+                    let (old, before_end) = framed_page(&ctx, 0.0, 0, fill, gradient, true);
+                    assert_eq!(
+                        before_end,
+                        Some(false),
+                        "Frame still has a Noop background inside its closure"
+                    );
+                    choose_next(&ctx, transition);
+                    let (started, _) = framed_page(&ctx, 1.0, 1, fill, gradient, false);
+                    let active = ctx
+                        .data(|data| {
+                            data.get_temp::<PageReveal>(
+                                Id::new("page-slide-test").with("active-page-reveal"),
+                            )
+                        })
+                        .unwrap();
+                    assert!(
+                        active.picture.unwrap().opaque(),
+                        "the completed real Frame supplies an opaque old canvas"
+                    );
+                    assert_same_paint(
+                        &old,
+                        &started,
+                        &format!("{transition:?}, gradient {gradient}, fill {fill:?}"),
+                    );
+                    assert!(
+                        started.iter().all(|pixel| pixel[3] > 0.999),
+                        "old text has its own opaque canvas above all new text"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn rapid_navigation_starts_from_the_visible_composite_and_bounds_retained_geometry() {
+        let ctx = egui::Context::default();
+        seed_page_transitions(&ctx, 7);
+        let fill = egui::Color32::from_rgb(26, 15, 22);
+        let (mut previous, _) = framed_page(&ctx, 0.0, 0, fill, false, false);
+        let mut max_vertices = 0;
+        for index in 1..=32 {
+            let now = 1.0 + (index - 1) as f64 * 0.16;
+            let (first, _) = framed_page(&ctx, now, index, fill, false, false);
+            assert_eq!(
+                page_state(&ctx).started,
+                Some(now),
+                "retarget {index} keeps a running reveal"
+            );
+            assert_same_paint(&previous, &first, &format!("rapid target {index}"));
+            let active = ctx
+                .data(|data| {
+                    data.get_temp::<PageReveal>(
+                        Id::new("page-slide-test").with("active-page-reveal"),
+                    )
+                })
+                .unwrap();
+            let (vertices, indices) =
+                active
+                    .picture
+                    .unwrap()
+                    .primitives()
+                    .iter()
+                    .fold((0, 0), |cost, item| {
+                        let egui::epaint::Primitive::Mesh(mesh) = &item.primitive else {
+                            unreachable!()
+                        };
+                        (cost.0 + mesh.vertices.len(), cost.1 + mesh.indices.len())
+                    });
+            assert!(vertices <= 180_000 && indices <= 540_000);
+            eprintln!("retarget {index}: {vertices} vertices, {indices} indices");
+            max_vertices = max_vertices.max(vertices);
+            (previous, _) = framed_page(&ctx, now + 0.12, index, fill, false, false);
+        }
+        assert!(
+            max_vertices < 90_000,
+            "occluded pages must be pruned, observed {max_vertices} vertices"
+        );
+        framed_page(&ctx, 7.0, 32, fill, false, false);
+        assert!(page_state(&ctx).started.is_none());
+        assert!(
+            ctx.data(|data| data
+                .get_temp::<PageReveal>(Id::new("page-slide-test").with("active-page-reveal")))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn repeated_same_destination_clicks_preserve_the_clock_and_shuffle() {
+        let ctx = egui::Context::default();
+        page_frame(&ctx, 0.0, "home", vec![]);
+        choose_next(&ctx, PageTransition::CircleOut);
+        page_frame(&ctx, 1.0, "playlist:a", vec![]);
+        let initial = page_state(&ctx);
+        for time in [1.1, 1.2, 1.3, 1.4] {
+            page_frame(
+                &ctx,
+                time,
+                "playlist:a",
+                click_events(egui::pos2(320.0, 240.0)),
+            );
+            let state = page_state(&ctx);
+            assert_eq!(state.started, initial.started);
+            assert_eq!(state.choices, initial.choices);
+        }
+    }
+
+    #[test]
+    fn an_oversized_composite_settles_and_recovers_without_retaining_the_huge_mesh() {
+        let ctx = egui::Context::default();
+        let id = Id::new("page-slide-test");
+        page_frame(&ctx, 0.0, "home", vec![]);
+        choose_next(&ctx, PageTransition::CircleOut);
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(640.0, 480.0),
+                )),
+                time: Some(1.0),
+                ..Default::default()
+            },
+            |ui| {
+                page(ui, id, Id::new("huge"), Id::new("test-scene"), |ui| {
+                    let mut mesh = egui::epaint::Mesh::default();
+                    for _ in 0..45_001 {
+                        mesh.add_colored_rect(ui.clip_rect(), egui::Color32::WHITE);
+                    }
+                    ui.painter().add(egui::Shape::mesh(mesh));
+                });
+                assert!(page_state(&ctx).started.is_some());
+                finish(&ctx);
+                assert!(page_state(&ctx).started.is_none());
+                assert!(
+                        ctx.data(
+                            |data| data.get_temp::<reveal::Snapshot>(id.with("last-page-picture"))
+                        )
+                        .is_none()
+                    );
+                assert!(
+                    ctx.data(|data| data.get_temp::<PageReveal>(id.with("active-page-reveal")))
+                        .is_none()
+                );
+            },
+        );
+        output.textures_delta.clear();
+        page_frame(&ctx, 1.1, "huge", vec![]);
+        assert!(
+            ctx.data(|data| data.get_temp::<reveal::Snapshot>(id.with("last-page-picture")))
+                .is_some()
+        );
+        page_frame(&ctx, 1.2, "recovered", vec![]);
+        assert_eq!(page_state(&ctx).started, Some(1.2));
     }
 }

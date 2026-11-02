@@ -1030,13 +1030,17 @@ mod tests {
                 _ => None,
             })
             .expect("the logo's texture");
+        // Drain before assertions so a failed assertion cannot trigger the
+        // unapplied-texture Drop guard while the test is already unwinding.
+        output.textures_delta.clear();
         let icon = crate::util::app_icon_rgba(84);
         for (x, y) in [(42, 10), (47, 42), (42, 4)] {
-            let expected = &icon[(y * 84 + x) * 4..(y * 84 + x) * 4 + 4];
-            let got = uploaded.pixels[y * 84 + x].to_srgba_unmultiplied();
-            assert_eq!(&got[..], expected, "pixel {x},{y}");
+            let rgba = &icon[(y * 84 + x) * 4..(y * 84 + x) * 4 + 4];
+            // Compare the actual upload representation. Unpremultiplying an
+            // antialiased pixel introduces an avoidable rounding loss.
+            let expected = Color32::from_rgba_unmultiplied(rgba[0], rgba[1], rgba[2], rgba[3]);
+            assert_eq!(uploaded.pixels[y * 84 + x], expected, "pixel {x},{y}");
         }
-        output.textures_delta.clear();
     }
 
     /// Palette files name the sixteen colours every app shares and

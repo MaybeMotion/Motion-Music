@@ -196,7 +196,7 @@ pub fn open_spotify_url(uri: &str) -> Option<String> {
     Some(format!("https://open.spotify.com/{kind}/{id}"))
 }
 
-/// The Motion Music wave as a menu-bar template. The OS uses its alpha
+/// The Motion Music bloom as a menu-bar template. The OS uses its alpha
 /// channel and supplies the appropriate light or dark colour.
 pub fn tray_template_rgba(size: usize) -> Vec<u8> {
     static TEMPLATE: std::sync::OnceLock<image::RgbaImage> = std::sync::OnceLock::new();
@@ -301,31 +301,62 @@ mod tests {
         for size in [16, 32, 128] {
             let icon = app_icon_rgba(size);
             assert_eq!(icon.len(), size * size * 4);
-            // Lanczos resampling can leave up to three alpha levels of
-            // edge ringing at tiny sizes; the corners must stay transparent.
-            assert!(pixel(&icon, size, 0, 0)[3] <= 3);
-            let left = pixel(&icon, size, size * 33 / 128, size * 75 / 128);
-            let right = pixel(&icon, size, size * 95 / 128, size * 75 / 128);
+            for (x, y) in [(0, 0), (size - 1, 0), (0, size - 1), (size - 1, size - 1)] {
+                // Lanczos can leave a few alpha levels of edge ringing.
+                assert!(pixel(&icon, size, x, y)[3] <= 3);
+            }
+            let purple = pixel(&icon, size, size * 70 / 128, size * 28 / 128);
+            let pink = pixel(&icon, size, size * 100 / 128, size * 70 / 128);
+            let coral = pixel(&icon, size, size * 58 / 128, size * 100 / 128);
+            let cyan = pixel(&icon, size, size * 28 / 128, size * 58 / 128);
             assert!(
-                left[2] > left[0] && left[0] > left[1],
-                "violet wave missing at {size}: {left:?}"
+                purple[2] > purple[0] && purple[0] > purple[1],
+                "purple blade at {size}: {purple:?}"
             );
             assert!(
-                right[0] > right[2] && right[2] > right[1],
-                "rose wave missing at {size}: {right:?}"
+                pink[0] > pink[2] && pink[2] > pink[1],
+                "pink blade at {size}: {pink:?}"
             );
-            assert_eq!(left[3], 255);
-            assert_eq!(right[3], 255);
+            assert!(
+                coral[0] > coral[1] && coral[0] > coral[2],
+                "coral blade at {size}: {coral:?}"
+            );
+            assert!(
+                cyan[1] > cyan[0] && cyan[2] > cyan[0],
+                "cyan blade at {size}: {cyan:?}"
+            );
+            assert!(
+                [purple, pink, coral, cyan]
+                    .iter()
+                    .all(|pixel| pixel[3] >= 250)
+            );
+            assert!(
+                icon.as_chunks::<4>()
+                    .0
+                    .iter()
+                    .filter(|pixel| pixel[3] >= 240)
+                    .count()
+                    > size * size / 8
+            );
         }
-        let template = tray_template_rgba(44);
-        let stroke = pixel(&template, 44, 11, 26);
-        assert_eq!(&stroke[..3], &[0, 0, 0]);
-        // This sample sits near an antialiased stroke edge after resizing.
-        assert!(
-            stroke[3] >= 240,
-            "the monochrome M must remain visible: {stroke:?}"
+        assert_eq!(
+            pixel(&app_icon_rgba(128), 128, 64, 64)[3],
+            0,
+            "the bloom has an open core"
         );
-        assert_eq!(pixel(&template, 44, 22, 31)[3], 0);
+        let template = tray_template_rgba(44);
+        for (x, y) in [(70, 28), (100, 70), (58, 100), (28, 58)] {
+            let blade = pixel(&template, 44, 44 * x / 128, 44 * y / 128);
+            assert_eq!(&blade[..3], &[0, 0, 0]);
+            assert!(
+                blade[3] >= 250,
+                "the monochrome bloom stays visible: {blade:?}"
+            );
+        }
+        assert!(
+            pixel(&template, 44, 22, 22)[3] <= 8,
+            "resizing preserves the open core with minor Lanczos ringing"
+        );
         assert_eq!(pixel(&template, 44, 0, 0)[3], 0);
     }
 
