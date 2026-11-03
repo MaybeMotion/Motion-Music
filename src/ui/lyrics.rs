@@ -26,7 +26,7 @@ fn show_sung_line(ui: &egui::Ui, line: Rect, animation: Option<egui::style::Scro
     }
 }
 /// How long a line takes to light up or fade.
-const LIGHT_UP_SECONDS: f32 = 0.22;
+const LIGHT_UP_SECONDS: f32 = 0.15;
 
 fn blend(from: egui::Color32, to: egui::Color32, t: f32) -> egui::Color32 {
     let t = t.clamp(0.0, 1.0);
@@ -207,7 +207,7 @@ fn contents(app: &mut App, ui: &mut egui::Ui) {
     let follow = app.lyrics_following && app.lyrics_line_shown != Some(active);
     // The line being sung is bold and in the accent colour; every other
     // line is quiet, regular text, the same before and after it has been
-    // sung. A line takes 220 ms to light up or fade, as in omarchy-lyrics.
+    // sung. A line takes 150 ms to light up or fade with the interface ramp.
     let quiet = palette.text.gamma_multiply(0.45);
     let scroll = crate::autoscroll::show(
         ui,
@@ -228,7 +228,8 @@ fn contents(app: &mut App, ui: &mut egui::Ui) {
             ui.add_space(12.0);
             for (index, line) in lyrics.lines.iter().enumerate() {
                 let is_active = active == Some(index);
-                let lit = ui.ctx().animate_bool_with_time(
+                let lit = crate::motion::animate_bool_with_time(
+                    ui.ctx(),
                     egui::Id::new("lyric-line").with(index),
                     is_active,
                     crate::motion::seconds(ui.ctx(), LIGHT_UP_SECONDS),
@@ -745,7 +746,7 @@ fn fullscreen_contents(app: &mut App, ui: &mut egui::Ui) {
     let size = (ui.available_width() * 0.046).clamp(28.0, 42.0);
     // The line being sung brightens; all lines keep the same font metrics
     // so highlighting cannot rewrap the words during a transition.
-    // A line takes 300 ms to light up or fade.
+    // A line takes 200 ms to light up or fade.
     let quiet = palette.text.gamma_multiply(0.68);
     ui.spacing_mut().scroll.fade.strength = 0.0;
     egui::ScrollArea::vertical()
@@ -775,10 +776,11 @@ fn fullscreen_contents(app: &mut App, ui: &mut egui::Ui) {
             ui.add_space(padding);
             for (index, line) in lyrics.lines.iter().enumerate() {
                 let is_active = active == Some(index);
-                let lit = ui.ctx().animate_bool_with_time(
+                let lit = crate::motion::animate_bool_with_time(
+                    ui.ctx(),
                     egui::Id::new("lyric-line").with(("fullscreen", &now.uri, index)),
                     is_active,
-                    crate::motion::seconds(ui.ctx(), 0.3),
+                    crate::motion::seconds(ui.ctx(), 0.20),
                 );
                 let color = if lyrics.synced {
                     blend(quiet, palette.text, lit)

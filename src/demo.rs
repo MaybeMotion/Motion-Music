@@ -1729,6 +1729,7 @@ pub struct MotionTour {
     started: Instant,
     phase: Option<usize>,
     stress: bool,
+    theme_tour: bool,
 }
 
 #[cfg(feature = "demo")]
@@ -1738,6 +1739,7 @@ impl Default for MotionTour {
             started: Instant::now(),
             phase: None,
             stress: false,
+            theme_tour: false,
         }
     }
 }
@@ -1751,6 +1753,36 @@ impl MotionTour {
             stress: true,
             ..Self::default()
         }
+    }
+
+    /// A native offline capture of circular theme changes and their timing.
+    pub fn themes() -> Self {
+        Self {
+            theme_tour: true,
+            ..Self::default()
+        }
+    }
+
+    fn theme_events(&mut self, app: &mut App, elapsed: std::time::Duration) -> Vec<egui::Event> {
+        use crate::settings::ThemeChoice;
+        use crate::theme::MotionTheme;
+        let phase = [480, 1280, 2080, 2880]
+            .into_iter()
+            .take_while(|&at| elapsed.as_millis() >= at)
+            .count();
+        if self.phase != Some(phase) {
+            self.phase = Some(phase);
+            app.open(Page::Home);
+            app.settings.accent_from_art = false;
+            app.settings.player_bar_vis = crate::settings::PlayerBarVis::Off;
+            app.settings.theme = ThemeChoice::Motion(match phase {
+                1 => MotionTheme::MotionWhite,
+                2 => MotionTheme::RedHorizon,
+                3 => MotionTheme::PrismNight,
+                _ => MotionTheme::MotionRed,
+            });
+        }
+        vec![egui::Event::PointerMoved(egui::pos2(660.0, 60.0))]
     }
 
     fn stress_events(
@@ -1828,6 +1860,9 @@ impl MotionTour {
     ) -> Vec<egui::Event> {
         if !app.offline {
             return Vec::new();
+        }
+        if self.theme_tour {
+            return self.theme_events(app, clock.unwrap_or_else(|| self.started.elapsed()));
         }
         if self.stress {
             return self.stress_events(

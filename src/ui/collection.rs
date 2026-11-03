@@ -914,14 +914,15 @@ fn table_contents(app: &mut App, ui: &mut egui::Ui, table: Table<'_>) {
             return;
         }
         // Shift neighboring rows around the current drop slot.
-        let shift = ui.ctx().animate_value_with_time(
+        let shift = crate::motion::animate_value(
+            ui.ctx(),
             ui.id().with(("table-move-shift", row)),
             match move_slot {
                 Some(slot) if row < slot => -4.0,
                 Some(_) => 4.0,
                 None => 0.0,
             },
-            crate::motion::seconds(ui.ctx(), 0.12),
+            crate::motion::seconds(ui.ctx(), 0.09),
         );
         let (response, asked) = widgets::track_row_response(
             ui,

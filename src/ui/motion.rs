@@ -6,6 +6,12 @@ use rand::{Rng, seq::SliceRandom};
 #[cfg(any(test, feature = "demo"))]
 use rand::{SeedableRng, rngs::StdRng};
 
+const PAGE_SECONDS: f32 = 0.36;
+const ARRIVAL_SECONDS: f32 = 0.14;
+const TOAST_ENTER_SECONDS: f32 = 0.12;
+const TOAST_EXIT_SECONDS: f32 = 0.22;
+const TOAST_LIFETIME_SECONDS: f32 = 3.2;
+
 #[derive(Clone, Copy)]
 struct Arrival {
     key: Id,
@@ -23,8 +29,7 @@ impl Arrival {
             return 1.0;
         }
         let t = (elapsed.max(0.0) / f64::from(seconds)).clamp(0.0, 1.0) as f32;
-        // Ease out smoothly without a long tail of almost-settled frames.
-        let eased = 1.0 - (1.0 - t).powi(3);
+        let eased = crate::motion::ramp(t);
         self.from + (1.0 - self.from) * eased
     }
 }
@@ -34,7 +39,7 @@ impl Arrival {
 /// The first draw is fully visible and ordinary redraws do not restart the fade.
 pub(crate) fn arrival(ui: &Ui, id: Id, key: Id) -> f32 {
     let now = ui.input(|input| input.time);
-    let seconds = crate::motion::seconds(ui.ctx(), 0.20);
+    let seconds = crate::motion::seconds(ui.ctx(), ARRIVAL_SECONDS);
     let mut state = ui
         .data(|data| data.get_temp::<Arrival>(id))
         .unwrap_or(Arrival {
@@ -48,6 +53,9 @@ pub(crate) fn arrival(ui: &Ui, id: Id, key: Id) -> f32 {
             started: now,
             from: 0.74,
         };
+    }
+    if seconds <= 0.0 {
+        state.from = 1.0;
     }
     let opacity = state.opacity(now, seconds);
     if opacity < 1.0 {
@@ -102,7 +110,7 @@ impl PageTransition {
     }
 
     fn seconds(self) -> f32 {
-        0.56
+        PAGE_SECONDS
     }
 }
 
@@ -300,7 +308,7 @@ fn reveal_progress(state: PageArrival, now: f64) -> f32 {
         return 1.0;
     }
     let t = (elapsed / f64::from(state.transition.seconds())).clamp(0.0, 1.0) as f32;
-    t * t * (3.0 - 2.0 * t)
+    crate::motion::ramp(t)
 }
 
 fn interrupt_reveal(ui: &Ui) -> bool {
@@ -488,20 +496,17 @@ pub(crate) fn page<R>(
 /// Toasts ease in and out at their existing lifetime. Reduced motion keeps
 /// them fully visible until removal, without animating their opacity.
 pub(crate) fn toast_opacity(age: f32, reduced: bool) -> f32 {
-    if age >= 3.2 {
+    if age >= TOAST_LIFETIME_SECONDS {
         return 0.0;
     }
     if reduced {
         return 1.0;
     }
-    let smooth = |t: f32| {
-        let t = t.clamp(0.0, 1.0);
-        t * t * (3.0 - 2.0 * t)
-    };
-    if age < 0.18 {
-        smooth(age / 0.18)
-    } else if age > 2.8 {
-        1.0 - smooth((age - 2.8) / 0.4)
+    let exit_starts = TOAST_LIFETIME_SECONDS - TOAST_EXIT_SECONDS;
+    if age < TOAST_ENTER_SECONDS {
+        crate::motion::ramp(age / TOAST_ENTER_SECONDS)
+    } else if age > exit_starts {
+        1.0 - crate::motion::ramp((age - exit_starts) / TOAST_EXIT_SECONDS)
     } else {
         1.0
     }
@@ -556,16 +561,22 @@ mod tests {
         crate::motion::apply(&ctx, true);
         assert_eq!(frame(1.05, "settings"), 1.0);
         assert_eq!(frame(1.1, "home"), 1.0);
+        crate::motion::apply(&ctx, false);
+        assert_eq!(
+            frame(1.11, "home"),
+            1.0,
+            "enabling motion never revives a settled fade"
+        );
     }
 
     #[test]
     fn toast_easing_keeps_a_reading_plateau_and_respects_reduced_motion() {
         assert_eq!(toast_opacity(0.0, false), 0.0);
-        assert!((toast_opacity(0.09, false) - 0.5).abs() < 0.001);
-        for age in [0.18, 1.0, 2.8] {
+        assert!((toast_opacity(0.06, false) - 0.84375).abs() < 0.001);
+        for age in [0.12, 1.0, 2.8, 2.98] {
             assert_eq!(toast_opacity(age, false), 1.0);
         }
-        assert!((toast_opacity(3.0, false) - 0.5).abs() < 0.001);
+        assert!((toast_opacity(3.09, false) - 0.15625).abs() < 0.001);
         assert_eq!(toast_opacity(3.2, false), 0.0);
         for age in [0.0, 0.09, 2.9, 3.19] {
             assert_eq!(toast_opacity(age, true), 1.0);
@@ -676,7 +687,7 @@ mod tests {
         let (home, header, extent, alpha) = page_frame(&ctx, 0.0, "home", vec![]);
         assert_eq!(alpha, 255, "the first page starts fully visible");
         choose_next(&ctx, PageTransition::CircleOut);
-        for time in [1.0, 1.13, 1.28, 1.57] {
+        for time in [1.0, 1.09, 1.18, 1.37] {
             let (page, page_header, page_extent, alpha) =
                 page_frame(&ctx, time, "playlist:first", vec![]);
             assert_eq!(page.rect, home.rect, "page content never slides");
@@ -718,7 +729,7 @@ mod tests {
             let ctx = egui::Context::default();
             let (original, header, extent, _) = page_frame(&ctx, 0.0, "home", vec![]);
             choose_next(&ctx, transition);
-            for time in [1.0, 1.05, 1.2, 1.4, 1.57] {
+            for time in [1.0, 1.05, 1.15, 1.25, 1.37] {
                 let (page, page_header, page_extent, alpha) =
                     page_frame(&ctx, time, "playlist:fixed", vec![egui::Event::PointerGone]);
                 assert_eq!(
@@ -781,8 +792,9 @@ mod tests {
         let state = page_state(&ctx);
         assert_eq!(state.key, Id::new("album:c"));
         assert_eq!(state.choices.next, 3);
-        let (settled, _, _, alpha) = page_frame(&ctx, 1.4, "album:c", vec![]);
+        let (settled, _, _, alpha) = page_frame(&ctx, 1.43, "album:c", vec![]);
         assert_eq!(alpha, 255);
+        assert!(page_state(&ctx).started.is_none());
         let (redraw, _, _, redraw_alpha) = page_frame(&ctx, 2.0, "album:c", vec![]);
         assert_eq!(redraw.rect, settled.rect);
         assert_eq!(redraw_alpha, 255);
@@ -825,7 +837,7 @@ mod tests {
             state.transition = transition;
             state.started = Some(1.0);
             assert_eq!(reveal_progress(state, 1.0), 0.0);
-            assert_eq!(reveal_progress(state, 1.56), 1.0);
+            assert_eq!(reveal_progress(state, 1.0 + f64::from(PAGE_SECONDS)), 1.0);
             assert_eq!(reveal_progress(state, f64::NAN), 1.0);
             assert_eq!(reveal_progress(state, f64::INFINITY), 1.0);
             assert_eq!(reveal_progress(state, 0.0), 0.0);
@@ -833,9 +845,75 @@ mod tests {
             page_frame(&ctx, 0.0, "home", vec![]);
             choose_next(&ctx, transition);
             page_frame(&ctx, 1.0, "playlist:finish", vec![]);
-            page_frame(&ctx, 1.57, "playlist:finish", vec![]);
+            page_frame(
+                &ctx,
+                1.0 + f64::from(PAGE_SECONDS),
+                "playlist:finish",
+                vec![],
+            );
             assert!(page_state(&ctx).started.is_none());
         }
+    }
+
+    #[test]
+    fn page_reveals_accelerate_early_and_settle_at_360_ms_without_replaying() {
+        for transition in PageTransition::ALL {
+            let ctx = egui::Context::default();
+            page_frame(&ctx, 0.0, "home", vec![]);
+            choose_next(&ctx, transition);
+            page_frame(&ctx, 1.0, "playlist:ramp", vec![]);
+            let state = page_state(&ctx);
+            assert_eq!(transition.seconds(), 0.36);
+            assert_eq!(reveal_progress(state, 1.0), 0.0);
+            let quarter = reveal_progress(state, 1.09);
+            let halfway = reveal_progress(state, 1.18);
+            assert!(
+                quarter > 0.40 && quarter < 0.42,
+                "{transition:?} ramps up quickly"
+            );
+            assert!(
+                halfway > 0.84 && halfway < 0.85,
+                "{transition:?} is mostly revealed halfway through"
+            );
+            assert!(reveal_progress(state, 1.27) > 0.98);
+            page_frame(&ctx, 1.359, "playlist:ramp", vec![]);
+            assert_eq!(
+                page_state(&ctx).started,
+                Some(1.0),
+                "the clock is not cut off early"
+            );
+            page_frame(&ctx, 1.0 + f64::from(PAGE_SECONDS), "playlist:ramp", vec![]);
+            assert!(page_state(&ctx).started.is_none());
+            page_frame(&ctx, 2.0, "playlist:ramp", vec![]);
+            assert!(page_state(&ctx).started.is_none());
+            assert_eq!(
+                page_state(&ctx).choices,
+                state.choices,
+                "redraws never restart the animation"
+            );
+        }
+    }
+
+    #[test]
+    fn gallery_arrivals_use_the_shared_ramp_and_finish_at_140_ms() {
+        let ctx = egui::Context::default();
+        let sample = |at: f64, key: &str| {
+            let mut opacity = 0.0;
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    time: Some(at),
+                    ..Default::default()
+                },
+                |ui| opacity = arrival(ui, Id::new("gallery-ramp"), Id::new(key)),
+            );
+            output.textures_delta.clear();
+            opacity
+        };
+        assert_eq!(sample(0.0, "colours"), 1.0);
+        assert_eq!(sample(1.0, "gradients"), 0.74);
+        assert!(sample(1.07, "gradients") > 0.95);
+        assert_eq!(sample(1.0 + f64::from(ARRIVAL_SECONDS), "gradients"), 1.0);
+        assert_eq!(sample(2.0, "gradients"), 1.0);
     }
 
     #[test]
@@ -871,7 +949,7 @@ mod tests {
             assert!(page_state(&ctx).started.is_some());
             let (finished, _, _, alpha) = page_frame(
                 &ctx,
-                1.57,
+                1.37,
                 "playlist:reveal",
                 vec![egui::Event::PointerGone],
             );
@@ -891,7 +969,7 @@ mod tests {
             page_frame(&ctx, 1.0, "playlist:reveal", vec![]);
             let mut exposed = None;
             for step in 1..10 {
-                let time = 1.0 + 0.056 * f64::from(step);
+                let time = 1.0 + f64::from(PAGE_SECONDS) * f64::from(step) / 10.0;
                 let (response, _, _, _) = page_frame(
                     &ctx,
                     time,
@@ -1381,7 +1459,7 @@ mod tests {
         choose_next(&ctx, PageTransition::CircleOut);
         page_frame(&ctx, 1.0, "playlist:a", vec![]);
         let initial = page_state(&ctx);
-        for time in [1.1, 1.2, 1.3, 1.4] {
+        for time in [1.06, 1.14, 1.23, 1.34] {
             page_frame(
                 &ctx,
                 time,
@@ -1392,6 +1470,9 @@ mod tests {
             assert_eq!(state.started, initial.started);
             assert_eq!(state.choices, initial.choices);
         }
+        page_frame(&ctx, 1.37, "playlist:a", vec![]);
+        assert!(page_state(&ctx).started.is_none());
+        assert_eq!(page_state(&ctx).choices, initial.choices);
     }
 
     #[test]

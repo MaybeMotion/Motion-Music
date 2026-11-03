@@ -4,13 +4,6 @@
 //! idle, and the desktop's reduced-motion preference snaps to the endpoint.
 use egui::{Color32, Id, Ui};
 
-/// A symmetric easing curve keeps a reversal continuous: leaving a control
-/// halfway through its hover never jumps to a differently eased colour.
-fn smoothstep(value: f32) -> f32 {
-    let value = value.clamp(0.0, 1.0);
-    value * value * (3.0 - 2.0 * value)
-}
-
 /// An eased hover or press amount, with an independent, stable widget key.
 /// Keyboard focus may be painted at full strength by the caller so its
 /// location is immediately clear while pointer transitions ease in and out.
@@ -21,11 +14,13 @@ pub fn hover(ui: &Ui, id: Id, on: bool) -> f32 {
     } else {
         seconds.clamp(0.0, 0.5)
     };
-    ui.ctx().animate_bool_with_time_and_easing(
+    // Retarget the displayed amount instead of flipping an asymmetric
+    // easing curve when the pointer reverses halfway through a hover.
+    crate::motion::animate_bool_with_time(
+        ui.ctx(),
         id.with("motion-interaction"),
         on && ui.is_enabled(),
         seconds,
-        smoothstep,
     )
 }
 
@@ -98,6 +93,27 @@ mod tests {
             assert!((value - previous).abs() < 0.25, "reversal must not jump");
             previous = value;
         }
+    }
+
+    #[test]
+    fn hover_uses_the_fast_ramp_and_reversal_keeps_its_visible_amount() {
+        let ctx = egui::Context::default();
+        crate::motion::apply(&ctx, false);
+        let duration = f64::from(crate::motion::ANIMATION_TIME);
+        assert_eq!(frame(&ctx, 0.0, false), 0.0);
+        assert_eq!(frame(&ctx, 0.01, true), 0.0);
+        let at = 0.01 + duration / 2.0;
+        let visible = frame(&ctx, at, true);
+        assert!(
+            visible > 0.75 && visible < 0.95,
+            "the control advances early: {visible}"
+        );
+        assert_eq!(
+            frame(&ctx, at, false),
+            visible,
+            "reversing hover cannot jump"
+        );
+        assert_eq!(frame(&ctx, at + duration + 0.001, false), 0.0);
     }
 
     #[test]

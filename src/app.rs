@@ -408,7 +408,7 @@ pub struct App {
     pub demo_windows_controls: bool,
     applied_dark: Option<bool>,
     /// Reveals new colours from the middle of the window outwards.
-    theme_transition: fastframe_theme::Transition,
+    theme_transition: crate::theme_transition::ThemeTransition,
     /// Whether colour changes are revealed. Tests that check which palette
     /// applies, on a context that never draws, turn it off.
     pub(crate) reveal_theme_changes: bool,
@@ -1100,7 +1100,7 @@ impl App {
             #[cfg(any(test, feature = "demo"))]
             demo_windows_controls: false,
             applied_dark: None,
-            theme_transition: fastframe_theme::Transition::new(fastframe_theme::Reveal::Circle),
+            theme_transition: crate::theme_transition::ThemeTransition::default(),
             reveal_theme_changes: true,
             auth: AuthStatus::Starting,
             user: None,
@@ -4470,8 +4470,7 @@ impl App {
         if self.theme_transition.active()
             && (self.motion.reduced() || !self.reveal_theme_changes || self.settings.winamp_window)
         {
-            self.theme_transition =
-                fastframe_theme::Transition::new(fastframe_theme::Reveal::Circle);
+            self.theme_transition = crate::theme_transition::ThemeTransition::default();
         }
         // winit reports no system theme on Linux, so "Follow system" falls
         // back to what the desktop portal says.
@@ -4522,6 +4521,8 @@ impl App {
             self.applied_dark = Some(dark);
             self.accents.clear();
             self.accent_pending.clear();
+        } else {
+            self.theme_transition.cancel_capture();
         }
     }
 

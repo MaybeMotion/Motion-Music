@@ -57,6 +57,7 @@ pub mod skin;
 pub mod sonos;
 pub mod system_fonts;
 pub mod theme;
+pub(crate) mod theme_transition;
 pub mod thumbbar;
 pub mod ui;
 pub mod updates;

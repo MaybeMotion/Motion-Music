@@ -612,15 +612,24 @@ pub(crate) fn run() -> eframe::Result<()> {
     });
     #[cfg(feature = "demo")]
     let demo_tour = cli.demo_show.as_deref().is_some_and(|surfaces| {
-        surfaces
-            .split(',')
-            .any(|surface| matches!(surface.trim(), "motion-tour" | "motion-stress"))
+        surfaces.split(',').any(|surface| {
+            matches!(
+                surface.trim(),
+                "motion-tour" | "motion-stress" | "motion-theme-tour"
+            )
+        })
     });
     #[cfg(feature = "demo")]
     let demo_stress = cli.demo_show.as_deref().is_some_and(|surfaces| {
         surfaces
             .split(',')
             .any(|surface| surface.trim() == "motion-stress")
+    });
+    #[cfg(feature = "demo")]
+    let demo_theme_tour = cli.demo_show.as_deref().is_some_and(|surfaces| {
+        surfaces
+            .split(',')
+            .any(|surface| surface.trim() == "motion-theme-tour")
     });
     #[cfg(feature = "demo")]
     let demo_drag = cli
@@ -773,7 +782,9 @@ pub(crate) fn run() -> eframe::Result<()> {
                     drag: demo_drag,
                     #[cfg(feature = "demo")]
                     tour: demo_tour.then(|| {
-                        if demo_stress {
+                        if demo_theme_tour {
+                            spotifast::demo::MotionTour::themes()
+                        } else if demo_stress {
                             spotifast::demo::MotionTour::stress()
                         } else {
                             spotifast::demo::MotionTour::default()

@@ -189,14 +189,15 @@ pub fn fullscreen_column(app: &mut App, ui: &mut egui::Ui) {
     let ui = &mut inner;
     // The handle stays invisible until hovered, then fades a slim edge in:
     // the theme text color, so it reads white on dark and black on bright.
-    let show = ui.ctx().animate_value_with_time(
+    let show = crate::motion::animate_value(
+        ui.ctx(),
         egui::Id::new("queue-column-edge"),
         if grip.hovered() || grip.dragged() {
             1.0
         } else {
             0.0
         },
-        0.15,
+        crate::motion::seconds(ui.ctx(), 0.10),
     );
     if show > 0.0 {
         ui.painter().vline(
@@ -517,14 +518,15 @@ fn contents(app: &mut App, ui: &mut egui::Ui, compact: bool) {
             .flatten();
         widgets::virtual_rows(ui, queued_len, row_height + gap, |ui, index| {
             let width = ui.available_width();
-            let shift = ui.ctx().animate_value_with_time(
+            let shift = crate::motion::animate_value(
+                ui.ctx(),
                 ui.id().with(("queue-move-shift", index)),
                 match move_slot {
                     Some(slot) if index < slot => -4.0,
                     Some(_) => 4.0,
                     None => 0.0,
                 },
-                crate::motion::seconds(ui.ctx(), 0.12),
+                crate::motion::seconds(ui.ctx(), 0.09),
             );
             queue_row(app, ui, index, compact, shift);
             ui.allocate_space(egui::vec2(width, gap));

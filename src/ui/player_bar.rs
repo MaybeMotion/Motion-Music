@@ -14,7 +14,7 @@ use super::widgets::{SliderEvent, thin_slider};
 /// How much of the playing art's tint the bar's fill carries.
 const TINT_STRENGTH: f32 = 0.12;
 /// How long the bar takes to cross over to a new song's tint.
-const TINT_FADE_SECONDS: f32 = 0.45;
+const TINT_FADE_SECONDS: f32 = 0.30;
 const TINT_SESSION_ID: &str = "player-bar-tint-session";
 /// The Add to playlist menu a liked song's heart opens.
 const LIKED_POPUP_ID: &str = "player-bar-liked-playlists";
@@ -1160,7 +1160,8 @@ fn eased_fill(ctx: &egui::Context, panel: Color32, tint: Option<Color32>) -> Col
         *data.get_temp_mut_or_insert_with(egui::Id::new(TINT_SESSION_ID), || pass)
     });
     let channel = |axis: &'static str, value: u8| {
-        ctx.animate_value_with_time(
+        crate::motion::animate_value(
+            ctx,
             egui::Id::new(("player-bar-tint", session, axis)),
             f32::from(value),
             crate::motion::seconds(ctx, TINT_FADE_SECONDS),
@@ -1894,6 +1895,19 @@ mod player_bar_tint_tests {
         let middle = frame(&ctx, 0.1 + fade / 2.0, panel, Some(art));
         assert_ne!(middle, panel);
         assert_ne!(middle, target);
+        // Most of the colour change is visible by halfway through the
+        // shortened transition, while the final part settles gently.
+        let from = panel.to_srgba_unmultiplied();
+        let to = target.to_srgba_unmultiplied();
+        let shown = middle.to_srgba_unmultiplied();
+        for channel in 0..3 {
+            let span = from[channel].abs_diff(to[channel]);
+            if span >= 8 {
+                assert!(
+                    f32::from(from[channel].abs_diff(shown[channel])) >= f32::from(span) * 0.75
+                );
+            }
+        }
         assert_eq!(frame(&ctx, 0.1 + fade, panel, Some(art)), target);
     }
 
@@ -1917,6 +1931,18 @@ mod player_bar_tint_tests {
         assert_eq!(frame(&ctx, 0.2, panel, Some(third)), middle);
         assert_ne!(frame(&ctx, 0.2 + fade / 2.0, panel, Some(third)), middle);
         assert_eq!(frame(&ctx, 0.2 + fade, panel, Some(third)), third_fill);
+    }
+
+    #[test]
+    fn reduced_motion_snaps_the_artwork_tint_in_both_directions() {
+        let ctx = egui::Context::default();
+        let panel = Palette::dark().panel;
+        let art = Color32::from_rgb(220, 140, 160);
+        let target = super::super::blend(panel, art, TINT_STRENGTH);
+        frame(&ctx, 0.0, panel, None);
+        crate::motion::apply(&ctx, true);
+        assert_eq!(frame(&ctx, 0.1, panel, Some(art)), target);
+        assert_eq!(frame(&ctx, 0.2, panel, None), panel);
     }
 
     #[test]

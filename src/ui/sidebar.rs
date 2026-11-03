@@ -1456,7 +1456,8 @@ fn contents(app: &mut App, ui: &mut egui::Ui, grid_art: Option<Rect>) {
                     )
                 });
                 // Animate rows around the current track or entry drop target.
-                let shift = ui.ctx().animate_value_with_time(
+                let shift = crate::motion::animate_value(
+                    ui.ctx(),
                     ui.id().with(("drop-shift", index)),
                     if let Some(slot) = reorder_slot {
                         if index < slot { -4.0 } else { 4.0 }
@@ -1467,7 +1468,7 @@ fn contents(app: &mut App, ui: &mut egui::Ui, grid_art: Option<Rect>) {
                             _ => 0.0,
                         }
                     },
-                    crate::motion::seconds(ui.ctx(), 0.12),
+                    crate::motion::seconds(ui.ctx(), 0.09),
                 );
                 let rect = rect.translate(vec2(0.0, shift));
                 // Set when the cover play button takes a click, so a double

@@ -6,11 +6,11 @@
 
 Motion Music is a personal customisation of [Spotifast](https://github.com/crmne/spotifast), built with Rust, egui, fastframe, and librespot. Original copyright, licence, and upstream credits are retained. Upstream documentation and release links describe Spotifast; official downloads do not include these customisations.
 
-## Download Motion Music v11
+## Download Motion Music v12
 
-**[Download the Windows portable ZIP](https://github.com/MaybeMotion/Motion-Music/releases/download/motion-v11/Motion-Music-v11-Windows.zip)** or open the [Motion Music v11 release](https://github.com/MaybeMotion/Motion-Music/releases/tag/motion-v11) for the source archive and checksums. Extract the ZIP, keep `spotifast-portable.txt` beside `Motion Music v11.exe`, and fully quit an older running copy before opening it.
+**[Download the Windows portable ZIP](https://github.com/MaybeMotion/Motion-Music/releases/download/motion-v12/Motion-Music-v12-Windows.zip)** or open the [Motion Music v12 release](https://github.com/MaybeMotion/Motion-Music/releases/tag/motion-v12) for the source archive and checksums. Extract the ZIP, keep `spotifast-portable.txt` beside `Motion Music v12.exe`, and fully quit an older running copy before opening it.
 
-See the [v11 setup and visualiser guide](docs/MOTION-MUSIC-V11.md). Downloads are installed manually; the automatic updater remains disabled for this custom build. **motion-v11** identifies this customised portable edition. The underlying Cargo package and executable version remain **0.14.1**, matching the tested build.
+See the [v12 setup and visualiser guide](docs/MOTION-MUSIC-V12.md). Downloads are installed manually; the automatic updater remains disabled for this custom build. **motion-v12** identifies this customised portable edition. The underlying Cargo package and executable version remain **0.14.1**, matching the tested build.
 
 The inherited Spotifast publishing workflows are archived and inactive. See [GitHub upload notes](docs/GITHUB-UPLOAD.md) for the source and publishing details.
 
@@ -43,11 +43,11 @@ Load your own JSON palettes through **Open themes folder**, choose separate cust
 
 ## Smooth motion
 
-Interactive colours and press feedback keep their 160 ms easing. Pages, playlists, albums, artists, and Back or Forward now use a shuffled set of ten **fixed-page reveals**: **expanding circle**, **inward circle**, **corner circle**, **swipe left**, **swipe right**, **swipe up**, **swipe down**, **diagonal sweep**, **horizontal curtain** and **diamond iris**. The page content stays in its final position throughout; the old slide-ins, drops, lifts and page fades have been removed.
+Controls now respond with a 120 ms speed ramp. Pages, playlists, albums, artists, and Back or Forward use a shuffled set of ten **fixed-page reveals**: **expanding circle**, **inward circle**, **corner circle**, **swipe left**, **swipe right**, **swipe up**, **swipe down**, **diagonal sweep**, **horizontal curtain** and **diamond iris**. The page content stays in its final position throughout.
 
-Each reveal takes 560 ms with smooth easing. Each shuffled set uses every style once, with no consecutive repeat across sets. The sidebar, header and player stay anchored. Repeated clicks on the current destination or empty page space do not stop or restart the animation. Selecting another page mid-animation starts from the visible page composite so rapid navigation stays continuous. Covered controls cannot receive accidental clicks. Scrolling, keyboard editing, resizing or a theme change can settle the reveal safely.
+Page reveals finish in 360 ms, down from 560 ms. Their speed builds early and settles gently, completing about 84% of the movement halfway through. Each shuffled set uses every style once, with no consecutive repeat across sets. The sidebar, header and player stay anchored. Repeated clicks on the current destination or empty page space do not stop or restart the animation. Selecting another page mid-animation starts from the visible page composite so rapid navigation stays continuous. Covered controls cannot receive accidental clicks. Scrolling, keyboard editing, resizing or a theme change can settle the reveal safely.
 
-Theme collections keep their 200 ms arrival fade, and theme changes retain the soft circular reveal over 600 ms. Menu and smooth-scroll animations remain. Interface effects stop requesting frames when settled and honour the operating system's reduced-motion preference. Existing audio visualisers keep their separate frame-rate controls.
+Theme changes use the same ramp for their soft circular reveal over 400 ms, down from 600 ms. Theme collections arrive in 140 ms. Hover and press feedback, switches, row movement, artwork colour changes and lyric highlights also use the shared ramp and shorter timings. Reversing a control or changing its target continues from the value currently visible. Menus and smooth scrolling use shorter native easing. Toasts arrive and leave more quickly while keeping their reading time. Interface effects stop requesting frames when settled and honour the operating system's reduced-motion preference. Music playback, audio-reactive visualiser timing and their separate frame-rate controls stay unchanged.
 
 ## Discord listening activity
 
@@ -125,7 +125,7 @@ Demo visual flags include **--demo-show motion-aurora**, **motion-radial**, **mo
 
 The executable, windows, tray/menu entries, playback device default, and native icons identify as Motion Music. Internal crate names, Spotify authentication identifiers, credential keys, profile folders, IPC identifiers, and package IDs remain compatible with Spotifast. Existing saved settings and sign-ins are preserved; custom device names are kept.
 
-Self-updates remain disabled for this custom build, preventing an upstream Spotifast download from replacing Motion Music. Update manually from [Motion Music releases](https://github.com/MaybeMotion/Motion-Music/releases), or rebuild this source. The custom v11 label identifies this portable update; the underlying package version remains 0.14.1.
+Self-updates remain disabled for this custom build, preventing an upstream Spotifast download from replacing Motion Music. Update manually from [Motion Music releases](https://github.com/MaybeMotion/Motion-Music/releases), or rebuild this source. The custom v12 label identifies this portable update; the underlying package version remains 0.14.1.
 
 ## Upstream and licence
 
@@ -137,6 +137,6 @@ Original project: [crmne/spotifast](https://github.com/crmne/spotifast), by Carm
 
 The native playback engine can receive **audio key 0 1** from Spotify. This means Spotify declined to supply the track's decryption key; personal Web API authorization does not resolve it. Motion Music shows the existing explanation and **Play on another device** action. A failed local request now clears its optimistic loading state immediately, while preserving remote play requests and queues. This UI fix does not bypass or resolve the server refusal.
 
-The Motion Music v11 app icon is **Vortex Bloom**, an original four-blade symbol in violet, pink, coral and cyan with a transparent background and open centre. A canonical PNG supplies the window and in-app icon; a matching monochrome bloom supplies the tray template, with native ICO and macOS exports.
+The Motion Music v12 app icon is **Vortex Bloom**, an original four-blade symbol in violet, pink, coral and cyan with a transparent background and open centre. A canonical PNG supplies the window and in-app icon; a matching monochrome bloom supplies the tray template, with native ICO and macOS exports.
 
-For the supplied v11 portable build, keep **spotifast-portable.txt** beside the executable. Fully quit an older running Motion Music instance before launching the new build; otherwise the existing instance handles the launch.
+For the supplied v12 portable build, keep **spotifast-portable.txt** beside the executable. Fully quit an older running Motion Music instance before launching the new build; otherwise the existing instance handles the launch.
