@@ -42,6 +42,24 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Report the previous publication error on a retry
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          previous="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow publish-macos-installer.yml --status failure --limit 1 --json databaseId --jq '.[0].databaseId')"
+          if [[ "$previous" =~ ^[0-9]+$ ]]; then
+            gh run view "$previous" --repo "$GITHUB_REPOSITORY" --log-failed > "$RUNNER_TEMP/previous-publication.log"
+            python3 - <<'PY'
+          import os, re, urllib.parse
+          from pathlib import Path
+          lines = (Path(os.environ['RUNNER_TEMP']) / 'previous-publication.log').read_text().splitlines()
+          text = '\n'.join(lines[-30:])
+          text = re.sub(r'https?://[^\s]+', lambda m: urllib.parse.urlsplit(m[0])._replace(query='', fragment='', netloc=urllib.parse.urlsplit(m[0]).hostname or '').geturl(), text)
+          text = re.sub(r'(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]+', '***', text)
+          text = text.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          print('::notice title=Previous publication error::' + text)
+          PY
+          fi
       - name: Select and validate the Mac build
         id: build
         env:
