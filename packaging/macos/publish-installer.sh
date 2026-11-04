@@ -29,7 +29,7 @@ for architecture in arm64 x86_64; do
     cp "$here/../../docs/MAC-INSTALL.md" "$stage/INSTALL.md"
     ln -s /Applications "$stage/Applications"
     codesign --verify --strict "$stage/Motion Music.app"
-    lipo -verify_arch "$architecture" "$stage/Motion Music.app/Contents/MacOS/motion-music"
+    lipo "$stage/Motion Music.app/Contents/MacOS/motion-music" -verify_arch "$architecture"
     python3 - "$stage/Motion Music.app/Contents/MacOS/motion-music" <<'PY'
 import subprocess, sys
 libraries = subprocess.check_output(['otool', '-L', sys.argv[1]], text=True)
