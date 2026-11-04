@@ -22,7 +22,7 @@ permissions:
 
 concurrency:
   group: publish-motion-v12-macos
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   publish:
