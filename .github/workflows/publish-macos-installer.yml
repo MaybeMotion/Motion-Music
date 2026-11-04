@@ -1,0 +1,149 @@
+name: Publish Mac installers
+
+on:
+  workflow_run:
+    workflows: [Build Mac installers]
+    types: [completed]
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/publish-macos-installer.yml
+      - packaging/macos/publish-installer.sh
+      - packaging/macos/third-party-notices.py
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Successful Build Mac installers run ID (latest main run if empty)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-motion-v12-macos
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: macos-15
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Select and validate the Mac build
+        id: build
+        env:
+          TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
+          MANUAL_RUN_ID: ${{ inputs.run_id }}
+        run: |
+          set -euo pipefail
+          run_id="${TRIGGER_RUN_ID:-${MANUAL_RUN_ID:-}}"
+          if [[ -z "$run_id" ]]; then
+            run_id="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow macos-installer.yml --branch main --limit 1 --json databaseId --jq '.[0].databaseId')"
+          fi
+          [[ "$run_id" =~ ^[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" > "$RUNNER_TEMP/mac-build.json"
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          run = json.loads((Path(os.environ['RUNNER_TEMP']) / 'mac-build.json').read_text())
+          assert run['path'] == '.github/workflows/macos-installer.yml', 'Unexpected build workflow'
+          assert run['head_repository']['full_name'] == os.environ['GITHUB_REPOSITORY'], 'Foreign build repository'
+          assert run['head_branch'] == 'main', 'Build must come from main'
+          assert run['event'] in ('workflow_dispatch', 'push'), 'Unexpected build event'
+          assert re.fullmatch(r'[0-9a-f]{40}', run['head_sha']), 'Invalid build commit'
+          ready = run['status'] == 'completed'
+          if ready:
+              assert run['conclusion'] == 'success', 'The Mac build did not succeed'
+          else:
+              print('::notice::The Mac build is still running. Its completion will trigger publication.')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f"ready={str(ready).lower()}\nrun_id={run['id']}\nsha={run['head_sha']}\n")
+          PY
+      - name: Verify the application matches the existing v12 release
+        if: steps.build.outputs.ready == 'true'
+        env:
+          BUILD_SHA: ${{ steps.build.outputs.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse 'refs/tags/motion-v12^{commit}')" = a42a1c43860bc7731cc84c24f423fba5c54c80de
+          git merge-base --is-ancestor "$BUILD_SHA" origin/main
+          git diff --exit-code motion-v12 "$BUILD_SHA" -- . \
+            ':(exclude).github/workflows/macos-installer.yml' \
+            ':(exclude).github/workflows/publish-macos-installer.yml' \
+            ':(exclude)README.md' ':(exclude)docs/MAC-INSTALL.md' \
+            ':(exclude)packaging/macos/build-installer.sh' \
+            ':(exclude)packaging/macos/publish-installer.sh' \
+            ':(exclude)packaging/macos/third-party-notices.py'
+          mkdir -p "$RUNNER_TEMP/mac-release-source"
+          git archive "$BUILD_SHA" | tar -x -C "$RUNNER_TEMP/mac-release-source"
+      - name: Check the existing release files
+        id: release
+        if: steps.build.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          gh release view motion-v12 --repo "$GITHUB_REPOSITORY" --json assets > "$RUNNER_TEMP/v12-assets.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          expected = {'Motion-Music-v12-macos-THIRD-PARTY-NOTICES.txt', 'SHA256-v12-macos.txt'}
+          for arch in ('arm64', 'x86_64'):
+              filename = f'Motion-Music-0.14.1-macos-{arch}.dmg'
+              expected.update((filename, filename + '.sha256'))
+          assets = json.loads((Path(os.environ['RUNNER_TEMP']) / 'v12-assets.json').read_text())
+          present = expected.intersection(asset['name'] for asset in assets['assets'])
+          assert not present or present == expected, 'Partial Mac upload exists; refusing to mix images and checksums'
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'needed={str(not present).lower()}\n')
+          PY
+      - name: Verify an already completed Mac publication
+        if: steps.release.outputs.needed == 'false'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/existing-mac-release"
+          gh release download motion-v12 --repo "$GITHUB_REPOSITORY" \
+            --pattern 'Motion-Music-0.14.1-macos-*' \
+            --pattern Motion-Music-v12-macos-THIRD-PARTY-NOTICES.txt \
+            --pattern SHA256-v12-macos.txt --dir "$RUNNER_TEMP/existing-mac-release"
+          cd "$RUNNER_TEMP/existing-mac-release"
+          shasum -a 256 -c SHA256-v12-macos.txt
+          shasum -a 256 -c Motion-Music-0.14.1-macos-arm64.dmg.sha256
+          shasum -a 256 -c Motion-Music-0.14.1-macos-x86_64.dmg.sha256
+      - uses: actions/download-artifact@v4
+        if: steps.release.outputs.needed == 'true'
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.build.outputs.run_id }}
+          pattern: Motion-Music-macos-*
+          merge-multiple: true
+          path: mac-build-downloads
+      - name: Prepare complete Mac distribution files
+        if: steps.release.outputs.needed == 'true'
+        run: |
+          set -euo pipefail
+          python3 packaging/macos/third-party-notices.py \
+            --manifest-path "$RUNNER_TEMP/mac-release-source/Cargo.toml" \
+            --output "$RUNNER_TEMP/Motion-Music-v12-macos-THIRD-PARTY-NOTICES.txt"
+          bash packaging/macos/publish-installer.sh \
+            "$PWD/mac-build-downloads" "$PWD/mac-publish-dist" \
+            "$RUNNER_TEMP/Motion-Music-v12-macos-THIRD-PARTY-NOTICES.txt"
+      - name: Add Mac files to the existing v12 release
+        if: steps.release.outputs.needed == 'true'
+        run: |
+          set -euo pipefail
+          cd mac-publish-dist
+          for file in *.dmg *.dmg.sha256 *NOTICES.txt SHA256-v12-macos.txt; do
+            gh release upload motion-v12 "$file" --repo "$GITHUB_REPOSITORY"
+          done
