@@ -8,6 +8,8 @@ Motion Music is a personal customisation of [Spotifast](https://github.com/crmne
 
 ## Download Motion Music v12
 
+**Mac:** see the [Mac installer and build instructions](docs/MAC-INSTALL.md) for Apple Silicon and Intel builds.
+
 **[Download the Windows portable ZIP](https://github.com/MaybeMotion/Motion-Music/releases/download/motion-v12/Motion-Music-v12-Windows.zip)** or open the [Motion Music v12 release](https://github.com/MaybeMotion/Motion-Music/releases/tag/motion-v12) for the source archive and checksums. Extract the ZIP, keep `spotifast-portable.txt` beside `Motion Music v12.exe`, and fully quit an older running copy before opening it.
 
 See the [v12 setup and visualiser guide](docs/MOTION-MUSIC-V12.md). Downloads are installed manually; the automatic updater remains disabled for this custom build. **motion-v12** identifies this customised portable edition. The underlying Cargo package and executable version remain **0.14.1**, matching the tested build.

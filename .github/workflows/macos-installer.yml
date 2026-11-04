@@ -1,0 +1,44 @@
+name: Build Mac installers
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  installer:
+    name: macOS ${{ matrix.architecture }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            architecture: arm64
+          - runner: macos-15-intel
+            architecture: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check runner architecture
+        env:
+          EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
+        run: test "$(uname -m)" = "$EXPECTED_ARCHITECTURE"
+      - name: Install native build dependencies
+        run: |
+          brew install cmake llvm glew pkg-config
+          echo "LIBCLANG_PATH=$(brew --prefix llvm)/lib" >> "$GITHUB_ENV"
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+      - name: Run library and Mac packaging tests
+        run: cargo test --locked --lib --test packaging_macos
+      - name: Build and verify installer
+        run: bash packaging/macos/build-installer.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Motion-Music-macos-${{ matrix.architecture }}
+          path: |
+            dist/*.dmg
+            dist/*.dmg.sha256
+          if-no-files-found: error
