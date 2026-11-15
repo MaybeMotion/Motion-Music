@@ -174,6 +174,46 @@ impl PlayerBarVis {
     }
 }
 
+/// Where the player bar visualizer takes its colours from.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VisColours {
+    /// The playing cover while colour from album art is on, as before this
+    /// setting existed; otherwise the theme.
+    #[default]
+    Auto,
+    /// Always the theme: a gradient theme's three colours, or the accent.
+    Theme,
+}
+
+impl VisColours {
+    pub const ALL: [Self; 2] = [Self::Auto, Self::Theme];
+
+    pub fn label(self, locale: crate::i18n::Locale) -> std::borrow::Cow<'static, str> {
+        use crate::i18n::gettext;
+        match self {
+            Self::Auto => gettext(locale, "Album art"),
+            Self::Theme => gettext(locale, "Theme"),
+        }
+    }
+}
+
+/// How many recently applied Motion themes the gallery keeps.
+pub const RECENT_THEMES: usize = 12;
+
+/// The saved theme names this version still carries, once each, in order.
+fn known_themes(names: &[String]) -> Vec<crate::theme::MotionTheme> {
+    let mut themes = Vec::with_capacity(names.len());
+    for name in names {
+        if let Some(theme) = crate::theme::MotionTheme::from_filename(name)
+            && !themes.contains(&theme)
+        {
+            themes.push(theme);
+        }
+    }
+    themes
+}
+
 /// Mini-player visualizer mode.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -389,6 +429,20 @@ pub struct Settings {
     pub player_bar_vis: PlayerBarVis,
     /// Allow clicks on the player bar background to cycle visualizer modes.
     pub player_bar_vis_click: bool,
+    /// Whether the visualizer follows the playing cover or keeps the theme's
+    /// colours. Older files without it follow the cover as before.
+    pub visualizer_colours: VisColours,
+    /// Motion themes starred in the gallery, by their built-in filename, in
+    /// the order they were starred. Unknown names are kept but not shown.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub favourite_themes: Vec<String>,
+    /// The Motion themes applied most recently, newest first.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub recent_themes: Vec<String>,
+    /// Page reveal styles left out of the shuffle, by their saved name.
+    /// Empty uses every style, as before this setting existed.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub page_reveals_off: Vec<String>,
     /// How many frames a second the player bar's visualizer and the mini
     /// player's analyser draw; 0 is uncapped. MilkDrop has its own.
     pub visualizer_fps: u32,
@@ -581,6 +635,10 @@ impl Default for Settings {
             accent_from_art: true,
             player_bar_vis: PlayerBarVis::Off,
             player_bar_vis_click: true,
+            visualizer_colours: VisColours::Auto,
+            favourite_themes: Vec::new(),
+            recent_themes: Vec::new(),
+            page_reveals_off: Vec::new(),
             visualizer_fps: crate::milkdrop::DEFAULT_FPS,
             discord_presence: false,
             discord_application_id: crate::discord_activity::DEFAULT_APPLICATION_ID.to_owned(),
@@ -656,6 +714,45 @@ fn default_buffer_ms() -> u32 {
 }
 
 impl Settings {
+    /// The starred Motion themes this version carries, in starred order.
+    pub fn favourite_theme_list(&self) -> Vec<crate::theme::MotionTheme> {
+        known_themes(&self.favourite_themes)
+    }
+
+    /// The recently applied Motion themes this version carries, newest first.
+    pub fn recent_theme_list(&self) -> Vec<crate::theme::MotionTheme> {
+        known_themes(&self.recent_themes)
+    }
+
+    pub fn is_favourite_theme(&self, theme: crate::theme::MotionTheme) -> bool {
+        self.favourite_themes
+            .iter()
+            .any(|name| name == theme.filename())
+    }
+
+    /// Star or unstar a Motion theme; answers whether it is now starred.
+    pub fn toggle_favourite_theme(&mut self, theme: crate::theme::MotionTheme) -> bool {
+        let before = self.favourite_themes.len();
+        self.favourite_themes
+            .retain(|name| name != theme.filename());
+        if self.favourite_themes.len() == before {
+            self.favourite_themes.push(theme.filename().to_owned());
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Move a just-applied Motion theme to the front of the recent list.
+    pub fn note_recent_theme(&mut self, theme: crate::theme::MotionTheme) {
+        if self.recent_themes.first().map(String::as_str) == Some(theme.filename()) {
+            return;
+        }
+        self.recent_themes.retain(|name| name != theme.filename());
+        self.recent_themes.insert(0, theme.filename().to_owned());
+        self.recent_themes.truncate(RECENT_THEMES);
+    }
+
     /// The local files folder, when one is set.
     pub fn local_files_folder(&self) -> Option<std::path::PathBuf> {
         self.local_files_folder
@@ -1697,6 +1794,61 @@ mod tests {
             let restored: Settings = serde_json::from_value(json).unwrap();
             assert_eq!(restored.tray_icon, choice);
         }
+    }
+
+    #[test]
+    fn favourites_recents_and_motion_choices_default_empty_and_round_trip() {
+        use super::{RECENT_THEMES, VisColours};
+        use crate::theme::MotionTheme;
+        let mut settings: Settings = serde_json::from_str("{}").unwrap();
+        assert!(settings.favourite_themes.is_empty());
+        assert!(settings.recent_themes.is_empty());
+        assert!(settings.page_reveals_off.is_empty());
+        assert_eq!(settings.visualizer_colours, VisColours::Auto);
+        // Untouched, the new lists add nothing to an existing file.
+        let json = serde_json::to_value(&settings).unwrap();
+        for field in ["favourite_themes", "recent_themes", "page_reveals_off"] {
+            assert!(
+                json.get(field).is_none(),
+                "{field} is written only when used"
+            );
+        }
+        assert_eq!(json["visualizer_colours"], "auto");
+
+        assert!(settings.toggle_favourite_theme(MotionTheme::Crimson));
+        assert!(settings.toggle_favourite_theme(MotionTheme::Amethyst));
+        assert!(settings.is_favourite_theme(MotionTheme::Crimson));
+        assert!(!settings.toggle_favourite_theme(MotionTheme::Crimson));
+        assert_eq!(settings.favourite_theme_list(), [MotionTheme::Amethyst]);
+
+        for theme in MotionTheme::ALL.into_iter().take(RECENT_THEMES + 5) {
+            settings.note_recent_theme(theme);
+        }
+        settings.note_recent_theme(MotionTheme::ALL[RECENT_THEMES]);
+        let recent = settings.recent_theme_list();
+        assert_eq!(recent.len(), RECENT_THEMES, "the list stays short");
+        assert_eq!(recent[0], MotionTheme::ALL[RECENT_THEMES], "newest first");
+        assert_eq!(
+            recent.iter().filter(|&&theme| theme == recent[0]).count(),
+            1,
+            "a theme used again moves up rather than repeating"
+        );
+
+        settings.page_reveals_off = vec!["blinds".into(), "clock".into()];
+        settings.visualizer_colours = VisColours::Theme;
+        let restored: Settings =
+            serde_json::from_str(&serde_json::to_string(&settings).unwrap()).unwrap();
+        assert!(restored == settings);
+
+        // A name from a newer or older version is kept in the file but not
+        // shown, and never makes the settings unreadable.
+        let odd: Settings = serde_json::from_str(
+            r#"{"favourite_themes":["motion-theme:not-real","motion-theme:crimson"],"visualizer_colours":"theme"}"#,
+        )
+        .unwrap();
+        assert_eq!(odd.favourite_theme_list(), [MotionTheme::Crimson]);
+        assert_eq!(odd.favourite_themes.len(), 2);
+        assert_eq!(odd.visualizer_colours, VisColours::Theme);
     }
 
     #[test]

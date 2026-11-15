@@ -16,6 +16,8 @@ See the [v12 setup and visualiser guide](docs/MOTION-MUSIC-V12.md). Downloads ar
 
 The inherited Spotifast publishing workflows are archived and inactive. See [GitHub upload notes](docs/GITHUB-UPLOAD.md) for the source and publishing details.
 
+The source on `main` is ahead of that download: it adds the **v13** changes described in the [v13 notes](docs/MOTION-MUSIC-V13.md) (theme favourites, six more page transitions, reveals that open from your click, and new shortcuts). Build it from source to use them until a v13 download is published.
+
 ## Make it yours
 
 Open **Settings > Appearance > Motion themes**. Start with **Main colours (16)** or **Main gradients (16)** for red, orange, yellow, lime, green, teal, cyan, blue, indigo, purple, pink, brown, gold, black, white and grey. Each has a solid Motion palette and a matching Horizon gradient. Search **main colours** (or **main colors**) or **main gradients** to open these collections directly. The gallery has clearly labelled colour tabs with swatches: **Red, Orange, Yellow, Green, Teal, Cyan, Blue, Purple, Pink, Brown, Monochrome and Gradients**. Every colour collection has both dark and light choices. Click a preview to apply it. Settings search understands colour names and aliases such as **navy**, **aqua**, **grey**, **black** and **white**, as well as combinations such as **light blue** and **blue gradient**. All 212 palettes are built in and available without downloads. They also appear in the main Theme menu and matching Light mode theme or Dark mode theme picker.
@@ -39,13 +41,17 @@ There are **128 solid palettes and 84 gradient themes**, including 63 light choi
 
 Each palette colours the page, panels, surfaces, highlights, buttons, outlines, and header tint. Following the system uses Amethyst in dark mode and Lavender Milk in light mode by default. Built-in palettes can also be assigned independently to the system light and dark appearances; no palette file or cached copy is required. Saved light/dark/system selections and existing custom themes still work.
 
-**Colour from album art** lets covers tint the page and visualisers. Turn it off in Appearance for colours driven by your selected theme.
+Point at a theme card and click its **heart** to keep it in **Favourites**, a tab that appears at the start of the gallery and opens first once you have some. The **Recent** tab keeps the last twelve themes you applied. **Ctrl+Shift+←** and **Ctrl+Shift+→** step to the previous or next theme, through your favourites when you have at least two and through all 212 otherwise. **Ctrl+Shift+R** picks a random theme of the current light or dark appearance.
+
+**Colour from album art** lets covers tint the page and visualisers. Turn it off in Appearance for colours driven by your selected theme. **Visualizer colours** set to **Theme** keeps the visualiser in your theme's colours, including a gradient theme's three, while pages still follow the cover.
 
 Load your own JSON palettes through **Open themes folder**, choose separate custom themes for light and dark appearances, or use the existing shared desktop presets. See [custom theme format](docs/_reference/settings-and-files.md#custom-themes). The existing custom-file picker supports up to 128 valid palettes; the 212 built-in Motion themes are separate.
 
 ## Smooth motion
 
-Controls now respond with a 120 ms speed ramp. Pages, playlists, albums, artists, and Back or Forward use a shuffled set of ten **fixed-page reveals**: **expanding circle**, **inward circle**, **corner circle**, **swipe left**, **swipe right**, **swipe up**, **swipe down**, **diagonal sweep**, **horizontal curtain** and **diamond iris**. The page content stays in its final position throughout.
+Controls now respond with a 120 ms speed ramp. Pages, playlists, albums and artists use a shuffled set of sixteen **fixed-page reveals**: **expanding circle**, **inward circle**, **corner circle**, **swipe left**, **swipe right**, **swipe up**, **swipe down**, **diagonal sweep**, **horizontal curtain**, **diamond iris**, **blinds**, **cascade**, **zipper**, **letterbox**, **chevron** and **clock wipe**. The page content stays in its final position throughout.
+
+The expanding circle opens from the place you clicked, so a playlist opened from the sidebar grows out of that side of the page. A theme chosen in the gallery spreads from its card in the same way. Changes made with a shortcut open from the centre. **Back** always swipes the previous page in from the left and **Forward** swipes the next one in from the right, without using up a shuffled style. Choose which styles the shuffle uses in **Settings > Appearance > Page transitions**; turning every style off changes pages at once.
 
 Page reveals finish in 360 ms, down from 560 ms. Their speed builds early and settles gently, completing about 84% of the movement halfway through. Each shuffled set uses every style once, with no consecutive repeat across sets. The sidebar, header and player stay anchored. Repeated clicks on the current destination or empty page space do not stop or restart the animation. Selecting another page mid-animation starts from the visible page composite so rapid navigation stays continuous. Covered controls cannot receive accidental clicks. Scrolling, keyboard editing, resizing or a theme change can settle the reveal safely.
 
@@ -84,7 +90,7 @@ Open **Settings > Appearance > Player bar visualizer** and choose:
 | Laser fan | Crossing fans of spectral light beams |
 | Fireworks | Bursts of sparks with falling trails |
 
-Visualisation starts off, preserving existing preferences. Click empty space in the bar to cycle modes when **Click player bar to change visualizer** is enabled. All sixteen effects and the Winamp mini player's bars and scope react to Motion Music's own local playback, including supported local files.
+Visualisation starts off, preserving existing preferences. Click empty space in the bar to cycle modes when **Click player bar to change visualizer** is enabled, or press **Ctrl+Shift+E** anywhere. All sixteen effects and the Winamp mini player's bars and scope react to Motion Music's own local playback, including supported local files.
 
 **On Windows, the effects can also follow sound from the official Spotify app and other apps on this PC.** While Motion Music's local player is idle, a visible visualiser automatically listens to the default Windows audio output. The **Windows audio** label identifies this input; hover it for its status. It includes other apps and system sounds, and app/system volume can affect the picture. Music playing only on a phone or separate speaker cannot drive these effects unless its audio reaches the PC's default Windows output.
 

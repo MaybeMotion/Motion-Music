@@ -67,7 +67,7 @@ pub(crate) fn arrival(ui: &Ui, id: Id, key: Id) -> f32 {
 
 /// Every page transition reveals a fixed-layout new page through the old one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PageTransition {
+pub(crate) enum PageTransition {
     CircleOut,
     CircleIn,
     CornerCircle,
@@ -78,10 +78,16 @@ enum PageTransition {
     SwipeUp,
     SwipeDown,
     DiamondIris,
+    Blinds,
+    Cascade,
+    Zipper,
+    Letterbox,
+    Chevron,
+    ClockWipe,
 }
 
 impl PageTransition {
-    const ALL: [Self; 10] = [
+    pub(crate) const ALL: [Self; 16] = [
         Self::CircleOut,
         Self::CircleIn,
         Self::CornerCircle,
@@ -92,11 +98,70 @@ impl PageTransition {
         Self::SwipeUp,
         Self::SwipeDown,
         Self::DiamondIris,
+        Self::Blinds,
+        Self::Cascade,
+        Self::Zipper,
+        Self::Letterbox,
+        Self::Chevron,
+        Self::ClockWipe,
     ];
 
-    fn reveal(self) -> reveal::Kind {
+    /// The stable name a turned-off style is saved under.
+    pub(crate) fn key(self) -> &'static str {
         match self {
-            Self::CircleOut => reveal::Kind::CircleOut,
+            Self::CircleOut => "circle-out",
+            Self::CircleIn => "circle-in",
+            Self::CornerCircle => "corner-circle",
+            Self::DiagonalSweep => "diagonal",
+            Self::Curtain => "curtain",
+            Self::SwipeLeft => "swipe-left",
+            Self::SwipeRight => "swipe-right",
+            Self::SwipeUp => "swipe-up",
+            Self::SwipeDown => "swipe-down",
+            Self::DiamondIris => "diamond",
+            Self::Blinds => "blinds",
+            Self::Cascade => "cascade",
+            Self::Zipper => "zipper",
+            Self::Letterbox => "letterbox",
+            Self::Chevron => "chevron",
+            Self::ClockWipe => "clock",
+        }
+    }
+
+    /// The English name shown in Settings; translated where it is drawn.
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::CircleOut => "Expanding circle",
+            Self::CircleIn => "Inward circle",
+            Self::CornerCircle => "Corner circle",
+            Self::DiagonalSweep => "Diagonal sweep",
+            Self::Curtain => "Curtain",
+            Self::SwipeLeft => "Swipe left",
+            Self::SwipeRight => "Swipe right",
+            Self::SwipeUp => "Swipe up",
+            Self::SwipeDown => "Swipe down",
+            Self::DiamondIris => "Diamond iris",
+            Self::Blinds => "Blinds",
+            Self::Cascade => "Cascade",
+            Self::Zipper => "Zipper",
+            Self::Letterbox => "Letterbox",
+            Self::Chevron => "Chevron",
+            Self::ClockWipe => "Clock wipe",
+        }
+    }
+
+    fn bit(self) -> u32 {
+        1 << Self::ALL
+            .iter()
+            .position(|&style| style == self)
+            .unwrap_or(0)
+    }
+
+    /// The expanding circle opens from the click that changed the page, when
+    /// there was one; a shortcut or a link opens it from the centre.
+    fn reveal(self, origin: Option<egui::Pos2>) -> reveal::Kind {
+        match self {
+            Self::CircleOut => origin.map_or(reveal::Kind::CircleOut, reveal::Kind::Spot),
             Self::CircleIn => reveal::Kind::CircleIn,
             Self::CornerCircle => reveal::Kind::CornerCircle,
             Self::DiagonalSweep => reveal::Kind::Diagonal,
@@ -106,6 +171,12 @@ impl PageTransition {
             Self::SwipeUp => reveal::Kind::SwipeUp,
             Self::SwipeDown => reveal::Kind::SwipeDown,
             Self::DiamondIris => reveal::Kind::Diamond,
+            Self::Blinds => reveal::Kind::Blinds,
+            Self::Cascade => reveal::Kind::Cascade,
+            Self::Zipper => reveal::Kind::Zipper,
+            Self::Letterbox => reveal::Kind::Letterbox,
+            Self::Chevron => reveal::Kind::Chevron,
+            Self::ClockWipe => reveal::Kind::Clock,
         }
     }
 
@@ -114,31 +185,111 @@ impl PageTransition {
     }
 }
 
-/// Each shuffled group uses every style once. Its first choice cannot repeat
-/// the previous group's last choice. Only a real page change advances it.
+const ALL_STYLES: u32 = (1 << PageTransition::ALL.len()) - 1;
+
+/// The styles the shuffle may use, as one bit for each of
+/// [`PageTransition::ALL`]. The app sets it from the saved preference.
+#[derive(Clone, Copy)]
+struct EnabledStyles(u32);
+
+fn enabled_styles_id() -> Id {
+    Id::new("motion-page-enabled-styles")
+}
+
+/// Limit the shuffle to the styles not named in `disabled` (their
+/// [`PageTransition::key`]). With every style turned off, pages change at once.
+pub(crate) fn set_disabled_styles(ctx: &egui::Context, disabled: &[String]) {
+    let mask = PageTransition::ALL
+        .into_iter()
+        .filter(|style| !disabled.iter().any(|key| key == style.key()))
+        .fold(0, |mask, style| mask | style.bit());
+    ctx.data_mut(|data| data.insert_temp(enabled_styles_id(), EnabledStyles(mask)));
+}
+
+fn enabled_styles(ctx: &egui::Context) -> u32 {
+    ctx.data(|data| data.get_temp::<EnabledStyles>(enabled_styles_id()))
+        .map_or(ALL_STYLES, |styles| styles.0 & ALL_STYLES)
+}
+
+#[derive(Clone, Copy)]
+struct Direction {
+    back: bool,
+}
+
+fn direction_id() -> Id {
+    Id::new("motion-page-direction")
+}
+
+/// Going back swipes the previous page in from the left, and going forward
+/// swipes the next one in from the right, instead of a shuffled style. The
+/// action is applied after its frame is drawn, so the hint is for the very
+/// next draw of the page.
+pub(crate) fn hint_direction(ctx: &egui::Context, back: bool) {
+    ctx.data_mut(|data| data.insert_temp(direction_id(), Direction { back }));
+}
+
+/// The hint for this draw, taken whether or not the page changed, so one that
+/// changed nothing is never applied to a later, unrelated page.
+fn take_direction(ctx: &egui::Context) -> Option<PageTransition> {
+    let direction = ctx.data_mut(|data| {
+        let direction = data.get_temp::<Direction>(direction_id());
+        data.remove::<Direction>(direction_id());
+        direction
+    })?;
+    Some(if direction.back {
+        PageTransition::SwipeRight
+    } else {
+        PageTransition::SwipeLeft
+    })
+}
+
+/// Each shuffled group uses every enabled style once. Its first choice cannot
+/// repeat the previous group's last choice. Only a real page change advances it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct PageTransitions {
     order: [PageTransition; PageTransition::ALL.len()],
+    /// How many of `order`, from its start, are the current group.
+    len: usize,
     next: usize,
     last: Option<PageTransition>,
+    enabled: u32,
 }
 
 impl Default for PageTransitions {
     fn default() -> Self {
         Self {
             order: PageTransition::ALL,
+            len: PageTransition::ALL.len(),
             next: PageTransition::ALL.len(),
             last: None,
+            enabled: ALL_STYLES,
         }
     }
 }
 
 impl PageTransitions {
+    /// Changing which styles are allowed starts a fresh group of just those.
+    fn set_enabled(&mut self, enabled: u32) {
+        let enabled = enabled & ALL_STYLES;
+        if enabled != self.enabled && enabled != 0 {
+            self.enabled = enabled;
+            self.next = self.len;
+        }
+    }
+
     fn pick(&mut self, rng: &mut impl Rng) -> PageTransition {
-        if self.next == self.order.len() {
-            self.order.shuffle(rng);
-            if Some(self.order[0]) == self.last {
-                let other = rng.random_range(1..self.order.len());
+        if self.next >= self.len {
+            let mut len = 0;
+            for style in PageTransition::ALL {
+                if self.enabled & style.bit() != 0 {
+                    self.order[len] = style;
+                    len += 1;
+                }
+            }
+            self.len = len;
+            self.order[..len].shuffle(rng);
+            if len > 1 && Some(self.order[0]) == self.last {
+                let other = rng.random_range(1..len);
                 self.order.swap(0, other);
             }
             self.next = 0;
@@ -186,6 +337,8 @@ struct PageArrival {
     key: Id,
     started: Option<f64>,
     transition: PageTransition,
+    /// Where the click that opened this page landed, for the expanding circle.
+    origin: Option<egui::Pos2>,
     choices: PageTransitions,
 }
 
@@ -195,6 +348,7 @@ impl PageArrival {
             key,
             started: None,
             transition: PageTransition::CircleOut,
+            origin: None,
             choices: PageTransitions::default(),
         }
     }
@@ -329,7 +483,7 @@ fn interrupt_reveal(ui: &Ui) -> bool {
     })
 }
 
-/// Page bodies use ten native wallpaper-style reveals without moving or fading
+/// Page bodies use sixteen native wallpaper-style reveals without moving or fading
 /// their contents. Fixed chrome stays outside the cached viewport. Only the previous
 /// displayed composite is retained; geometry and existing textures stay in memory, with no
 /// screenshot, readback, file operation or new renderer dependency.
@@ -353,12 +507,24 @@ pub(crate) fn page<R>(
         .data(|data| data.get_temp::<PageArrival>(id))
         .unwrap_or_else(|| PageArrival::new(key));
     let mut active = ui.data(|data| data.get_temp::<PageReveal>(reveal_id));
+    let direction = take_direction(ui.ctx());
     if state.key != key {
         let previous = state.key;
         state.key = key;
         active = None;
-        if !reduced {
-            state.transition = next_page_transition(ui.ctx(), &mut state.choices);
+        let enabled = enabled_styles(ui.ctx());
+        // With every style turned off the page simply changes.
+        if !reduced && enabled != 0 {
+            if let Some(directed) = direction {
+                // Back and Forward keep their own direction and leave the
+                // shuffle where it was.
+                state.transition = directed;
+                state.origin = None;
+            } else {
+                state.choices.set_enabled(enabled);
+                state.transition = next_page_transition(ui.ctx(), &mut state.choices);
+                state.origin = crate::motion::recent_click(ui.ctx());
+            }
             state.started = Some(now);
             let source = ui.data(|data| data.get_temp::<reveal::Snapshot>(snapshot_id));
             if source
@@ -399,7 +565,7 @@ pub(crate) fn page<R>(
         active = None;
     }
     let progress = reveal_progress(state, now);
-    let kind = state.transition.reveal();
+    let kind = state.transition.reveal(state.origin);
     let body_pointer = ui
         .input(|input| input.pointer.interact_pos())
         .filter(|&point| ui.clip_rect().contains(point));
@@ -724,6 +890,140 @@ mod tests {
     }
 
     #[test]
+    fn turned_off_styles_leave_the_shuffle_and_all_off_changes_pages_at_once() {
+        let mut choices = PageTransitions::default();
+        let mut rng = StdRng::seed_from_u64(11);
+        let kept = [
+            PageTransition::Blinds,
+            PageTransition::ClockWipe,
+            PageTransition::SwipeUp,
+        ];
+        choices.set_enabled(kept.iter().fold(0, |mask, style| mask | style.bit()));
+        let picks: Vec<_> = (0..90).map(|_| choices.pick(&mut rng)).collect();
+        assert!(picks.iter().all(|style| kept.contains(style)));
+        for group in picks.as_chunks::<3>().0 {
+            for style in kept {
+                assert_eq!(group.iter().filter(|&&value| value == style).count(), 1);
+            }
+        }
+        assert!(picks.windows(2).all(|pair| pair[0] != pair[1]));
+        // One style simply repeats; none at all leaves the last set in use
+        // for the shuffle, and the page itself skips the reveal.
+        choices.set_enabled(PageTransition::Zipper.bit());
+        assert!((0..5).all(|_| choices.pick(&mut rng) == PageTransition::Zipper));
+        choices.set_enabled(0);
+        assert_eq!(choices.pick(&mut rng), PageTransition::Zipper);
+
+        let ctx = egui::Context::default();
+        let every_key: Vec<String> = PageTransition::ALL
+            .iter()
+            .map(|style| style.key().to_owned())
+            .collect();
+        set_disabled_styles(&ctx, &every_key);
+        page_frame(&ctx, 0.0, "home", vec![]);
+        let (_, _, _, alpha) = page_frame(&ctx, 1.0, "playlist:a", vec![]);
+        assert_eq!(alpha, 255);
+        assert!(page_state(&ctx).started.is_none(), "no reveal starts");
+        assert_eq!(page_state(&ctx).choices, PageTransitions::default());
+        // Unknown saved names are ignored, and the styles come back.
+        set_disabled_styles(&ctx, &["not-a-style".to_owned(), "blinds".to_owned()]);
+        assert_eq!(
+            enabled_styles(&ctx),
+            ALL_STYLES & !PageTransition::Blinds.bit()
+        );
+        page_frame(&ctx, 2.0, "playlist:b", vec![]);
+        assert_eq!(page_state(&ctx).started, Some(2.0));
+        assert_ne!(page_state(&ctx).transition, PageTransition::Blinds);
+    }
+
+    #[test]
+    fn style_names_are_unique_and_stable_for_saved_settings() {
+        let keys: Vec<_> = PageTransition::ALL
+            .iter()
+            .map(|style| style.key())
+            .collect();
+        for (index, key) in keys.iter().enumerate() {
+            assert!(!keys[..index].contains(key), "{key} is saved once");
+            assert!(
+                key.chars().all(|c| c.is_ascii_lowercase() || c == '-'),
+                "{key} is a plain saved name"
+            );
+        }
+        assert_eq!(
+            PageTransition::ALL
+                .iter()
+                .fold(0, |mask, style| mask | style.bit()),
+            ALL_STYLES
+        );
+    }
+
+    #[test]
+    fn back_and_forward_swipe_their_own_way_without_using_the_shuffle() {
+        let ctx = egui::Context::default();
+        seed_page_transitions(&ctx, 7);
+        page_frame(&ctx, 0.0, "home", vec![]);
+        page_frame(&ctx, 1.0, "playlist:a", vec![]);
+        let shuffled = page_state(&ctx).choices;
+        hint_direction(&ctx, true);
+        page_frame(&ctx, 2.0, "home", vec![]);
+        let back = page_state(&ctx);
+        assert_eq!(back.transition, PageTransition::SwipeRight);
+        assert_eq!(back.started, Some(2.0));
+        assert_eq!(back.choices, shuffled, "the shuffle is left where it was");
+        hint_direction(&ctx, false);
+        page_frame(&ctx, 3.0, "playlist:a", vec![]);
+        assert_eq!(page_state(&ctx).transition, PageTransition::SwipeLeft);
+        assert_eq!(page_state(&ctx).choices, shuffled);
+        // A hint that changed no page is forgotten, not applied to a later one.
+        hint_direction(&ctx, true);
+        page_frame(&ctx, 4.0, "playlist:a", vec![]);
+        choose_next(&ctx, PageTransition::Chevron);
+        page_frame(&ctx, 5.0, "album:b", vec![]);
+        assert_eq!(page_state(&ctx).transition, PageTransition::Chevron);
+    }
+
+    #[test]
+    fn the_expanding_circle_opens_from_the_click_that_changed_the_page() {
+        let ctx = egui::Context::default();
+        page_frame(&ctx, 0.0, "home", vec![]);
+        choose_next(&ctx, PageTransition::CircleOut);
+        let at = egui::pos2(420.0, 300.0);
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(640.0, 480.0),
+                )),
+                time: Some(1.0),
+                events: click_events(at),
+                ..Default::default()
+            },
+            |ui| crate::motion::note_click(ui.ctx()),
+        );
+        output.textures_delta.clear();
+        page_frame(&ctx, 1.02, "playlist:clicked", vec![]);
+        let state = page_state(&ctx);
+        assert_eq!(state.origin, Some(at));
+        assert_eq!(
+            state.transition.reveal(state.origin),
+            reveal::Kind::Spot(at)
+        );
+        // Other styles keep their own shape, and a stale click is not used.
+        assert_eq!(
+            PageTransition::Curtain.reveal(state.origin),
+            reveal::Kind::Curtain
+        );
+        choose_next(&ctx, PageTransition::CircleOut);
+        page_frame(&ctx, 3.0, "album:later", vec![]);
+        let later = page_state(&ctx);
+        assert_eq!(later.origin, None);
+        assert_eq!(
+            later.transition.reveal(later.origin),
+            reveal::Kind::CircleOut
+        );
+    }
+
+    #[test]
     fn every_transition_keeps_real_control_and_scroll_geometry_fixed() {
         for transition in PageTransition::ALL {
             let ctx = egui::Context::default();
@@ -990,7 +1290,7 @@ mod tests {
                     .find(|&point| {
                         reveal::revealed(
                             egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(640.0, 480.0)),
-                            transition.reveal(),
+                            transition.reveal(None),
                             progress,
                             point,
                         )

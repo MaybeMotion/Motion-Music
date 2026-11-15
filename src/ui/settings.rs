@@ -1106,6 +1106,8 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let show_custom_titlebar = cfg!(target_os = "linux") || app.windows_controls_visible();
     let player_bar_vis = gettext(locale, "Player bar visualizer");
     let player_bar_vis_click = gettext(locale, "Click player bar to change visualizer");
+    let visualizer_colours = gettext(locale, "Visualizer colours");
+    let page_transitions = gettext(locale, "Page transitions");
     // Follow system's own light and dark palettes. Omarchy's palette already
     // follows the desktop, so they are offered only without it.
     let show_pair = app.settings.custom_theme.is_none()
@@ -1227,6 +1229,20 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         ),
         pair_row(fastframe_theme::Base::Light),
         pair_row(fastframe_theme::Base::Dark),
+        RowText::new(
+            visualizer_colours.clone(),
+            gettext(
+                locale,
+                "Album art follows the playing cover while Colour from album art is on. Theme keeps your theme's colours, including a gradient's three, whatever is playing.",
+            ),
+        ),
+        RowText::new(
+            page_transitions.clone(),
+            gettext(
+                locale,
+                "Choose the styles shuffled when a page changes. Back and Forward always swipe their own way. Turn every style off to change pages at once.",
+            ),
+        ),
     ];
     let motion_themes_match = theme::MotionTheme::ALL
         .into_iter()
@@ -1494,6 +1510,94 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     }
                 },
             );
+            {
+                use crate::settings::VisColours;
+                let labels = VisColours::ALL.map(|choice| choice.label(locale));
+                let gap = 6.0;
+                let width = labels
+                    .iter()
+                    .map(|label| theme::soft_button_width(ui, label))
+                    .sum::<f32>()
+                    + gap * (labels.len() - 1) as f32;
+                filtered_row_sized(
+                    ui,
+                    &palette,
+                    &needle,
+                    &appearance,
+                    &appearance_rows[13],
+                    width,
+                    |ui| {
+                        // Laid right to left, so the last choice goes first.
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = gap;
+                            for (choice, label) in VisColours::ALL.into_iter().zip(&labels).rev() {
+                                let current = app.settings.visualizer_colours == choice;
+                                if theme::soft_button(ui, &palette, None, label, current).clicked()
+                                    && !current
+                                {
+                                    app.settings.visualizer_colours = choice;
+                                    changed = true;
+                                }
+                            }
+                        });
+                    },
+                );
+            }
+            if appearance_rows[14].matches(&needle.trim().to_lowercase(), &appearance) {
+                use super::motion::PageTransition;
+                let all_label = gettext(locale, "All");
+                let none_label = gettext(locale, "None");
+                let gap = 6.0;
+                let width = theme::soft_button_width(ui, &all_label)
+                    + theme::soft_button_width(ui, &none_label)
+                    + gap;
+                let off = &mut app.settings.page_reveals_off;
+                widgets::setting_row_sized(
+                    ui,
+                    &palette,
+                    &appearance_rows[14].title,
+                    &appearance_rows[14].description,
+                    width,
+                    |ui| {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = gap;
+                            if theme::soft_button(ui, &palette, None, &none_label, false).clicked()
+                            {
+                                *off = PageTransition::ALL
+                                    .iter()
+                                    .map(|style| style.key().to_owned())
+                                    .collect();
+                                changed = true;
+                            }
+                            if theme::soft_button(ui, &palette, None, &all_label, false).clicked()
+                                && !off.is_empty()
+                            {
+                                off.clear();
+                                changed = true;
+                            }
+                        });
+                    },
+                );
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
+                    for style in PageTransition::ALL {
+                        let on = !off.iter().any(|key| key == style.key());
+                        let response = ui.add(
+                            egui::Button::selectable(on, gettext(locale, style.label()).as_ref())
+                                .wrap_mode(egui::TextWrapMode::Extend),
+                        );
+                        if response.clicked() {
+                            if on {
+                                off.push(style.key().to_owned());
+                            } else {
+                                off.retain(|key| key != style.key());
+                            }
+                            changed = true;
+                        }
+                    }
+                });
+                ui.add_space(6.0);
+            }
             filtered_row(
                 ui,
                 &palette,
@@ -2622,6 +2726,9 @@ fn start_with_computer_row(
 const MAIN_COLOURS_COLLECTION: usize = theme::MotionTheme::FAMILIES.len();
 const MAIN_GRADIENTS_COLLECTION: usize = MAIN_COLOURS_COLLECTION + 1;
 const MOTION_COLLECTION_COUNT: usize = MAIN_GRADIENTS_COLLECTION + 1;
+// The reader's own collections follow the built-in ones.
+const FAVOURITES_COLLECTION: usize = MOTION_COLLECTION_COUNT;
+const RECENT_COLLECTION: usize = MOTION_COLLECTION_COUNT + 1;
 
 fn collection_contains(index: usize, preset: theme::MotionTheme) -> bool {
     match index {
@@ -2790,7 +2897,7 @@ fn motion_theme_gallery(app: &mut App, ui: &mut egui::Ui, needle: &str) {
         &palette,
         &gettext(
             locale,
-            "{count} included. Click a preview to apply it immediately.",
+            "{count} included. Click a preview to apply it immediately, or its heart to keep it in Favourites.",
         )
         .replace("{count}", &MotionTheme::ALL.len().to_string()),
     );
@@ -2802,8 +2909,62 @@ fn motion_theme_gallery(app: &mut App, ui: &mut egui::Ui, needle: &str) {
     };
     let family_id = ui.make_persistent_id("motion-theme-family");
     let stored = ui.data(|data| data.get_temp::<usize>(family_id));
-    let mut active = active_motion_collection(stored, selected, needle);
+    // The reader's own two collections come from their settings, so they
+    // sit beside the built-in ones rather than among them.
+    let personal = |index: usize| -> Vec<MotionTheme> {
+        match index {
+            FAVOURITES_COLLECTION => app.settings.favourite_theme_list(),
+            RECENT_COLLECTION => app.settings.recent_theme_list(),
+            _ => Vec::new(),
+        }
+    };
+    let personal_matches = |index: usize| {
+        personal(index)
+            .into_iter()
+            .any(|preset| motion_theme_matches(needle, preset))
+    };
+    let unfiltered =
+        needle.trim().is_empty() || needle.trim().eq_ignore_ascii_case("Motion themes");
+    let mut active = match stored {
+        Some(index @ (FAVOURITES_COLLECTION | RECENT_COLLECTION)) if personal_matches(index) => {
+            index
+        }
+        // Favourites open first once there are some.
+        None if unfiltered && personal_matches(FAVOURITES_COLLECTION) => FAVOURITES_COLLECTION,
+        _ => active_motion_collection(
+            stored.filter(|&index| index < MOTION_COLLECTION_COUNT),
+            selected,
+            needle,
+        ),
+    };
     ui.horizontal_wrapped(|ui| {
+        for (index, name, icon) in [
+            (FAVOURITES_COLLECTION, "Favourites", Icon::HeartFilled),
+            (RECENT_COLLECTION, "Recent", Icon::Clock),
+        ] {
+            let count = personal(index).len();
+            if count == 0 {
+                continue;
+            }
+            let label = gettext(locale, name);
+            let response = ui.add_enabled(
+                personal_matches(index),
+                egui::Button::selectable(active == index, format!("{label} ({count})"))
+                    .wrap_mode(egui::TextWrapMode::Extend),
+            );
+            if ui.is_rect_visible(response.rect) {
+                icon.image(palette.accent, 7.0).paint_at(
+                    ui,
+                    egui::Rect::from_center_size(
+                        egui::pos2(response.rect.left() + 6.0, response.rect.center().y),
+                        Vec2::splat(7.0),
+                    ),
+                );
+            }
+            if response.clicked() {
+                active = index;
+            }
+        }
         let collections = [
             (MAIN_COLOURS_COLLECTION, "Main colours"),
             (MAIN_GRADIENTS_COLLECTION, "Main gradients"),
@@ -2859,12 +3020,20 @@ fn motion_theme_gallery(app: &mut App, ui: &mut egui::Ui, needle: &str) {
     let gap = ui.spacing().item_spacing.x;
     let columns = ((available + gap) / (150.0 + gap)).floor().clamp(1.0, 4.0) as usize;
     let width = (available - gap * (columns - 1) as f32) / columns as f32;
-    let presets: Vec<_> = MotionTheme::ALL
-        .into_iter()
-        .filter(|preset| {
-            collection_contains(active, *preset) && motion_theme_matches(needle, *preset)
-        })
-        .collect();
+    let presets: Vec<_> = if active >= MOTION_COLLECTION_COUNT {
+        personal(active)
+            .into_iter()
+            .filter(|preset| motion_theme_matches(needle, *preset))
+            .collect()
+    } else {
+        MotionTheme::ALL
+            .into_iter()
+            .filter(|preset| {
+                collection_contains(active, *preset) && motion_theme_matches(needle, *preset)
+            })
+            .collect()
+    };
+    let favourites = app.settings.favourite_theme_list();
     // Explicit rows keep the computed number of columns. A wrapping layout
     // can reserve extra width for the row and wrap every other card.
     ui.scope(|ui| {
@@ -2874,7 +3043,12 @@ fn motion_theme_gallery(app: &mut App, ui: &mut egui::Ui, needle: &str) {
         for row in presets.chunks(columns) {
             ui.horizontal(|ui| {
                 for &preset in row {
-                    if motion_theme_card(ui, preset, selected == Some(preset), width).clicked() {
+                    let card = motion_theme_card(ui, preset, selected == Some(preset), width);
+                    // Drawn after the card, so the heart takes its own clicks.
+                    let starred = favourites.contains(&preset);
+                    if favourite_heart(ui, locale, &card, preset, starred) {
+                        app.actions.push(Action::ToggleFavouriteTheme(preset));
+                    } else if card.clicked() {
                         app.actions
                             .push(Action::SetTheme(ThemeChoice::Motion(preset)));
                     }
@@ -2883,6 +3057,63 @@ fn motion_theme_gallery(app: &mut App, ui: &mut egui::Ui, needle: &str) {
         }
     });
     ui.add_space(10.0);
+}
+
+/// The heart at the end of a theme card's name: filled once starred, an
+/// outline while the card is pointed at. Answers whether it was clicked.
+/// It pops as it changes, and stays reachable from the keyboard.
+fn favourite_heart(
+    ui: &mut egui::Ui,
+    locale: crate::i18n::Locale,
+    card: &egui::Response,
+    preset: theme::MotionTheme,
+    starred: bool,
+) -> bool {
+    let centre = card.rect.right_bottom() + Vec2::new(-15.0, -15.0);
+    let target = egui::Rect::from_center_size(centre, Vec2::splat(22.0));
+    let response = ui.interact(target, card.id.with("favourite"), egui::Sense::click());
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(
+            egui::WidgetType::Checkbox,
+            ui.is_enabled(),
+            starred,
+            gettext(locale, "Favourite {name}").replace("{name}", preset.name()),
+        )
+    });
+    let pointed = card.hovered() || response.hovered() || response.has_focus();
+    if ui.is_rect_visible(target) && (starred || pointed) {
+        let colours = preset.palette();
+        // Half-way through its change the heart is at its largest.
+        let change = crate::motion::animate_bool_with_time(
+            ui.ctx(),
+            response.id.with("favourite-pop"),
+            starred,
+            0.22,
+        );
+        let pop = (change * std::f32::consts::PI).sin();
+        let lit = theme::motion::hover(ui, response.id.with("favourite-hover"), response.hovered());
+        let size = 12.0 + 4.0 * pop + lit;
+        let colour = if starred {
+            colours.accent
+        } else {
+            theme::motion::blend(colours.secondary, colours.text, lit)
+        };
+        let icon = if starred {
+            Icon::HeartFilled
+        } else {
+            Icon::Heart
+        };
+        icon.image(colour, size)
+            .paint_at(ui, egui::Rect::from_center_size(centre, Vec2::splat(size)));
+    }
+    theme::focus_ring(ui, &response);
+    response
+        .on_hover_text(if starred {
+            gettext(locale, "Remove from Favourites")
+        } else {
+            gettext(locale, "Add to Favourites")
+        })
+        .clicked()
 }
 
 /// A real palette preview: the canvas, navigation, cover, text and accent.

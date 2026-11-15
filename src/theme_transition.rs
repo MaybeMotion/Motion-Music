@@ -42,6 +42,9 @@ struct Picture {
     texture: TextureHandle,
     geometry: Geometry,
     started: f64,
+    /// Where the circle opens from: the click that chose the palette, or
+    /// the centre for a shortcut or a system appearance change.
+    origin: Option<Pos2>,
 }
 #[derive(Default)]
 enum State {
@@ -51,6 +54,7 @@ enum State {
         request: u64,
         since: f64,
         geometry: Geometry,
+        origin: Option<Pos2>,
         previous: Option<Picture>,
     },
     Revealing(Picture),
@@ -82,6 +86,7 @@ impl ThemeTransition {
             request,
             since: ctx.input(|input| input.time),
             geometry: Geometry::current(ctx),
+            origin: crate::motion::recent_click(ctx),
             previous,
         };
         ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::new(
@@ -97,6 +102,7 @@ impl ThemeTransition {
             request,
             since,
             geometry,
+            origin,
             ..
         } = &self.state
         else {
@@ -136,6 +142,7 @@ impl ThemeTransition {
                 ),
                 geometry: *geometry,
                 started: now,
+                origin: *origin,
             };
             self.state = State::Revealing(picture);
             ctx.request_repaint();
@@ -207,6 +214,7 @@ impl ThemeTransition {
             .with_clip_rect(picture.geometry.rect)
             .add(egui::Shape::mesh(circle_mesh(
                 picture.geometry.rect,
+                picture.origin,
                 picture.texture.id(),
                 progress,
             )));
@@ -221,8 +229,9 @@ fn finished(picture: &Picture, now: f64, ctx: &Context) -> bool {
 }
 
 /// Three radial bands describe a clear centre, a soft edge and opaque outside.
-/// Every vertex keeps the original frame's screen-to-texture mapping.
-fn circle_mesh(rect: Rect, texture: egui::TextureId, progress: f32) -> Mesh {
+/// Every vertex keeps the original frame's screen-to-texture mapping. The
+/// circle opens from `origin`, kept inside the frame, or from the centre.
+fn circle_mesh(rect: Rect, origin: Option<Pos2>, texture: egui::TextureId, progress: f32) -> Mesh {
     if progress <= 0.0 {
         let mut mesh = Mesh::with_texture(texture);
         mesh.add_rect_with_uv(
@@ -232,8 +241,19 @@ fn circle_mesh(rect: Rect, texture: egui::TextureId, progress: f32) -> Mesh {
         );
         return mesh;
     }
-    let centre = rect.center();
-    let diagonal = rect.size().length() * 0.5;
+    let centre = origin
+        .filter(|point| point.x.is_finite() && point.y.is_finite())
+        .map_or(rect.center(), |point| point.clamp(rect.min, rect.max));
+    // The circle has to pass the corner furthest from where it opens.
+    let diagonal = [
+        rect.left_top(),
+        rect.right_top(),
+        rect.left_bottom(),
+        rect.right_bottom(),
+    ]
+    .into_iter()
+    .map(|corner| corner.distance(centre))
+    .fold(0.0, f32::max);
     let outer = progress.clamp(0.0, 1.0) * (diagonal + FEATHER);
     let radii = [(outer - FEATHER).max(0.0), outer, diagonal * 2.0 + FEATHER];
     let mut mesh = Mesh::with_texture(texture);
@@ -415,10 +435,10 @@ mod tests {
     fn circle_has_exact_start_and_no_opaque_end_pixels_inside_the_frame() {
         let rect = Rect::from_min_max(egui::pos2(30.0, 40.0), egui::pos2(1310.0, 940.0));
         let texture = egui::TextureId::Managed(7);
-        let start = circle_mesh(rect, texture, 0.0);
+        let start = circle_mesh(rect, None, texture, 0.0);
         assert_eq!(start.vertices.len(), 4);
         assert!(start.vertices.iter().all(|v| v.color == Color32::WHITE));
-        let end = circle_mesh(rect, texture, 1.0);
+        let end = circle_mesh(rect, None, texture, 1.0);
         for v in &end.vertices {
             if v.color.a() > 0 {
                 assert!(v.pos.distance(rect.center()) > rect.size().length() * 0.5);
@@ -430,5 +450,57 @@ mod tests {
             assert!((uv - v.uv).length() < 1e-5);
         }
         assert_eq!(end.vertices.len(), SEGMENTS * 3);
+    }
+    #[test]
+    fn a_clicked_origin_opens_there_and_still_clears_the_whole_frame() {
+        let rect = Rect::from_min_max(egui::pos2(30.0, 40.0), egui::pos2(1310.0, 940.0));
+        let texture = egui::TextureId::Managed(7);
+        let corners = [
+            rect.left_top(),
+            rect.right_top(),
+            rect.left_bottom(),
+            rect.right_bottom(),
+        ];
+        for click in [
+            egui::pos2(120.0, 860.0),
+            rect.right_top(),
+            // Outside the window and invalid points fall back safely.
+            egui::pos2(-500.0, 5000.0),
+            egui::pos2(f32::NAN, 10.0),
+        ] {
+            let centre = if click.x.is_finite() {
+                click.clamp(rect.min, rect.max)
+            } else {
+                rect.center()
+            };
+            let early = circle_mesh(rect, Some(click), texture, 0.2);
+            // The clear middle band is centred on the click.
+            let clear: Vec<_> = early.vertices[..SEGMENTS].iter().collect();
+            assert!(clear.iter().all(|v| v.color == Color32::TRANSPARENT));
+            let radius = clear[0].pos.distance(centre);
+            assert!(
+                clear
+                    .iter()
+                    .all(|v| (v.pos.distance(centre) - radius).abs() < 0.01)
+            );
+            let end = circle_mesh(rect, Some(click), texture, 1.0);
+            let reach = corners
+                .iter()
+                .map(|corner| corner.distance(centre))
+                .fold(0.0, f32::max);
+            for v in &end.vertices {
+                if v.color.a() > 0 {
+                    assert!(
+                        v.pos.distance(centre) > reach,
+                        "no old pixel remains in the frame"
+                    );
+                }
+                let uv = egui::pos2(
+                    (v.pos.x - rect.min.x) / rect.width(),
+                    (v.pos.y - rect.min.y) / rect.height(),
+                );
+                assert!((uv - v.uv).length() < 1e-4);
+            }
+        }
     }
 }

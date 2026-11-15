@@ -10,7 +10,7 @@ const MAX_VERTICES: usize = 180_000;
 const MAX_INDICES: usize = 540_000;
 const EDGE: f32 = 1.25;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Kind {
     CircleOut,
     CircleIn,
@@ -22,6 +22,125 @@ pub(super) enum Kind {
     SwipeUp,
     SwipeDown,
     Diamond,
+    /// A circle opening from a point, such as the click that changed the page.
+    Spot(Pos2),
+    /// Horizontal slats that each open downwards together.
+    Blinds,
+    /// Columns that drop open one after another from the left.
+    Cascade,
+    /// Horizontal bands that slide open in alternating directions.
+    Zipper,
+    /// Opens from the horizontal midline towards the top and bottom.
+    Letterbox,
+    /// An arrowhead sweeping from left to right.
+    Chevron,
+    /// A clock hand sweeping once around the centre.
+    Clock,
+}
+
+const BLIND_ROWS: usize = 8;
+const ZIPPER_ROWS: usize = 6;
+const CASCADE_COLUMNS: usize = 7;
+/// How much of a cascade's time is spent starting later columns.
+const CASCADE_STAGGER: f32 = 0.55;
+const CHEVRON_SLOPE: f32 = 0.6;
+
+#[derive(Clone, Copy)]
+enum Wipe {
+    Left,
+    Right,
+    Up,
+    Down,
+}
+
+/// One rectangular part of the page with its own straight wipe. `rect` is
+/// the visible travel; `region` extends the outermost strips without limit so
+/// geometry beyond the page edge still belongs to exactly one strip.
+#[derive(Clone, Copy)]
+struct Strip {
+    rect: Rect,
+    region: Rect,
+    wipe: Wipe,
+    progress: f32,
+}
+
+impl Strip {
+    fn boundary(&self) -> f32 {
+        let progress = self.progress.clamp(0.0, 1.0);
+        match self.wipe {
+            Wipe::Left => {
+                self.rect.right() + EDGE * 2.0 - (self.rect.width() + EDGE * 4.0) * progress
+            }
+            Wipe::Right => {
+                self.rect.left() - EDGE * 2.0 + (self.rect.width() + EDGE * 4.0) * progress
+            }
+            Wipe::Up => {
+                self.rect.bottom() + EDGE * 2.0 - (self.rect.height() + EDGE * 4.0) * progress
+            }
+            Wipe::Down => {
+                self.rect.top() - EDGE * 2.0 + (self.rect.height() + EDGE * 4.0) * progress
+            }
+        }
+    }
+    fn plane(&self) -> Plane {
+        let boundary = self.boundary();
+        match self.wipe {
+            Wipe::Left => Plane {
+                normal: Vec2::X,
+                offset: boundary + EDGE,
+            },
+            Wipe::Right => Plane {
+                normal: -Vec2::X,
+                offset: -boundary + EDGE,
+            },
+            Wipe::Up => Plane {
+                normal: Vec2::Y,
+                offset: boundary + EDGE,
+            },
+            Wipe::Down => Plane {
+                normal: -Vec2::Y,
+                offset: -boundary + EDGE,
+            },
+        }
+    }
+    fn partition(&self) -> Vec<Plane> {
+        let mut planes = Vec::with_capacity(2);
+        if self.region.left().is_finite() {
+            planes.push(Plane {
+                normal: -Vec2::X,
+                offset: -self.region.left(),
+            });
+        }
+        if self.region.right().is_finite() {
+            planes.push(Plane {
+                normal: Vec2::X,
+                offset: self.region.right(),
+            });
+        }
+        if self.region.top().is_finite() {
+            planes.push(Plane {
+                normal: -Vec2::Y,
+                offset: -self.region.top(),
+            });
+        }
+        if self.region.bottom().is_finite() {
+            planes.push(Plane {
+                normal: Vec2::Y,
+                offset: self.region.bottom(),
+            });
+        }
+        planes
+    }
+}
+
+/// The old page's opacity across a feather ending at `plane`.
+fn plane_alpha(plane: Plane, p: Pos2) -> f32 {
+    (-plane.distance(p) / (EDGE * 2.0)).clamp(0.0, 1.0)
+}
+
+/// A unit direction `angle` radians clockwise from straight up.
+fn clockwise(angle: f32) -> Vec2 {
+    Vec2::new(angle.sin(), -angle.cos())
 }
 
 #[derive(Clone, Copy)]
@@ -408,33 +527,47 @@ impl Mask {
     fn is_circle(&self) -> bool {
         matches!(
             self.kind,
-            Kind::CircleOut | Kind::CircleIn | Kind::CornerCircle
+            Kind::CircleOut | Kind::CircleIn | Kind::CornerCircle | Kind::Spot(_)
         )
     }
     fn circle_sides(&self) -> usize {
-        // Corner reveals travel twice as far as centre circles. Keep their
-        // feather just as smooth without increasing existing circle costs.
-        if self.kind == Kind::CornerCircle {
+        // Corner and off-centre reveals travel up to twice as far as centre
+        // circles. Keep their feather just as smooth without increasing
+        // existing circle costs.
+        if matches!(self.kind, Kind::CornerCircle | Kind::Spot(_)) {
             CIRCLE_SIDES * 2
         } else {
             CIRCLE_SIDES
         }
     }
     fn origin(&self) -> Pos2 {
-        if self.kind == Kind::CornerCircle {
-            self.rect.min
-        } else {
-            self.rect.center()
+        match self.kind {
+            Kind::CornerCircle => self.rect.min,
+            // A point outside the page, or an invalid one, opens from the
+            // nearest place on it.
+            Kind::Spot(point) if point.x.is_finite() && point.y.is_finite() => {
+                point.clamp(self.rect.min, self.rect.max)
+            }
+            _ => self.rect.center(),
         }
     }
     fn radius(&self) -> f32 {
-        let reach = self.rect.size().length()
-            * if self.kind == Kind::CornerCircle {
-                1.0
-            } else {
-                0.5
+        let reach = match self.kind {
+            Kind::CornerCircle => self.rect.size().length(),
+            Kind::Spot(_) => {
+                let origin = self.origin();
+                [
+                    self.rect.left_top(),
+                    self.rect.right_top(),
+                    self.rect.left_bottom(),
+                    self.rect.right_bottom(),
+                ]
+                .into_iter()
+                .map(|corner| corner.distance(origin))
+                .fold(0.0, f32::max)
             }
-            + EDGE * 2.0;
+            _ => self.rect.size().length() * 0.5,
+        } + EDGE * 2.0;
         reach
             * if self.kind == Kind::CircleIn {
                 1.0 - self.progress
@@ -469,6 +602,95 @@ impl Mask {
     fn boundary(&self) -> f32 {
         (self.rect.width() + self.rect.height() * 0.65 + EDGE * 4.0) * self.progress - EDGE * 2.0
     }
+    /// The independent straight wipes of the strip styles; empty otherwise.
+    fn strips(&self) -> Vec<Strip> {
+        let rect = self.rect;
+        let rows = |count: usize, wipe: &dyn Fn(usize) -> Wipe| {
+            (0..count)
+                .map(|index| {
+                    let top = rect.top() + rect.height() * index as f32 / count as f32;
+                    let bottom = rect.top() + rect.height() * (index + 1) as f32 / count as f32;
+                    Strip {
+                        rect: Rect::from_min_max(
+                            Pos2::new(rect.left(), top),
+                            Pos2::new(rect.right(), bottom),
+                        ),
+                        region: Rect::from_min_max(
+                            Pos2::new(
+                                f32::NEG_INFINITY,
+                                if index == 0 { f32::NEG_INFINITY } else { top },
+                            ),
+                            Pos2::new(
+                                f32::INFINITY,
+                                if index + 1 == count {
+                                    f32::INFINITY
+                                } else {
+                                    bottom
+                                },
+                            ),
+                        ),
+                        wipe: wipe(index),
+                        progress: self.progress,
+                    }
+                })
+                .collect::<Vec<_>>()
+        };
+        match self.kind {
+            Kind::Blinds => rows(BLIND_ROWS, &|_| Wipe::Down),
+            Kind::Zipper => rows(ZIPPER_ROWS, &|index| {
+                if index % 2 == 0 {
+                    Wipe::Right
+                } else {
+                    Wipe::Left
+                }
+            }),
+            Kind::Letterbox => rows(2, &|index| if index == 0 { Wipe::Up } else { Wipe::Down }),
+            Kind::Cascade => (0..CASCADE_COLUMNS)
+                .map(|index| {
+                    let count = CASCADE_COLUMNS as f32;
+                    let left = rect.left() + rect.width() * index as f32 / count;
+                    let right = rect.left() + rect.width() * (index + 1) as f32 / count;
+                    // Every column starts closed and ends open; later columns
+                    // start later and all of them finish with the reveal.
+                    let delay = CASCADE_STAGGER * index as f32 / (count - 1.0);
+                    Strip {
+                        rect: Rect::from_min_max(
+                            Pos2::new(left, rect.top()),
+                            Pos2::new(right, rect.bottom()),
+                        ),
+                        region: Rect::from_min_max(
+                            Pos2::new(
+                                if index == 0 { f32::NEG_INFINITY } else { left },
+                                f32::NEG_INFINITY,
+                            ),
+                            Pos2::new(
+                                if index + 1 == CASCADE_COLUMNS {
+                                    f32::INFINITY
+                                } else {
+                                    right
+                                },
+                                f32::INFINITY,
+                            ),
+                        ),
+                        wipe: Wipe::Down,
+                        progress: (self.progress * (1.0 + CASCADE_STAGGER) - delay).clamp(0.0, 1.0),
+                    }
+                })
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+    /// Where the chevron's tip is along the horizontal midline.
+    fn chevron_boundary(&self) -> f32 {
+        let margin = EDGE * 2.0 * (1.0 + CHEVRON_SLOPE * CHEVRON_SLOPE).sqrt();
+        self.rect.left() - margin
+            + (self.rect.width() + CHEVRON_SLOPE * self.rect.height() * 0.5 + margin * 2.0)
+                * self.progress
+    }
+    /// The quarter turn the clock hand is in, counted clockwise from the top.
+    fn clock_quadrant(&self) -> usize {
+        ((self.progress * 4.0).floor() as usize).min(3)
+    }
     fn alpha(&self, p: Pos2) -> f32 {
         if self.progress <= 0.0 {
             return 1.0;
@@ -477,7 +699,37 @@ impl Mask {
             return 0.0;
         }
         match self.kind {
-            Kind::CircleOut | Kind::CornerCircle => {
+            Kind::Blinds | Kind::Cascade | Kind::Zipper | Kind::Letterbox => {
+                let strips = self.strips();
+                strips
+                    .iter()
+                    .find(|strip| strip.region.contains(p))
+                    .or(strips.last())
+                    .map_or(0.0, |strip| plane_alpha(strip.plane(), p))
+            }
+            Kind::Chevron => {
+                let length = (1.0 + CHEVRON_SLOPE * CHEVRON_SLOPE).sqrt();
+                let ahead = (p.x + CHEVRON_SLOPE * (p.y - self.rect.center().y).abs()
+                    - self.chevron_boundary())
+                    / length;
+                ((ahead + EDGE) / (EDGE * 2.0)).clamp(0.0, 1.0)
+            }
+            Kind::Clock => {
+                let from = p - self.rect.center();
+                let angle = from.x.atan2(-from.y).rem_euclid(std::f32::consts::TAU);
+                let quadrant = ((angle / std::f32::consts::FRAC_PI_2) as usize).min(3);
+                let active = self.clock_quadrant();
+                if quadrant < active {
+                    0.0
+                } else if quadrant > active {
+                    1.0
+                } else {
+                    let hand = clockwise(std::f32::consts::TAU * self.progress);
+                    let past = hand.x * from.y - hand.y * from.x;
+                    ((past + EDGE) / (EDGE * 2.0)).clamp(0.0, 1.0)
+                }
+            }
+            Kind::CircleOut | Kind::CornerCircle | Kind::Spot(_) => {
                 ((p.distance(self.origin()) - self.radius() + EDGE) / (EDGE * 2.0)).clamp(0.0, 1.0)
             }
             Kind::CircleIn => ((self.radius() - p.distance(self.rect.center()) + EDGE)
@@ -643,8 +895,129 @@ impl Mask {
                     })
                     .collect()
             }
-            Kind::CircleOut | Kind::CircleIn | Kind::CornerCircle => Vec::new(),
+            Kind::Blinds | Kind::Cascade | Kind::Zipper | Kind::Letterbox => self
+                .strips()
+                .iter()
+                .map(|strip| (strip.plane(), strip.partition()))
+                .collect(),
+            Kind::Chevron => {
+                let length = (1.0 + CHEVRON_SLOPE * CHEVRON_SLOPE).sqrt();
+                let middle = self.rect.center().y;
+                let boundary = self.chevron_boundary();
+                vec![
+                    (
+                        Plane {
+                            normal: Vec2::new(-1.0, CHEVRON_SLOPE) / length,
+                            offset: -(boundary - CHEVRON_SLOPE * middle) / length + EDGE,
+                        },
+                        vec![Plane {
+                            normal: Vec2::Y,
+                            offset: middle,
+                        }],
+                    ),
+                    (
+                        Plane {
+                            normal: Vec2::new(-1.0, -CHEVRON_SLOPE) / length,
+                            offset: -(boundary + CHEVRON_SLOPE * middle) / length + EDGE,
+                        },
+                        vec![Plane {
+                            normal: -Vec2::Y,
+                            offset: -middle,
+                        }],
+                    ),
+                ]
+            }
+            Kind::Clock => {
+                let centre = self.rect.center().to_vec2();
+                let active = self.clock_quadrant();
+                (active..4)
+                    .map(|quadrant| {
+                        let start = clockwise(quadrant as f32 * std::f32::consts::FRAC_PI_2);
+                        let end = clockwise((quadrant + 1) as f32 * std::f32::consts::FRAC_PI_2);
+                        let after = Vec2::new(start.y, -start.x);
+                        let before = Vec2::new(-end.y, end.x);
+                        let partition = vec![
+                            Plane {
+                                normal: after,
+                                offset: after.dot(centre),
+                            },
+                            Plane {
+                                normal: before,
+                                offset: before.dot(centre),
+                            },
+                        ];
+                        let plane = if quadrant == active {
+                            let hand = clockwise(std::f32::consts::TAU * self.progress);
+                            let normal = Vec2::new(hand.y, -hand.x);
+                            Plane {
+                                normal,
+                                offset: normal.dot(centre) + EDGE,
+                            }
+                        } else {
+                            // The hand has not reached this quarter: all of
+                            // it still shows the old page.
+                            Plane {
+                                normal: Vec2::ZERO,
+                                offset: 1.0e9,
+                            }
+                        };
+                        (plane, partition)
+                    })
+                    .collect()
+            }
+            Kind::CircleOut | Kind::CircleIn | Kind::CornerCircle | Kind::Spot(_) => Vec::new(),
         }
+    }
+    /// A conservative box around each band's partition, in the order of
+    /// [`Self::bands`], so a triangle skips the bands it cannot touch.
+    fn band_bounds(&self) -> Vec<Rect> {
+        let centre = self.rect.center();
+        match self.kind {
+            Kind::Blinds | Kind::Cascade | Kind::Zipper | Kind::Letterbox => {
+                self.strips().iter().map(|strip| strip.region).collect()
+            }
+            Kind::Chevron => vec![
+                Rect::from_min_max(
+                    Pos2::new(f32::NEG_INFINITY, f32::NEG_INFINITY),
+                    Pos2::new(f32::INFINITY, centre.y),
+                ),
+                Rect::from_min_max(
+                    Pos2::new(f32::NEG_INFINITY, centre.y),
+                    Pos2::new(f32::INFINITY, f32::INFINITY),
+                ),
+            ],
+            Kind::Clock => (self.clock_quadrant()..4)
+                .map(|quadrant| {
+                    let right = quadrant < 2;
+                    let top = quadrant == 0 || quadrant == 3;
+                    Rect::from_min_max(
+                        Pos2::new(
+                            if right { centre.x } else { f32::NEG_INFINITY },
+                            if top { f32::NEG_INFINITY } else { centre.y },
+                        ),
+                        Pos2::new(
+                            if right { f32::INFINITY } else { centre.x },
+                            if top { centre.y } else { f32::INFINITY },
+                        ),
+                    )
+                })
+                .collect(),
+            _ => vec![Rect::EVERYTHING; self.bands().len()],
+        }
+    }
+    /// Whether a band's feather follows its own plane. The styles made of
+    /// several independent parts do; the single-shape ones keep their
+    /// original measure.
+    fn plane_feather(&self) -> bool {
+        matches!(
+            self.kind,
+            Kind::Blinds
+                | Kind::Cascade
+                | Kind::Zipper
+                | Kind::Letterbox
+                | Kind::Chevron
+                | Kind::Clock
+        )
     }
     fn underlay(&self, source: &Mesh) -> Mesh {
         if self.progress <= 0.0 {
@@ -669,6 +1042,7 @@ impl Mask {
             Vec::new()
         };
         let bands = self.bands();
+        let band_bounds = self.band_bounds();
         for triangle in source.indices.as_chunks::<3>().0 {
             let points = triangle.map(|index| source.vertices[index as usize]);
             let bounds = Rect::from_points(&points.map(|vertex| vertex.pos));
@@ -699,7 +1073,10 @@ impl Mask {
                 }
             } else {
                 let mut remaining = vec![points.to_vec()];
-                for (plane, partition) in &bands {
+                for ((plane, partition), band) in bands.iter().zip(&band_bounds) {
+                    if !band.intersects(bounds) {
+                        continue;
+                    }
                     let mut opaque = partition.clone();
                     opaque.push(Plane {
                         offset: plane.offset - EDGE * 3.0,
@@ -751,6 +1128,8 @@ impl Mask {
             Vec::new()
         };
         let bands = self.bands();
+        let band_bounds = self.band_bounds();
+        let plane_feather = self.plane_feather();
         for triangle in source.indices.as_chunks::<3>().0 {
             let points = [
                 source.vertices[triangle[0] as usize],
@@ -802,7 +1181,10 @@ impl Mask {
                     emit(&mut output, &polygon);
                 }
             } else {
-                for (plane, partition) in &bands {
+                for ((plane, partition), band) in bands.iter().zip(&band_bounds) {
+                    if !band.intersects(bounds) {
+                        continue;
+                    }
                     let plane = *plane;
                     let points = intersection(points.to_vec(), partition);
                     // Split at both ends of the feather, retaining exact texture UVs.
@@ -826,7 +1208,12 @@ impl Mask {
                     let feather = feather
                         .into_iter()
                         .map(|mut v| {
-                            v.color = v.color.gamma_multiply(self.alpha(v.pos));
+                            let alpha = if plane_feather {
+                                plane_alpha(plane, v.pos)
+                            } else {
+                                self.alpha(v.pos)
+                            };
+                            v.color = v.color.gamma_multiply(alpha);
                             v
                         })
                         .collect::<Vec<_>>();
@@ -969,7 +1356,7 @@ fn compact_mesh(source: Mesh) -> Mesh {
 mod tests {
     use super::*;
 
-    const KINDS: [Kind; 10] = [
+    const KINDS: [Kind; 18] = [
         Kind::CircleOut,
         Kind::CircleIn,
         Kind::CornerCircle,
@@ -980,6 +1367,15 @@ mod tests {
         Kind::SwipeUp,
         Kind::SwipeDown,
         Kind::Diamond,
+        // A click inside the page, and one in the sidebar to its left.
+        Kind::Spot(Pos2::new(150.0, 95.0)),
+        Kind::Spot(Pos2::new(-400.0, 300.0)),
+        Kind::Blinds,
+        Kind::Cascade,
+        Kind::Zipper,
+        Kind::Letterbox,
+        Kind::Chevron,
+        Kind::Clock,
     ];
 
     fn page_mesh(rect: Rect) -> Mesh {
@@ -1179,6 +1575,113 @@ mod tests {
         let mask = Mask::new(rect, Kind::Diamond, 0.5);
         let edge = rect.center() + Vec2::X * mask.diamond_radius() * std::f32::consts::SQRT_2;
         assert!((mask.alpha(edge) - 0.5).abs() < 0.0001);
+    }
+
+    #[test]
+    fn a_spot_opens_from_its_point_and_reaches_the_furthest_corner() {
+        let rect = Rect::from_min_size(egui::pos2(30.0, 50.0), egui::vec2(640.0, 480.0));
+        let click = rect.left_bottom() + egui::vec2(60.0, -40.0);
+        assert!(revealed(rect, Kind::Spot(click), 0.2, click));
+        assert!(!revealed(rect, Kind::Spot(click), 0.2, rect.center()));
+        assert!(!revealed(
+            rect,
+            Kind::Spot(click),
+            0.9,
+            rect.right_top() - egui::vec2(2.0, -2.0)
+        ));
+        let mask = Mask::new(rect, Kind::Spot(click), 1.0);
+        assert!(mask.radius() > click.distance(rect.right_top()));
+        assert_eq!(mask.circle_sides(), 192);
+        // A click beside the page opens from the nearest edge; an invalid
+        // point opens from the centre like the plain circle.
+        let outside = Mask::new(rect, Kind::Spot(egui::pos2(-200.0, 300.0)), 0.5);
+        assert_eq!(outside.origin(), egui::pos2(rect.left(), 300.0));
+        let invalid = Mask::new(rect, Kind::Spot(egui::pos2(f32::NAN, 1.0)), 0.5);
+        assert_eq!(invalid.origin(), rect.center());
+    }
+
+    #[test]
+    fn the_part_styles_open_where_and_when_they_should() {
+        let rect = Rect::from_min_size(egui::pos2(30.0, 50.0), egui::vec2(640.0, 480.0));
+        let slat = rect.height() / BLIND_ROWS as f32;
+        // Every slat opens from its own top edge.
+        for row in 0..BLIND_ROWS {
+            let top = rect.top() + slat * row as f32;
+            let x = rect.center().x;
+            assert!(revealed(rect, Kind::Blinds, 0.5, egui::pos2(x, top + 4.0)));
+            assert!(!revealed(
+                rect,
+                Kind::Blinds,
+                0.5,
+                egui::pos2(x, top + slat - 4.0)
+            ));
+        }
+        // Neighbouring zipper bands open from opposite sides.
+        let band = rect.height() / ZIPPER_ROWS as f32;
+        let (left, right) = (rect.left() + 20.0, rect.right() - 20.0);
+        let first = rect.top() + band * 0.5;
+        let second = rect.top() + band * 1.5;
+        assert!(revealed(rect, Kind::Zipper, 0.3, egui::pos2(left, first)));
+        assert!(!revealed(rect, Kind::Zipper, 0.3, egui::pos2(right, first)));
+        assert!(revealed(rect, Kind::Zipper, 0.3, egui::pos2(right, second)));
+        assert!(!revealed(rect, Kind::Zipper, 0.3, egui::pos2(left, second)));
+        // The first cascade column leads the last, and all finish together.
+        let near_top = rect.top() + 60.0;
+        assert!(revealed(
+            rect,
+            Kind::Cascade,
+            0.3,
+            egui::pos2(left, near_top)
+        ));
+        assert!(!revealed(
+            rect,
+            Kind::Cascade,
+            0.3,
+            egui::pos2(right, near_top)
+        ));
+        assert!(revealed(
+            rect,
+            Kind::Cascade,
+            0.99,
+            egui::pos2(right, rect.bottom() - 30.0)
+        ));
+        // The letterbox opens from the middle; the chevron leads with its tip.
+        assert!(revealed(rect, Kind::Letterbox, 0.4, rect.center()));
+        assert!(!revealed(
+            rect,
+            Kind::Letterbox,
+            0.4,
+            rect.center_top() + Vec2::Y * 8.0
+        ));
+        assert!(!revealed(
+            rect,
+            Kind::Letterbox,
+            0.4,
+            rect.center_bottom() - Vec2::Y * 8.0
+        ));
+        let tip_x = rect.left() + rect.width() * 0.45;
+        assert!(revealed(
+            rect,
+            Kind::Chevron,
+            0.5,
+            egui::pos2(tip_x, rect.center().y)
+        ));
+        assert!(!revealed(
+            rect,
+            Kind::Chevron,
+            0.5,
+            egui::pos2(tip_x, rect.top() + 6.0)
+        ));
+        // The clock hand starts at twelve and sweeps clockwise.
+        let centre = rect.center();
+        let at = |x: f32, y: f32| centre + egui::vec2(x, y);
+        assert!(revealed(rect, Kind::Clock, 0.2, at(100.0, -100.0)));
+        assert!(!revealed(rect, Kind::Clock, 0.2, at(100.0, 100.0)));
+        assert!(revealed(rect, Kind::Clock, 0.45, at(100.0, 100.0)));
+        assert!(!revealed(rect, Kind::Clock, 0.45, at(-100.0, 100.0)));
+        assert!(revealed(rect, Kind::Clock, 0.7, at(-100.0, 100.0)));
+        assert!(!revealed(rect, Kind::Clock, 0.7, at(-100.0, -100.0)));
+        assert!(revealed(rect, Kind::Clock, 0.95, at(-100.0, -60.0)));
     }
 
     #[test]

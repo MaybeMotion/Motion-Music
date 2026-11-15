@@ -100,6 +100,28 @@ pub fn handle(app: &mut App, ctx: &egui::Context) {
             // Space always controls the current song, even when a song row
             // or button has focus. Enter still activates the focused control.
             key(Modifiers::NONE, Key::Space, Action::TogglePlay);
+            // Before the plain Ctrl+arrow song keys, which would otherwise
+            // take these too. In a text field they select by word instead.
+            key(
+                Modifiers::COMMAND | Modifiers::SHIFT,
+                Key::ArrowLeft,
+                Action::StepTheme(false),
+            );
+            key(
+                Modifiers::COMMAND | Modifiers::SHIFT,
+                Key::ArrowRight,
+                Action::StepTheme(true),
+            );
+            key(
+                Modifiers::COMMAND | Modifiers::SHIFT,
+                Key::R,
+                Action::SurpriseTheme,
+            );
+            key(
+                Modifiers::COMMAND | Modifiers::SHIFT,
+                Key::E,
+                Action::CyclePlayerBarVis,
+            );
             key(Modifiers::ALT, Key::ArrowLeft, Action::Back);
             key(Modifiers::ALT, Key::ArrowRight, Action::Forward);
             key(Modifiers::COMMAND, Key::ArrowLeft, Action::Previous);
@@ -270,6 +292,21 @@ pub fn shortcuts(locale: Locale) -> Vec<(Cow<'static, str>, Cow<'static, str>)> 
         (
             keys(platform_shortcut("Ctrl+Shift+B", "Cmd+Shift+B")),
             gettext(locale, "Go to the playing album"),
+        ),
+        (
+            keys(platform_shortcut(
+                "Ctrl+Shift+←  /  Ctrl+Shift+→",
+                "Cmd+Shift+←  /  Cmd+Shift+→",
+            )),
+            gettext(locale, "Previous or next theme (favourites first)"),
+        ),
+        (
+            keys(platform_shortcut("Ctrl+Shift+R", "Cmd+Shift+R")),
+            gettext(locale, "Surprise me with a theme"),
+        ),
+        (
+            keys(platform_shortcut("Ctrl+Shift+E", "Cmd+Shift+E")),
+            gettext(locale, "Next player bar visualizer"),
         ),
         (keys(WINAMP_SHORTCUT), gettext(locale, "Winamp mini player")),
         (

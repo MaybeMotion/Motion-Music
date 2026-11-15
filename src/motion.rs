@@ -116,6 +116,53 @@ pub fn animate_bool_with_time(
     animate_value(ctx, id, if target { 1.0 } else { 0.0 }, duration)
 }
 
+/// How long a click stays the origin of the reveal it caused. A page or
+/// palette change follows its click within a frame or two; anything later was
+/// started some other way, such as a shortcut, and opens from the centre.
+const CLICK_MEMORY: f64 = 0.6;
+
+#[derive(Clone, Copy)]
+struct Click {
+    at: egui::Pos2,
+    time: f64,
+}
+
+fn click_id() -> egui::Id {
+    egui::Id::new("motion-last-click")
+}
+
+/// Remember where the primary button was last released, once a frame before
+/// the views are drawn, so a reveal can open from the control that caused it.
+pub fn note_click(ctx: &egui::Context) {
+    let click = ctx.input(|input| {
+        if !input.pointer.primary_released() {
+            return None;
+        }
+        input
+            .pointer
+            .interact_pos()
+            .filter(|at| at.x.is_finite() && at.y.is_finite())
+            .map(|at| Click {
+                at,
+                time: input.time,
+            })
+    });
+    if let Some(click) = click {
+        ctx.data_mut(|data| data.insert_temp(click_id(), click));
+    }
+}
+
+/// Where the click that just changed something landed, if there was one.
+pub fn recent_click(ctx: &egui::Context) -> Option<egui::Pos2> {
+    let now = ctx.input(|input| input.time);
+    ctx.data(|data| data.get_temp::<Click>(click_id()))
+        .filter(|click| {
+            let age = now - click.time;
+            age.is_finite() && (0.0..=CLICK_MEMORY).contains(&age)
+        })
+        .map(|click| click.at)
+}
+
 fn default_scroll() -> egui::style::ScrollAnimation {
     egui::style::ScrollAnimation::new(1600.0, egui::emath::Rangef::new(0.07, 0.22))
 }
@@ -341,6 +388,39 @@ mod tests {
         };
         assert!(huge.value(0.5).is_finite());
         assert_eq!(huge.value(f64::INFINITY), f32::MAX);
+    }
+
+    #[test]
+    fn a_click_is_remembered_briefly_as_a_reveal_origin() {
+        let ctx = egui::Context::default();
+        let frame = |time: f64, events: Vec<egui::Event>| {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    time: Some(time),
+                    events,
+                    ..Default::default()
+                },
+                |ui| note_click(ui.ctx()),
+            );
+            output.textures_delta.clear();
+        };
+        let at = egui::pos2(120.0, 80.0);
+        let button = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        frame(0.0, vec![]);
+        assert_eq!(recent_click(&ctx), None);
+        frame(1.0, vec![egui::Event::PointerMoved(at), button(true)]);
+        assert_eq!(recent_click(&ctx), None, "a press alone changes nothing");
+        frame(1.1, vec![button(false)]);
+        assert_eq!(recent_click(&ctx), Some(at));
+        frame(1.5, vec![]);
+        assert_eq!(recent_click(&ctx), Some(at));
+        frame(2.0, vec![]);
+        assert_eq!(recent_click(&ctx), None, "an old click is not an origin");
     }
 
     #[test]

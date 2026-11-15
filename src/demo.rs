@@ -8349,7 +8349,7 @@ mod tests {
                 // Draw the full Settings page, including MilkDrop.
                 screen_rect: Some(egui::Rect::from_min_size(
                     egui::Pos2::ZERO,
-                    egui::vec2(1280.0, 4000.0),
+                    egui::vec2(1280.0, 4600.0),
                 )),
                 ..Default::default()
             };

@@ -1269,6 +1269,13 @@ pub enum Action {
     SetDiscordPresence(bool),
     SetDiscordApplicationId(String),
     SetTheme(crate::settings::ThemeChoice),
+    /// Star or unstar a Motion theme in the gallery.
+    ToggleFavouriteTheme(crate::theme::MotionTheme),
+    /// Apply the next (`true`) or previous Motion theme: among the starred
+    /// ones when there are at least two, otherwise among all of them.
+    StepTheme(bool),
+    /// Apply a random Motion theme of the current light or dark appearance.
+    SurpriseTheme,
     /// Draw the interface in this language from the next frame on.
     SetLanguage(crate::settings::LanguageChoice),
     OpenThemesFolder,

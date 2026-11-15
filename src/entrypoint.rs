@@ -591,6 +591,7 @@ pub(crate) fn run() -> eframe::Result<()> {
                     .split(',')
                     .find_map(|surface| match surface.trim() {
                         "motion-themes" => Some("Motion themes"),
+                        "motion-transitions" => Some("Page transitions"),
                         "discord-settings" => Some("Discord"),
                         _ => None,
                     })

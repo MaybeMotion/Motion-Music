@@ -172,9 +172,14 @@ fn visualizer(app: &mut App, ui: &egui::Ui, rect: Rect, now: Option<&NowPlaying>
     let gradient_colours = app
         .theme_gradient()
         .map(|stops| stops.map(|colour| [colour.r(), colour.g(), colour.b()]));
-    let source_colours = app
-        .now_playing_palette()
-        .or_else(|| gradient_colours.as_ref().map(|colours| colours.as_slice()));
+    // Theme colours keep a gradient theme's own three colours, or the
+    // accent, whatever is playing; pages may still follow the cover.
+    let art_colours = match app.settings.visualizer_colours {
+        crate::settings::VisColours::Auto => app.now_playing_palette(),
+        crate::settings::VisColours::Theme => None,
+    };
+    let source_colours =
+        art_colours.or_else(|| gradient_colours.as_ref().map(|colours| colours.as_slice()));
     let colours = vis_colours(source_colours, app.palette.accent, dark);
     let strength = if dark { 1.0 } else { LIGHT_STRENGTH };
     let painter = ui.painter().with_clip_rect(rect);

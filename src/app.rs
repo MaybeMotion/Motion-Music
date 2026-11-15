@@ -10789,6 +10789,7 @@ impl App {
             }
             Action::Back => {
                 if self.can_go_back() {
+                    crate::ui::motion::hint_direction(ctx, true);
                     self.pending_link = None;
                     self.prerelease_request = None;
                     self.history_index -= 1;
@@ -10801,6 +10802,7 @@ impl App {
             }
             Action::Forward => {
                 if self.can_go_forward() {
+                    crate::ui::motion::hint_direction(ctx, false);
                     self.pending_link = None;
                     self.prerelease_request = None;
                     self.history_index += 1;
@@ -11739,9 +11741,54 @@ impl App {
                 self.settings.theme = choice;
                 self.settings.custom_theme = None;
                 self.settings.custom_theme_cache = None;
+                if let ThemeChoice::Motion(preset) = choice {
+                    self.settings.note_recent_theme(preset);
+                }
                 self.mark_settings_dirty();
                 ctx.set_theme(self.theme_preference());
                 self.apply_theme(ctx);
+            }
+            Action::ToggleFavouriteTheme(preset) => {
+                self.settings.toggle_favourite_theme(preset);
+                self.mark_settings_dirty();
+            }
+            Action::StepTheme(forward) => {
+                let favourites = self.settings.favourite_theme_list();
+                let choices = if favourites.len() >= 2 {
+                    favourites
+                } else {
+                    theme::MotionTheme::ALL.to_vec()
+                };
+                let current = match (self.settings.custom_theme.as_deref(), self.settings.theme) {
+                    (None, ThemeChoice::Motion(preset)) => {
+                        choices.iter().position(|&choice| choice == preset)
+                    }
+                    _ => None,
+                };
+                let next = match (current, forward) {
+                    (Some(index), true) => (index + 1) % choices.len(),
+                    (Some(index), false) => (index + choices.len() - 1) % choices.len(),
+                    (None, true) => 0,
+                    (None, false) => choices.len() - 1,
+                };
+                self.actions
+                    .push(Action::SetTheme(ThemeChoice::Motion(choices[next])));
+            }
+            Action::SurpriseTheme => {
+                use rand::seq::IndexedRandom;
+                let current = match (self.settings.custom_theme.as_deref(), self.settings.theme) {
+                    (None, ThemeChoice::Motion(preset)) => Some(preset),
+                    _ => None,
+                };
+                let dark = self.palette.dark;
+                let choices: Vec<_> = theme::MotionTheme::ALL
+                    .into_iter()
+                    .filter(|&preset| Some(preset) != current && preset.palette().dark == dark)
+                    .collect();
+                if let Some(&preset) = choices.choose(&mut rand::rng()) {
+                    self.actions
+                        .push(Action::SetTheme(ThemeChoice::Motion(preset)));
+                }
             }
             Action::SetLanguage(choice) => {
                 self.settings.language = choice;
@@ -12611,6 +12658,10 @@ impl App {
             log::debug!("reduce motion: {}", self.motion.reduced());
             crate::motion::apply(ctx, self.motion.reduced());
         }
+        // Reveals open from the click that caused them and use only the
+        // page styles left on in Settings.
+        crate::motion::note_click(ctx);
+        crate::ui::motion::set_disabled_styles(ctx, &self.settings.page_reveals_off);
     }
 
     /// Follows the system's power and session state: works out the budget
