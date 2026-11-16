@@ -51,10 +51,6 @@ The shuffle now has sixteen styles. The new ones are:
 
 Like the existing styles they take 360 ms, keep the page content in its final position, leave covered controls unclickable until they are revealed, and are skipped when the system asks for reduced motion.
 
-## After v13: ocean waves and softer edges
-
-The source on `main` now adds four **wave** transitions, one for each swipe direction. Their edge is a curve that swells and rolls sideways as it washes across the page, like the sea running up a beach. Every straight and angled transition, such as the diamond iris, chevron and blinds, now fades over a soft edge about 20 points wide instead of a sharp line. The circles are unchanged. These are not in the v13 download.
-
 ## Choose your transitions
 
 **Settings > Appearance > Page transitions** lists all sixteen styles. Click a style to take it out of the shuffle or put it back. **All** and **None** set every style at once. With every style off, pages change immediately with no animation. Back and Forward keep their swipes unless every style is off.

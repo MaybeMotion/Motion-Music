@@ -6,13 +6,13 @@
 
 Motion Music is a personal customisation of [Spotifast](https://github.com/crmne/spotifast), built with Rust, egui, fastframe, and librespot. Original copyright, licence, and upstream credits are retained. Upstream documentation and release links describe Spotifast; official downloads do not include these customisations.
 
-## Download Motion Music v13
+## Download Motion Music v14
 
-**[Download the Windows portable ZIP](https://github.com/MaybeMotion/Motion-Music/releases/download/motion-v13/Motion-Music-v13-Windows.zip)** or open the [Motion Music v13 release](https://github.com/MaybeMotion/Motion-Music/releases/tag/motion-v13) for the source archive and checksums. Extract the ZIP, keep `spotifast-portable.txt` beside `Motion Music v13.exe`, and fully quit an older running copy before opening it.
+**[Download the Windows portable ZIP](https://github.com/MaybeMotion/Motion-Music/releases/download/motion-v14/Motion-Music-v14-Windows.zip)** or open the [Motion Music v14 release](https://github.com/MaybeMotion/Motion-Music/releases/tag/motion-v14) for the source archive and checksums. Extract the ZIP, keep `spotifast-portable.txt` beside `Motion Music v14.exe`, move your existing `spotifast-data` folder beside it to keep your settings, sign-in and personal Spotify app, and fully quit an older running copy before opening it.
 
-**Mac:** v13 has not been built for Mac yet. The [v12 Apple Silicon installer](https://github.com/MaybeMotion/Motion-Music/releases/download/motion-v12/Motion-Music-v12-macos-arm64.zip) and [v12 Intel installer](https://github.com/MaybeMotion/Motion-Music/releases/download/motion-v12/Motion-Music-v12-macos-x86_64.zip) remain available. See the [Mac installation guide](docs/MAC-INSTALL.md).
+**Mac:** v14 has not been built for Mac yet. The [v12 Apple Silicon installer](https://github.com/MaybeMotion/Motion-Music/releases/download/motion-v12/Motion-Music-v12-macos-arm64.zip) and [v12 Intel installer](https://github.com/MaybeMotion/Motion-Music/releases/download/motion-v12/Motion-Music-v12-macos-x86_64.zip) remain available. See the [Mac installation guide](docs/MAC-INSTALL.md).
 
-See the [v13 guide](docs/MOTION-MUSIC-V13.md) for what is new: theme favourites, sixteen page transitions, reveals that open from your click, and new shortcuts. Downloads are installed manually; the automatic updater remains disabled for this custom build. **motion-v13** identifies this customised portable edition. The underlying Cargo package and executable version remain **0.14.1**.
+See the [v14 guide](docs/MOTION-MUSIC-V14.md) for the ocean-wave transitions and softer edges, and the [v13 guide](docs/MOTION-MUSIC-V13.md) for theme favourites, click-origin reveals and shortcuts. Downloads are installed manually; the automatic updater remains disabled for this custom build. **motion-v14** identifies this customised portable edition. The underlying Cargo package and executable version remain **0.14.1**.
 
 The inherited Spotifast publishing workflows are archived and inactive. See [GitHub upload notes](docs/GITHUB-UPLOAD.md) for the source and publishing details.
 
@@ -129,9 +129,9 @@ Demo visual flags include **--demo-show motion-aurora**, **motion-radial**, **mo
 
 ## Compatibility and updates
 
-The executable, windows, tray/menu entries, playback device default, and native icons identify as Motion Music. Internal crate names, Spotify authentication identifiers, credential keys, profile folders, IPC identifiers, and package IDs remain compatible with Spotifast. Existing saved settings and sign-ins are preserved. A speaker still named **Spotifast**, the old default, appears in Spotify as **Motion Music** from v13; any other name you chose is kept.
+The executable, windows, tray/menu entries, playback device default, and native icons identify as Motion Music. Internal crate names, Spotify authentication identifiers, credential keys, profile folders, IPC identifiers, and package IDs remain compatible with Spotifast. Existing saved settings and sign-ins are preserved. A speaker still named **Spotifast**, the old default, appears in Spotify as **Motion Music** from v13 onwards; any other name you chose is kept.
 
-Self-updates remain disabled for this custom build, preventing an upstream Spotifast download from replacing Motion Music. Update manually from [Motion Music releases](https://github.com/MaybeMotion/Motion-Music/releases), or rebuild this source. The custom v13 label identifies this portable update; the underlying package version remains 0.14.1.
+Self-updates remain disabled for this custom build, preventing an upstream Spotifast download from replacing Motion Music. Update manually from [Motion Music releases](https://github.com/MaybeMotion/Motion-Music/releases), or rebuild this source. The custom v14 label identifies this portable update; the underlying package version remains 0.14.1.
 
 ## Upstream and licence
 
@@ -145,4 +145,4 @@ The native playback engine can receive **audio key 0 1** from Spotify. This mean
 
 The Motion Music v12 app icon is **Vortex Bloom**, an original four-blade symbol in violet, pink, coral and cyan with a transparent background and open centre. A canonical PNG supplies the window and in-app icon; a matching monochrome bloom supplies the tray template, with native ICO and macOS exports.
 
-For the supplied v13 portable build, keep **spotifast-portable.txt** beside the executable. Fully quit an older running Motion Music instance before launching the new build; otherwise the existing instance handles the launch.
+For the supplied v14 portable build, keep **spotifast-portable.txt** beside the executable. Fully quit an older running Motion Music instance before launching the new build; otherwise the existing instance handles the launch.
