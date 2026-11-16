@@ -866,6 +866,7 @@ impl Settings {
                     Self::default()
                 });
                 settings.migrate_proxy(text);
+                settings.adopt_motion_device_name();
                 settings.forget_unusable_screen_rate();
                 settings.proxy_password_legacy = !settings.proxy_password.is_empty();
                 settings
@@ -913,6 +914,16 @@ impl Settings {
         }
         self.milkdrop_fps = crate::milkdrop::DEFAULT_FPS;
         self.milkdrop_screen_hz = 0;
+    }
+
+    /// Files from Spotifast, or from Motion Music before it named itself,
+    /// still hold Spotifast's own default speaker name. That name becomes
+    /// Motion Music's; any other name the user chose is kept.
+    pub(crate) fn adopt_motion_device_name(&mut self) {
+        let name = self.device_name.trim();
+        if name.is_empty() || name.eq_ignore_ascii_case("Spotifast") {
+            self.device_name = Self::default().device_name;
+        }
     }
 
     pub(crate) fn migrate_proxy(&mut self, text: &str) {
@@ -1794,6 +1805,30 @@ mod tests {
             let restored: Settings = serde_json::from_value(json).unwrap();
             assert_eq!(restored.tray_icon, choice);
         }
+    }
+
+    #[test]
+    fn the_old_spotifast_speaker_name_becomes_motion_music_and_custom_names_stay() {
+        let dir = std::env::temp_dir().join(format!("motion-device-name-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        for (saved, expected) in [
+            ("Spotifast", "Motion Music"),
+            ("spotifast", "Motion Music"),
+            ("  ", "Motion Music"),
+            ("Louis's PC", "Louis's PC"),
+            ("Spotifast Kitchen", "Spotifast Kitchen"),
+        ] {
+            std::fs::write(
+                &path,
+                serde_json::json!({ "device_name": saved }).to_string(),
+            )
+            .unwrap();
+            assert_eq!(Settings::load(&path).device_name, expected, "{saved:?}");
+        }
+        std::fs::write(&path, "{}").unwrap();
+        assert_eq!(Settings::load(&path).device_name, "Motion Music");
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

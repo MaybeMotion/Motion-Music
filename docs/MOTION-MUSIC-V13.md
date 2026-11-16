@@ -2,7 +2,11 @@
 
 This update makes the themes easier to live with and the page motion more varied. You can keep favourite themes, step between them from the keyboard, and choose which page transitions you see. Six new transitions join the existing ten, and reveals now open from the place you clicked. The **212 themes**, 16 player-bar visualisers and MilkDrop window are unchanged.
 
-These changes are in the source on `main`. Build it as described in the README to use them; the published v12 download does not include them.
+## Open this version
+
+1. Fully quit the old Motion Music using **Quit** in the system tray or **Ctrl+Q**. Closing its window can leave it running.
+2. Extract **Motion-Music-v13-Windows.zip** and open **Motion Music v13.exe**.
+3. Keep **spotifast-portable.txt** beside the app. Move your existing **spotifast-data** folder beside it to keep your settings and sign-in. It is never included in the download.
 
 ## Favourite and recent themes
 
@@ -50,6 +54,10 @@ Like the existing styles they take 360 ms, keep the page content in its final po
 ## Choose your transitions
 
 **Settings > Appearance > Page transitions** lists all sixteen styles. Click a style to take it out of the shuffle or put it back. **All** and **None** set every style at once. With every style off, pages change immediately with no animation. Back and Forward keep their swipes unless every style is off.
+
+## Your speaker is called Motion Music
+
+If your computer still appeared in Spotify's device list as **Spotifast**, the old default name, it now appears as **Motion Music**. A name you chose yourself in **Settings > Playback on this computer > Device name** is kept.
 
 ## Visualiser colours
 
