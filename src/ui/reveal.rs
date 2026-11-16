@@ -9,6 +9,17 @@ const MAX_SHAPES: usize = 6_000;
 const MAX_VERTICES: usize = 180_000;
 const MAX_INDICES: usize = 540_000;
 const EDGE: f32 = 1.25;
+/// Half the soft edge of the straight and angled reveals: a fade about 20
+/// points wide, so no style shows a knife-sharp line.
+const SOFT_EDGE: f32 = 10.0;
+/// The clock hand's edge stays narrower: its quarters are separate parts,
+/// and a wide fade would be cut off where they meet at the centre.
+const CLOCK_EDGE: f32 = 3.0;
+/// The ocean wave: the length and height of its main swell, in points.
+const WAVE_LENGTH: f32 = 260.0;
+const WAVE_HEIGHT: f32 = 20.0;
+/// How far, in points, each straight piece of the wave's curved edge spans.
+const WAVE_STEP: f32 = 10.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Kind {
@@ -36,6 +47,9 @@ pub(super) enum Kind {
     Chevron,
     /// A clock hand sweeping once around the centre.
     Clock,
+    /// A soft, rolling wave edge washing across the page in one direction,
+    /// like the sea running up a beach.
+    Wave(Wipe),
 }
 
 const BLIND_ROWS: usize = 8;
@@ -45,12 +59,25 @@ const CASCADE_COLUMNS: usize = 7;
 const CASCADE_STAGGER: f32 = 0.55;
 const CHEVRON_SLOPE: f32 = 0.6;
 
-#[derive(Clone, Copy)]
-enum Wipe {
+/// The direction a wipe travels: the new page appears from the opposite side.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Wipe {
     Left,
     Right,
     Up,
     Down,
+}
+
+impl Wipe {
+    /// The unit direction of travel, and the unit direction along the edge.
+    fn axes(self) -> (Vec2, Vec2) {
+        match self {
+            Self::Right => (Vec2::X, Vec2::Y),
+            Self::Left => (-Vec2::X, Vec2::Y),
+            Self::Down => (Vec2::Y, Vec2::X),
+            Self::Up => (-Vec2::Y, Vec2::X),
+        }
+    }
 }
 
 /// One rectangular part of the page with its own straight wipe. `rect` is
@@ -62,44 +89,47 @@ struct Strip {
     region: Rect,
     wipe: Wipe,
     progress: f32,
+    edge: f32,
 }
 
 impl Strip {
     fn boundary(&self) -> f32 {
         let progress = self.progress.clamp(0.0, 1.0);
+        let edge = self.edge;
         match self.wipe {
             Wipe::Left => {
-                self.rect.right() + EDGE * 2.0 - (self.rect.width() + EDGE * 4.0) * progress
+                self.rect.right() + edge * 2.0 - (self.rect.width() + edge * 4.0) * progress
             }
             Wipe::Right => {
-                self.rect.left() - EDGE * 2.0 + (self.rect.width() + EDGE * 4.0) * progress
+                self.rect.left() - edge * 2.0 + (self.rect.width() + edge * 4.0) * progress
             }
             Wipe::Up => {
-                self.rect.bottom() + EDGE * 2.0 - (self.rect.height() + EDGE * 4.0) * progress
+                self.rect.bottom() + edge * 2.0 - (self.rect.height() + edge * 4.0) * progress
             }
             Wipe::Down => {
-                self.rect.top() - EDGE * 2.0 + (self.rect.height() + EDGE * 4.0) * progress
+                self.rect.top() - edge * 2.0 + (self.rect.height() + edge * 4.0) * progress
             }
         }
     }
     fn plane(&self) -> Plane {
         let boundary = self.boundary();
+        let edge = self.edge;
         match self.wipe {
             Wipe::Left => Plane {
                 normal: Vec2::X,
-                offset: boundary + EDGE,
+                offset: boundary + edge,
             },
             Wipe::Right => Plane {
                 normal: -Vec2::X,
-                offset: -boundary + EDGE,
+                offset: -boundary + edge,
             },
             Wipe::Up => Plane {
                 normal: Vec2::Y,
-                offset: boundary + EDGE,
+                offset: boundary + edge,
             },
             Wipe::Down => Plane {
                 normal: -Vec2::Y,
-                offset: -boundary + EDGE,
+                offset: -boundary + edge,
             },
         }
     }
@@ -133,9 +163,10 @@ impl Strip {
     }
 }
 
-/// The old page's opacity across a feather ending at `plane`.
-fn plane_alpha(plane: Plane, p: Pos2) -> f32 {
-    (-plane.distance(p) / (EDGE * 2.0)).clamp(0.0, 1.0)
+/// The old page's opacity across a feather `edge * 2` wide ending at `plane`,
+/// whose normal has unit length.
+fn plane_alpha(plane: Plane, p: Pos2, edge: f32) -> f32 {
+    (-plane.distance(p) / (edge * 2.0)).clamp(0.0, 1.0)
 }
 
 /// A unit direction `angle` radians clockwise from straight up.
@@ -575,36 +606,143 @@ impl Mask {
                 self.progress
             }
     }
+    /// Half the width of the fade along the moving edge. Circles keep their
+    /// fine edge; every straight, angled or wave edge is soft.
+    fn edge(&self) -> f32 {
+        match self.kind {
+            Kind::CircleOut | Kind::CircleIn | Kind::CornerCircle | Kind::Spot(_) => EDGE,
+            Kind::Clock => CLOCK_EDGE,
+            _ => SOFT_EDGE,
+        }
+    }
     fn horizontal_boundary(&self) -> f32 {
-        let travel = (self.rect.width() + EDGE * 4.0) * self.progress;
+        let edge = self.edge();
+        let travel = (self.rect.width() + edge * 4.0) * self.progress;
         if self.kind == Kind::SwipeLeft {
-            self.rect.right() + EDGE * 2.0 - travel
+            self.rect.right() + edge * 2.0 - travel
         } else {
-            self.rect.left() - EDGE * 2.0 + travel
+            self.rect.left() - edge * 2.0 + travel
         }
     }
     fn vertical_boundary(&self) -> f32 {
-        let travel = (self.rect.height() + EDGE * 4.0) * self.progress;
+        let edge = self.edge();
+        let travel = (self.rect.height() + edge * 4.0) * self.progress;
         if self.kind == Kind::SwipeUp {
-            self.rect.bottom() + EDGE * 2.0 - travel
+            self.rect.bottom() + edge * 2.0 - travel
         } else {
-            self.rect.top() - EDGE * 2.0 + travel
+            self.rect.top() - edge * 2.0 + travel
         }
     }
     fn diamond_radius(&self) -> f32 {
         ((self.rect.width() + self.rect.height()) * 0.5 * std::f32::consts::FRAC_1_SQRT_2
-            + EDGE * 2.0)
+            + self.edge() * 2.0)
             * self.progress
     }
-    fn projection(&self, p: Pos2) -> f32 {
-        (p.x - self.rect.left()) + (p.y - self.rect.top()) * 0.65
+    /// The length of the diagonal sweep's (1, 0.65) direction.
+    fn diagonal_length() -> f32 {
+        (1.0_f32 + 0.65 * 0.65).sqrt()
     }
     fn boundary(&self) -> f32 {
-        (self.rect.width() + self.rect.height() * 0.65 + EDGE * 4.0) * self.progress - EDGE * 2.0
+        // Measured along the unnormalised (1, 0.65) direction, so the margin
+        // that keeps the fade off the page at either end is scaled to match.
+        let margin = self.edge() * 2.0 * Self::diagonal_length();
+        (self.rect.width() + self.rect.height() * 0.65 + margin * 2.0) * self.progress - margin
+    }
+    /// The wave's edge as connected straight pieces across the page, each
+    /// with its own feathered plane, the strip of the page it covers, and a
+    /// bounding box. The edge rolls sideways and swells as it travels, like
+    /// surf running up a beach, but never moves back over revealed page.
+    fn wave_parts(&self, wipe: Wipe) -> Vec<(Plane, Vec<Plane>, Rect)> {
+        use std::f32::consts::{PI, TAU};
+        let edge = self.edge();
+        let (along, across) = wipe.axes();
+        let corners = [
+            self.rect.left_top(),
+            self.rect.right_top(),
+            self.rect.left_bottom(),
+            self.rect.right_bottom(),
+        ]
+        .map(Pos2::to_vec2);
+        let range = |axis: Vec2| {
+            corners
+                .iter()
+                .fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), c| {
+                    (lo.min(c.dot(axis)), hi.max(c.dot(axis)))
+                })
+        };
+        let (start, end) = range(along);
+        let (from, to) = range(across);
+        let span = (end - start).max(1.0);
+        let width = (to - from).max(1.0);
+        // Gentle on a small page; the full swell on a normal one. The swell
+        // is small enough against the travel that the edge only ever moves
+        // forwards.
+        let main = (span * 0.05).min(WAVE_HEIGHT);
+        let ripple = main * 0.4;
+        let frequency = TAU / WAVE_LENGTH;
+        let steepest = (main + ripple * 2.3) * frequency;
+        let margin = main + ripple + edge * 2.0 * (1.0 + steepest);
+        let progress = self.progress;
+        let swell = 0.4 + 0.6 * (PI * progress).sin();
+        let roll = 1.5 * PI * progress;
+        let front = start - margin + (span + margin * 2.0) * progress;
+        let height = |u: f32| {
+            front
+                + swell
+                    * (main * (frequency * u + roll).sin()
+                        + ripple * (2.3 * frequency * u - 1.7 * roll + 1.1).sin())
+        };
+        let pieces = ((width / WAVE_STEP).ceil() as usize).clamp(16, 200);
+        (0..pieces)
+            .map(|index| {
+                let u0 = from + width * index as f32 / pieces as f32;
+                let u1 = from + width * (index + 1) as f32 / pieces as f32;
+                let (b0, b1) = (height(u0), height(u1));
+                let slope = (b1 - b0) / (u1 - u0);
+                let base = b0 - slope * u0;
+                // The old page stays where it is further along than the edge.
+                // Distances are measured along the direction of travel, so a
+                // point only ever goes from covered to revealed as it moves.
+                let plane = Plane {
+                    normal: -(along - across * slope),
+                    offset: -base + edge,
+                };
+                let first = index == 0;
+                let last = index + 1 == pieces;
+                let mut partition = Vec::with_capacity(2);
+                if !first {
+                    partition.push(Plane {
+                        normal: -across,
+                        offset: -u0,
+                    });
+                }
+                if !last {
+                    partition.push(Plane {
+                        normal: across,
+                        offset: u1,
+                    });
+                }
+                let lo = if first { f32::NEG_INFINITY } else { u0 };
+                let hi = if last { f32::INFINITY } else { u1 };
+                let bounds = if across == Vec2::Y {
+                    Rect::from_min_max(
+                        Pos2::new(f32::NEG_INFINITY, lo),
+                        Pos2::new(f32::INFINITY, hi),
+                    )
+                } else {
+                    Rect::from_min_max(
+                        Pos2::new(lo, f32::NEG_INFINITY),
+                        Pos2::new(hi, f32::INFINITY),
+                    )
+                };
+                (plane, partition, bounds)
+            })
+            .collect()
     }
     /// The independent straight wipes of the strip styles; empty otherwise.
     fn strips(&self) -> Vec<Strip> {
         let rect = self.rect;
+        let edge = self.edge();
         let rows = |count: usize, wipe: &dyn Fn(usize) -> Wipe| {
             (0..count)
                 .map(|index| {
@@ -631,6 +769,7 @@ impl Mask {
                         ),
                         wipe: wipe(index),
                         progress: self.progress,
+                        edge,
                     }
                 })
                 .collect::<Vec<_>>()
@@ -674,6 +813,7 @@ impl Mask {
                         ),
                         wipe: Wipe::Down,
                         progress: (self.progress * (1.0 + CASCADE_STAGGER) - delay).clamp(0.0, 1.0),
+                        edge,
                     }
                 })
                 .collect(),
@@ -682,7 +822,7 @@ impl Mask {
     }
     /// Where the chevron's tip is along the horizontal midline.
     fn chevron_boundary(&self) -> f32 {
-        let margin = EDGE * 2.0 * (1.0 + CHEVRON_SLOPE * CHEVRON_SLOPE).sqrt();
+        let margin = self.edge() * 2.0 * (1.0 + CHEVRON_SLOPE * CHEVRON_SLOPE).sqrt();
         self.rect.left() - margin
             + (self.rect.width() + CHEVRON_SLOPE * self.rect.height() * 0.5 + margin * 2.0)
                 * self.progress
@@ -699,68 +839,21 @@ impl Mask {
             return 0.0;
         }
         match self.kind {
-            Kind::Blinds | Kind::Cascade | Kind::Zipper | Kind::Letterbox => {
-                let strips = self.strips();
-                strips
-                    .iter()
-                    .find(|strip| strip.region.contains(p))
-                    .or(strips.last())
-                    .map_or(0.0, |strip| plane_alpha(strip.plane(), p))
-            }
-            Kind::Chevron => {
-                let length = (1.0 + CHEVRON_SLOPE * CHEVRON_SLOPE).sqrt();
-                let ahead = (p.x + CHEVRON_SLOPE * (p.y - self.rect.center().y).abs()
-                    - self.chevron_boundary())
-                    / length;
-                ((ahead + EDGE) / (EDGE * 2.0)).clamp(0.0, 1.0)
-            }
-            Kind::Clock => {
-                let from = p - self.rect.center();
-                let angle = from.x.atan2(-from.y).rem_euclid(std::f32::consts::TAU);
-                let quadrant = ((angle / std::f32::consts::FRAC_PI_2) as usize).min(3);
-                let active = self.clock_quadrant();
-                if quadrant < active {
-                    0.0
-                } else if quadrant > active {
-                    1.0
-                } else {
-                    let hand = clockwise(std::f32::consts::TAU * self.progress);
-                    let past = hand.x * from.y - hand.y * from.x;
-                    ((past + EDGE) / (EDGE * 2.0)).clamp(0.0, 1.0)
-                }
-            }
             Kind::CircleOut | Kind::CornerCircle | Kind::Spot(_) => {
                 ((p.distance(self.origin()) - self.radius() + EDGE) / (EDGE * 2.0)).clamp(0.0, 1.0)
             }
             Kind::CircleIn => ((self.radius() - p.distance(self.rect.center()) + EDGE)
                 / (EDGE * 2.0))
                 .clamp(0.0, 1.0),
-            Kind::Diagonal => {
-                ((self.projection(p) - self.boundary() + EDGE) / (EDGE * 2.0)).clamp(0.0, 1.0)
-            }
-            Kind::SwipeLeft => {
-                ((self.horizontal_boundary() - p.x + EDGE) / (EDGE * 2.0)).clamp(0.0, 1.0)
-            }
-            Kind::SwipeRight => {
-                ((p.x - self.horizontal_boundary() + EDGE) / (EDGE * 2.0)).clamp(0.0, 1.0)
-            }
-            Kind::SwipeUp => {
-                ((self.vertical_boundary() - p.y + EDGE) / (EDGE * 2.0)).clamp(0.0, 1.0)
-            }
-            Kind::SwipeDown => {
-                ((p.y - self.vertical_boundary() + EDGE) / (EDGE * 2.0)).clamp(0.0, 1.0)
-            }
-            Kind::Diamond => {
-                let delta = p - self.rect.center();
-                (((delta.x.abs() + delta.y.abs()) * std::f32::consts::FRAC_1_SQRT_2
-                    - self.diamond_radius()
-                    + EDGE)
-                    / (EDGE * 2.0))
-                    .clamp(0.0, 1.0)
-            }
-            Kind::Curtain => {
-                let half = (self.rect.width() * 0.5 + EDGE * 2.0) * self.progress;
-                (((p.x - self.rect.center().x).abs() - half + EDGE) / (EDGE * 2.0)).clamp(0.0, 1.0)
+            // Every other style is its bands: the first whose part of the page
+            // holds the point decides, exactly as the mesh is cut. A point in
+            // no band is in a part already fully revealed.
+            _ => {
+                let edge = self.edge();
+                self.bands()
+                    .into_iter()
+                    .find(|(_, partition)| partition.iter().all(|plane| plane.distance(p) <= 0.0))
+                    .map_or(0.0, |(plane, _)| plane_alpha(plane, p, edge))
             }
         }
     }
@@ -807,22 +900,34 @@ impl Mask {
             .collect()
     }
     fn bands(&self) -> Vec<(Plane, Vec<Plane>)> {
+        let edge = self.edge();
         match self.kind {
-            Kind::Diagonal => vec![(
-                Plane {
-                    normal: Vec2::new(-1.0, -0.65),
-                    offset: -(self.rect.left() + self.rect.top() * 0.65 + self.boundary()) + EDGE,
-                },
-                Vec::new(),
-            )],
+            Kind::Diagonal => {
+                // A unit normal, so the soft edge is as wide as the others.
+                let length = Self::diagonal_length();
+                vec![(
+                    Plane {
+                        normal: Vec2::new(-1.0, -0.65) / length,
+                        offset: -(self.rect.left() + self.rect.top() * 0.65 + self.boundary())
+                            / length
+                            + edge,
+                    },
+                    Vec::new(),
+                )]
+            }
+            Kind::Wave(wipe) => self
+                .wave_parts(wipe)
+                .into_iter()
+                .map(|(plane, partition, _)| (plane, partition))
+                .collect(),
             Kind::Curtain => {
                 let center = self.rect.center().x;
-                let half = (self.rect.width() * 0.5 + EDGE * 2.0) * self.progress;
+                let half = (self.rect.width() * 0.5 + edge * 2.0) * self.progress;
                 vec![
                     (
                         Plane {
                             normal: Vec2::X,
-                            offset: center - half + EDGE,
+                            offset: center - half + edge,
                         },
                         vec![Plane {
                             normal: Vec2::X,
@@ -832,7 +937,7 @@ impl Mask {
                     (
                         Plane {
                             normal: -Vec2::X,
-                            offset: -(center + half) + EDGE,
+                            offset: -(center + half) + edge,
                         },
                         vec![Plane {
                             normal: -Vec2::X,
@@ -844,28 +949,28 @@ impl Mask {
             Kind::SwipeLeft => vec![(
                 Plane {
                     normal: Vec2::X,
-                    offset: self.horizontal_boundary() + EDGE,
+                    offset: self.horizontal_boundary() + edge,
                 },
                 Vec::new(),
             )],
             Kind::SwipeRight => vec![(
                 Plane {
                     normal: -Vec2::X,
-                    offset: -self.horizontal_boundary() + EDGE,
+                    offset: -self.horizontal_boundary() + edge,
                 },
                 Vec::new(),
             )],
             Kind::SwipeUp => vec![(
                 Plane {
                     normal: Vec2::Y,
-                    offset: self.vertical_boundary() + EDGE,
+                    offset: self.vertical_boundary() + edge,
                 },
                 Vec::new(),
             )],
             Kind::SwipeDown => vec![(
                 Plane {
                     normal: -Vec2::Y,
-                    offset: -self.vertical_boundary() + EDGE,
+                    offset: -self.vertical_boundary() + edge,
                 },
                 Vec::new(),
             )],
@@ -879,7 +984,7 @@ impl Mask {
                         (
                             Plane {
                                 normal: -normal,
-                                offset: -normal.dot(center) - radius + EDGE,
+                                offset: -normal.dot(center) - radius + edge,
                             },
                             vec![
                                 Plane {
@@ -908,7 +1013,7 @@ impl Mask {
                     (
                         Plane {
                             normal: Vec2::new(-1.0, CHEVRON_SLOPE) / length,
-                            offset: -(boundary - CHEVRON_SLOPE * middle) / length + EDGE,
+                            offset: -(boundary - CHEVRON_SLOPE * middle) / length + edge,
                         },
                         vec![Plane {
                             normal: Vec2::Y,
@@ -918,7 +1023,7 @@ impl Mask {
                     (
                         Plane {
                             normal: Vec2::new(-1.0, -CHEVRON_SLOPE) / length,
-                            offset: -(boundary + CHEVRON_SLOPE * middle) / length + EDGE,
+                            offset: -(boundary + CHEVRON_SLOPE * middle) / length + edge,
                         },
                         vec![Plane {
                             normal: -Vec2::Y,
@@ -951,7 +1056,7 @@ impl Mask {
                             let normal = Vec2::new(hand.y, -hand.x);
                             Plane {
                                 normal,
-                                offset: normal.dot(centre) + EDGE,
+                                offset: normal.dot(centre) + edge,
                             }
                         } else {
                             // The hand has not reached this quarter: all of
@@ -976,6 +1081,11 @@ impl Mask {
             Kind::Blinds | Kind::Cascade | Kind::Zipper | Kind::Letterbox => {
                 self.strips().iter().map(|strip| strip.region).collect()
             }
+            Kind::Wave(wipe) => self
+                .wave_parts(wipe)
+                .into_iter()
+                .map(|(_, _, bounds)| bounds)
+                .collect(),
             Kind::Chevron => vec![
                 Rect::from_min_max(
                     Pos2::new(f32::NEG_INFINITY, f32::NEG_INFINITY),
@@ -1005,20 +1115,6 @@ impl Mask {
             _ => vec![Rect::EVERYTHING; self.bands().len()],
         }
     }
-    /// Whether a band's feather follows its own plane. The styles made of
-    /// several independent parts do; the single-shape ones keep their
-    /// original measure.
-    fn plane_feather(&self) -> bool {
-        matches!(
-            self.kind,
-            Kind::Blinds
-                | Kind::Cascade
-                | Kind::Zipper
-                | Kind::Letterbox
-                | Kind::Chevron
-                | Kind::Clock
-        )
-    }
     fn underlay(&self, source: &Mesh) -> Mesh {
         if self.progress <= 0.0 {
             return Mesh::with_texture(source.texture_id);
@@ -1043,6 +1139,7 @@ impl Mask {
         };
         let bands = self.bands();
         let band_bounds = self.band_bounds();
+        let edge = self.edge();
         for triangle in source.indices.as_chunks::<3>().0 {
             let points = triangle.map(|index| source.vertices[index as usize]);
             let bounds = Rect::from_points(&points.map(|vertex| vertex.pos));
@@ -1079,7 +1176,7 @@ impl Mask {
                     }
                     let mut opaque = partition.clone();
                     opaque.push(Plane {
-                        offset: plane.offset - EDGE * 3.0,
+                        offset: plane.offset - edge * 3.0,
                         ..*plane
                     });
                     remaining = remaining
@@ -1129,7 +1226,7 @@ impl Mask {
         };
         let bands = self.bands();
         let band_bounds = self.band_bounds();
-        let plane_feather = self.plane_feather();
+        let edge = self.edge();
         for triangle in source.indices.as_chunks::<3>().0 {
             let points = [
                 source.vertices[triangle[0] as usize],
@@ -1191,7 +1288,7 @@ impl Mask {
                     let solid = clip(
                         points.clone(),
                         Plane {
-                            offset: plane.offset - EDGE * 2.0,
+                            offset: plane.offset - edge * 2.0,
                             ..plane
                         },
                         true,
@@ -1200,7 +1297,7 @@ impl Mask {
                     let feather = clip(
                         clip(points, plane, true),
                         Plane {
-                            offset: plane.offset - EDGE * 2.0,
+                            offset: plane.offset - edge * 2.0,
                             ..plane
                         },
                         false,
@@ -1208,12 +1305,7 @@ impl Mask {
                     let feather = feather
                         .into_iter()
                         .map(|mut v| {
-                            let alpha = if plane_feather {
-                                plane_alpha(plane, v.pos)
-                            } else {
-                                self.alpha(v.pos)
-                            };
-                            v.color = v.color.gamma_multiply(alpha);
+                            v.color = v.color.gamma_multiply(plane_alpha(plane, v.pos, edge));
                             v
                         })
                         .collect::<Vec<_>>();
@@ -1356,7 +1448,11 @@ fn compact_mesh(source: Mesh) -> Mesh {
 mod tests {
     use super::*;
 
-    const KINDS: [Kind; 18] = [
+    const KINDS: [Kind; 22] = [
+        Kind::Wave(Wipe::Left),
+        Kind::Wave(Wipe::Right),
+        Kind::Wave(Wipe::Up),
+        Kind::Wave(Wipe::Down),
         Kind::CircleOut,
         Kind::CircleIn,
         Kind::CornerCircle,
@@ -1598,6 +1694,100 @@ mod tests {
         assert_eq!(outside.origin(), egui::pos2(rect.left(), 300.0));
         let invalid = Mask::new(rect, Kind::Spot(egui::pos2(f32::NAN, 1.0)), 0.5);
         assert_eq!(invalid.origin(), rect.center());
+    }
+
+    #[test]
+    fn waves_travel_their_way_with_a_rolling_curved_soft_edge() {
+        let rect = Rect::from_min_size(egui::pos2(30.0, 50.0), egui::vec2(900.0, 600.0));
+        for (wipe, near, far) in [
+            (
+                Wipe::Right,
+                rect.left_center() + Vec2::X * 40.0,
+                rect.right_center() - Vec2::X * 40.0,
+            ),
+            (
+                Wipe::Left,
+                rect.right_center() - Vec2::X * 40.0,
+                rect.left_center() + Vec2::X * 40.0,
+            ),
+            (
+                Wipe::Down,
+                rect.center_top() + Vec2::Y * 40.0,
+                rect.center_bottom() - Vec2::Y * 40.0,
+            ),
+            (
+                Wipe::Up,
+                rect.center_bottom() - Vec2::Y * 40.0,
+                rect.center_top() + Vec2::Y * 40.0,
+            ),
+        ] {
+            let kind = Kind::Wave(wipe);
+            assert!(
+                revealed(rect, kind, 0.5, near),
+                "{wipe:?} starts at its side"
+            );
+            assert!(!revealed(rect, kind, 0.5, far), "{wipe:?} has not finished");
+            let mask = Mask::new(rect, kind, 0.5);
+            let (along, across) = wipe.axes();
+            // Find where the edge crosses several lines across the page:
+            // a wave's edge is curved, not straight, and it is soft.
+            let crossing = |u: f32| {
+                let line = |s: f32| rect.center() + across * u + along * s;
+                let mut s = -700.0;
+                while mask.alpha(line(s)) < 0.5 && s < 700.0 {
+                    s += 0.25;
+                }
+                s
+            };
+            let crossings: Vec<f32> = (-4..=4).map(|step| crossing(step as f32 * 45.0)).collect();
+            let low = crossings.iter().copied().fold(f32::INFINITY, f32::min);
+            let high = crossings.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+            assert!(high - low > 12.0, "{wipe:?} has a wavy edge: {crossings:?}");
+            let middle = crossing(0.0);
+            let soft = |s: f32| mask.alpha(rect.center() + along * s);
+            assert!(
+                soft(middle - 4.0) > 0.0 && soft(middle + 4.0) < 1.0,
+                "{wipe:?} fades over several points, not one"
+            );
+            // The swell rolls along the shore as the wave comes in.
+            let later = Mask::new(rect, kind, 0.6);
+            let shape = |m: &Mask, u: f32| {
+                let mut s = -700.0;
+                while m.alpha(rect.center() + across * u + along * s) < 0.5 && s < 700.0 {
+                    s += 0.25;
+                }
+                s
+            };
+            let early_shape: Vec<f32> = (-4..=4)
+                .map(|step| shape(&mask, step as f32 * 45.0) - shape(&mask, 0.0))
+                .collect();
+            let late_shape: Vec<f32> = (-4..=4)
+                .map(|step| shape(&later, step as f32 * 45.0) - shape(&later, 0.0))
+                .collect();
+            assert_ne!(early_shape, late_shape, "{wipe:?} rolls as it travels");
+        }
+    }
+
+    #[test]
+    fn straight_and_angled_styles_have_a_soft_edge_and_circles_stay_fine() {
+        let rect = Rect::from_min_size(egui::pos2(30.0, 50.0), egui::vec2(640.0, 480.0));
+        for kind in KINDS {
+            let mask = Mask::new(rect, kind, 0.5);
+            let expected = match kind {
+                Kind::CircleOut | Kind::CircleIn | Kind::CornerCircle | Kind::Spot(_) => EDGE,
+                Kind::Clock => CLOCK_EDGE,
+                _ => SOFT_EDGE,
+            };
+            assert_eq!(mask.edge(), expected, "{kind:?}");
+        }
+        // Across the diamond's edge the old page fades over the full soft
+        // width rather than switching within a couple of points.
+        let mask = Mask::new(rect, Kind::Diamond, 0.5);
+        let edge = rect.center() + Vec2::X * mask.diamond_radius() * std::f32::consts::SQRT_2;
+        let inside = mask.alpha(edge - Vec2::X * SOFT_EDGE * 0.7);
+        let outside = mask.alpha(edge + Vec2::X * SOFT_EDGE * 0.7);
+        assert!(inside > 0.05 && inside < 0.5, "{inside}");
+        assert!(outside > 0.5 && outside < 0.95, "{outside}");
     }
 
     #[test]

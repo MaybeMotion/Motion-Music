@@ -84,10 +84,14 @@ pub(crate) enum PageTransition {
     Letterbox,
     Chevron,
     ClockWipe,
+    WaveLeft,
+    WaveRight,
+    WaveUp,
+    WaveDown,
 }
 
 impl PageTransition {
-    pub(crate) const ALL: [Self; 16] = [
+    pub(crate) const ALL: [Self; 20] = [
         Self::CircleOut,
         Self::CircleIn,
         Self::CornerCircle,
@@ -104,6 +108,10 @@ impl PageTransition {
         Self::Letterbox,
         Self::Chevron,
         Self::ClockWipe,
+        Self::WaveLeft,
+        Self::WaveRight,
+        Self::WaveUp,
+        Self::WaveDown,
     ];
 
     /// The stable name a turned-off style is saved under.
@@ -125,6 +133,10 @@ impl PageTransition {
             Self::Letterbox => "letterbox",
             Self::Chevron => "chevron",
             Self::ClockWipe => "clock",
+            Self::WaveLeft => "wave-left",
+            Self::WaveRight => "wave-right",
+            Self::WaveUp => "wave-up",
+            Self::WaveDown => "wave-down",
         }
     }
 
@@ -147,6 +159,10 @@ impl PageTransition {
             Self::Letterbox => "Letterbox",
             Self::Chevron => "Chevron",
             Self::ClockWipe => "Clock wipe",
+            Self::WaveLeft => "Wave left",
+            Self::WaveRight => "Wave right",
+            Self::WaveUp => "Wave up",
+            Self::WaveDown => "Wave down",
         }
     }
 
@@ -177,6 +193,10 @@ impl PageTransition {
             Self::Letterbox => reveal::Kind::Letterbox,
             Self::Chevron => reveal::Kind::Chevron,
             Self::ClockWipe => reveal::Kind::Clock,
+            Self::WaveLeft => reveal::Kind::Wave(reveal::Wipe::Left),
+            Self::WaveRight => reveal::Kind::Wave(reveal::Wipe::Right),
+            Self::WaveUp => reveal::Kind::Wave(reveal::Wipe::Up),
+            Self::WaveDown => reveal::Kind::Wave(reveal::Wipe::Down),
         }
     }
 
@@ -483,7 +503,7 @@ fn interrupt_reveal(ui: &Ui) -> bool {
     })
 }
 
-/// Page bodies use sixteen native wallpaper-style reveals without moving or fading
+/// Page bodies use twenty native wallpaper-style reveals without moving or fading
 /// their contents. Fixed chrome stays outside the cached viewport. Only the previous
 /// displayed composite is retained; geometry and existing textures stay in memory, with no
 /// screenshot, readback, file operation or new renderer dependency.
@@ -1137,7 +1157,10 @@ mod tests {
             state.transition = transition;
             state.started = Some(1.0);
             assert_eq!(reveal_progress(state, 1.0), 0.0);
-            assert_eq!(reveal_progress(state, 1.0 + f64::from(PAGE_SECONDS)), 1.0);
+            assert_eq!(
+                reveal_progress(state, 1.0 + f64::from(transition.seconds())),
+                1.0
+            );
             assert_eq!(reveal_progress(state, f64::NAN), 1.0);
             assert_eq!(reveal_progress(state, f64::INFINITY), 1.0);
             assert_eq!(reveal_progress(state, 0.0), 0.0);
@@ -1147,7 +1170,7 @@ mod tests {
             page_frame(&ctx, 1.0, "playlist:finish", vec![]);
             page_frame(
                 &ctx,
-                1.0 + f64::from(PAGE_SECONDS),
+                1.0 + f64::from(transition.seconds()),
                 "playlist:finish",
                 vec![],
             );
