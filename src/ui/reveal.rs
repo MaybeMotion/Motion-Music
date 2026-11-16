@@ -16,8 +16,8 @@ const SOFT_EDGE: f32 = 10.0;
 /// and a wide fade would be cut off where they meet at the centre.
 const CLOCK_EDGE: f32 = 3.0;
 /// The ocean wave: the length and height of its main swell, in points.
-const WAVE_LENGTH: f32 = 260.0;
-const WAVE_HEIGHT: f32 = 20.0;
+const WAVE_LENGTH: f32 = 520.0;
+const WAVE_HEIGHT: f32 = 80.0;
 /// How far, in points, each straight piece of the wave's curved edge spans.
 const WAVE_STEP: f32 = 10.0;
 
@@ -677,7 +677,7 @@ impl Mask {
         // Gentle on a small page; the full swell on a normal one. The swell
         // is small enough against the travel that the edge only ever moves
         // forwards.
-        let main = (span * 0.05).min(WAVE_HEIGHT);
+        let main = (span * 0.075).min(WAVE_HEIGHT);
         let ripple = main * 0.4;
         let frequency = TAU / WAVE_LENGTH;
         let steepest = (main + ripple * 2.3) * frequency;
@@ -1115,6 +1115,52 @@ impl Mask {
             _ => vec![Rect::EVERYTHING; self.bands().len()],
         }
     }
+    /// Whether the bands' parts cover the whole plane, so a triangle lies in
+    /// the parts of the bands whose bounds it touches. The clock leaves the
+    /// quarters its hand has passed out of its bands, so it does not.
+    fn bands_tile_the_page(&self) -> bool {
+        self.kind != Kind::Clock
+    }
+
+    /// Where a whole triangle sits against the bands it can touch: entirely
+    /// within `inside` (distance at most that) of every band's plane, entirely
+    /// at or beyond `outside`, or neither. Most of a page is far from a moving
+    /// edge, and only the triangles it crosses need cutting into parts.
+    fn whole_triangle(
+        &self,
+        bands: &[(Plane, Vec<Plane>)],
+        band_bounds: &[Rect],
+        points: &[Vertex; 3],
+        bounds: Rect,
+        inside: f32,
+        outside: f32,
+    ) -> Option<bool> {
+        if !self.bands_tile_the_page() {
+            return None;
+        }
+        let (mut all_inside, mut all_outside) = (true, true);
+        for ((plane, _), band) in bands.iter().zip(band_bounds) {
+            if !band.intersects(bounds) {
+                continue;
+            }
+            for vertex in points {
+                let distance = plane.distance(vertex.pos);
+                all_inside &= distance <= inside;
+                all_outside &= distance >= outside;
+            }
+            if !all_inside && !all_outside {
+                return None;
+            }
+        }
+        if all_inside {
+            Some(true)
+        } else if all_outside {
+            Some(false)
+        } else {
+            None
+        }
+    }
+
     fn underlay(&self, source: &Mesh) -> Mesh {
         if self.progress <= 0.0 {
             return Mesh::with_texture(source.texture_id);
@@ -1169,6 +1215,23 @@ impl Mask {
                     vec![intersection(points.to_vec(), &planes)]
                 }
             } else {
+                // Wholly under the old page's opaque part: hidden. Wholly
+                // outside it: kept as it is.
+                match self.whole_triangle(
+                    &bands,
+                    &band_bounds,
+                    &points,
+                    bounds,
+                    -edge * 3.0,
+                    -edge * 3.0,
+                ) {
+                    Some(true) => continue,
+                    Some(false) => {
+                        emit(&mut output, &points);
+                        continue;
+                    }
+                    None => {}
+                }
                 let mut remaining = vec![points.to_vec()];
                 for ((plane, partition), band) in bands.iter().zip(&band_bounds) {
                     if !band.intersects(bounds) {
@@ -1278,6 +1341,16 @@ impl Mask {
                     emit(&mut output, &polygon);
                 }
             } else {
+                // Wholly in the old page's solid part: kept whole. Wholly
+                // revealed: gone. Only triangles the soft edge crosses are cut.
+                match self.whole_triangle(&bands, &band_bounds, &points, bounds, -edge * 2.0, 0.0) {
+                    Some(true) => {
+                        emit(&mut output, &points);
+                        continue;
+                    }
+                    Some(false) => continue,
+                    None => {}
+                }
                 for ((plane, partition), band) in bands.iter().zip(&band_bounds) {
                     if !band.intersects(bounds) {
                         continue;

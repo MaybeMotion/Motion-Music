@@ -12,7 +12,7 @@ Without **spotifast-portable.txt** beside it, the app uses a separate profile in
 
 ## Ocean waves
 
-Four new transitions, one for each swipe direction: **Wave left**, **Wave right**, **Wave up** and **Wave down**. Their edge is a soft curve that swells and rolls sideways as it washes across the page, like the sea running up a beach. Like every page transition they take 360 ms, keep the page content in its final position, and only ever move forward over the old page.
+Four new transitions, one for each swipe direction: **Wave left**, **Wave right**, **Wave up** and **Wave down**. Their edge is a soft curve that swells and rolls sideways as it washes across the page, like the sea running up a beach. The swell is up to 80 points high so the wave shape is easy to see, and waves take 560 ms rather than the usual 360 ms so you can watch them roll in. Like every page transition they keep the page content in its final position and only ever move forward over the old page.
 
 ## Softer edges everywhere
 

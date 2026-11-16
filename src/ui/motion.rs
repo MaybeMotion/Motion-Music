@@ -7,6 +7,8 @@ use rand::{Rng, seq::SliceRandom};
 use rand::{SeedableRng, rngs::StdRng};
 
 const PAGE_SECONDS: f32 = 0.36;
+/// Waves roll in more slowly, like surf, so their swell can be seen.
+const WAVE_SECONDS: f32 = 0.56;
 const ARRIVAL_SECONDS: f32 = 0.14;
 const TOAST_ENTER_SECONDS: f32 = 0.12;
 const TOAST_EXIT_SECONDS: f32 = 0.22;
@@ -201,7 +203,10 @@ impl PageTransition {
     }
 
     fn seconds(self) -> f32 {
-        PAGE_SECONDS
+        match self {
+            Self::WaveLeft | Self::WaveRight | Self::WaveUp | Self::WaveDown => WAVE_SECONDS,
+            _ => PAGE_SECONDS,
+        }
     }
 }
 
@@ -909,6 +914,73 @@ mod tests {
         assert!(first.windows(2).all(|pair| pair[0] != pair[1]));
     }
 
+    /// Enough text that the page and an equally detailed picture of the old
+    /// one fit the reveal's limits, but a picture twice as detailed does not.
+    const TEXT_ROWS: usize = 190;
+
+    /// A busy page, like a long playlist: thousands of glyphs.
+    fn busy_frame(ctx: &egui::Context, time: f64, key: &str) {
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1600.0, 1000.0),
+                )),
+                time: Some(time),
+                ..Default::default()
+            },
+            |ui| {
+                page(
+                    ui,
+                    Id::new("page-slide-test"),
+                    Id::new(key),
+                    Id::new("test-scene"),
+                    |ui| {
+                        let origin = ui.max_rect().min;
+                        ui.painter()
+                            .rect_filled(ui.max_rect(), 0, egui::Color32::BLACK);
+                        // Rows of song titles: many glyphs in few shapes.
+                        let line =
+                            "Rosewood Bonobo Fragments 3:00 Otomo Khruangbin Mordechai 3:37 "
+                                .repeat(2);
+                        for row in 0..TEXT_ROWS {
+                            ui.painter().text(
+                                origin + egui::vec2(4.0, row as f32 * 5.0 + 2.0),
+                                egui::Align2::LEFT_TOP,
+                                &line,
+                                egui::FontId::proportional(8.0),
+                                egui::Color32::from_gray(200),
+                            );
+                        }
+                        ui.allocate_space(ui.available_size());
+                    },
+                );
+                finish(ui.ctx());
+            },
+        );
+        output.textures_delta.clear();
+    }
+
+    /// Cutting a busy page into the wave's many parts once made the picture
+    /// too large to keep, which ended every wave on its first frame.
+    #[test]
+    fn waves_and_soft_edges_keep_running_on_a_busy_page() {
+        for transition in PageTransition::ALL {
+            let ctx = egui::Context::default();
+            busy_frame(&ctx, 0.0, "home");
+            busy_frame(&ctx, 0.5, "home");
+            choose_next(&ctx, transition);
+            busy_frame(&ctx, 1.0, "playlist:busy");
+            for time in [1.03, 1.08, 1.15, 1.25] {
+                busy_frame(&ctx, time, "playlist:busy");
+                assert!(
+                    page_state(&ctx).started.is_some(),
+                    "{transition:?} is still revealing at {time}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn turned_off_styles_leave_the_shuffle_and_all_off_changes_pages_at_once() {
         let mut choices = PageTransitions::default();
@@ -1049,7 +1121,8 @@ mod tests {
             let ctx = egui::Context::default();
             let (original, header, extent, _) = page_frame(&ctx, 0.0, "home", vec![]);
             choose_next(&ctx, transition);
-            for time in [1.0, 1.05, 1.15, 1.25, 1.37] {
+            let length = f64::from(transition.seconds());
+            for time in [0.0, 0.14, 0.42, 0.7, 1.03].map(|at| 1.0 + at * length) {
                 let (page, page_header, page_extent, alpha) =
                     page_frame(&ctx, time, "playlist:fixed", vec![egui::Event::PointerGone]);
                 assert_eq!(
@@ -1180,7 +1253,10 @@ mod tests {
 
     #[test]
     fn page_reveals_accelerate_early_and_settle_at_360_ms_without_replaying() {
-        for transition in PageTransition::ALL {
+        for transition in PageTransition::ALL
+            .into_iter()
+            .filter(|style| style.seconds() == PAGE_SECONDS)
+        {
             let ctx = egui::Context::default();
             page_frame(&ctx, 0.0, "home", vec![]);
             choose_next(&ctx, transition);
@@ -1215,6 +1291,36 @@ mod tests {
                 "redraws never restart the animation"
             );
         }
+    }
+
+    #[test]
+    fn waves_roll_in_more_slowly_than_other_styles_and_still_settle() {
+        for transition in [
+            PageTransition::WaveLeft,
+            PageTransition::WaveRight,
+            PageTransition::WaveUp,
+            PageTransition::WaveDown,
+        ] {
+            assert_eq!(transition.seconds(), WAVE_SECONDS);
+            let ctx = egui::Context::default();
+            page_frame(&ctx, 0.0, "home", vec![]);
+            choose_next(&ctx, transition);
+            page_frame(&ctx, 1.0, "playlist:wave", vec![]);
+            page_frame(&ctx, 1.0 + f64::from(PAGE_SECONDS), "playlist:wave", vec![]);
+            assert_eq!(
+                page_state(&ctx).started,
+                Some(1.0),
+                "{transition:?} is still rolling in when a swipe would be done"
+            );
+            page_frame(
+                &ctx,
+                1.01 + f64::from(WAVE_SECONDS),
+                "playlist:wave",
+                vec![],
+            );
+            assert!(page_state(&ctx).started.is_none());
+        }
+        const { assert!(WAVE_SECONDS > PAGE_SECONDS) };
     }
 
     #[test]
@@ -1272,7 +1378,7 @@ mod tests {
             assert!(page_state(&ctx).started.is_some());
             let (finished, _, _, alpha) = page_frame(
                 &ctx,
-                1.37,
+                1.01 + f64::from(transition.seconds()),
                 "playlist:reveal",
                 vec![egui::Event::PointerGone],
             );
