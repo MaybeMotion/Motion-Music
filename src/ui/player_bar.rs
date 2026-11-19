@@ -62,7 +62,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             let now = app.now_playing();
             // The whole bar, margins included, behind everything else.
             let behind = rect.expand2(vec2(16.0, 0.0));
-            if let Some(stops) = app.theme_gradient() {
+            if let Some(stops) = app.background_gradient() {
                 let stops = stops.map(|stop| stop.gamma_multiply(0.45));
                 theme::paint_theme_gradient(ui, behind, stops, 0);
             }
@@ -98,12 +98,15 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             if pulse > 0.01 {
                 // A soft flash along the top edge of the bar.
                 let mut glow = egui::Mesh::default();
-                let accent = palette.accent.gamma_multiply(0.55 * pulse);
+                let accent = palette.accent.gamma_multiply(0.85 * pulse);
                 let top = rect.top();
                 glow.colored_vertex(pos2(behind.left(), top), accent);
                 glow.colored_vertex(pos2(behind.right(), top), accent);
-                glow.colored_vertex(pos2(behind.right(), top + 14.0), Color32::TRANSPARENT);
-                glow.colored_vertex(pos2(behind.left(), top + 14.0), Color32::TRANSPARENT);
+                glow.colored_vertex(pos2(behind.right(), top + 30.0), Color32::TRANSPARENT);
+                glow.colored_vertex(pos2(behind.left(), top + 30.0), Color32::TRANSPARENT);
+                // The whole bar warms with each beat as well.
+                ui.painter()
+                    .rect_filled(behind, 0, palette.accent.gamma_multiply(0.1 * pulse));
                 glow.add_triangle(0, 1, 2);
                 glow.add_triangle(0, 2, 3);
                 ui.painter().add(egui::Shape::mesh(glow));
@@ -271,7 +274,7 @@ fn visualizer(
             true
         }
         _ => {
-            if !sounding && app.player_bar_analyser.settled() {
+            if !sounding && app.player_bar_analyser.settled() && app.player_bar_glide.settled() {
                 return false;
             }
             let levels = app.player_bar_analyser.step(
@@ -282,9 +285,12 @@ fn visualizer(
                 let peaks = app.player_bar_analyser.peaks();
                 spectrum(&painter, rect, &levels, &peaks, &colours, strength);
             } else {
+                let levels = app
+                    .player_bar_glide
+                    .step(&levels, std::time::Instant::now());
                 spectrum_effect(mode, &painter, rect, &levels, &colours, strength, time);
             }
-            sounding || !app.player_bar_analyser.settled()
+            sounding || !app.player_bar_analyser.settled() || !app.player_bar_glide.settled()
         }
     }
 }
@@ -343,7 +349,11 @@ pub fn stage(app: &mut App, ctx: &egui::Context) {
             let (rect, response) = ui.allocate_exact_size(rect.size(), Sense::click());
             let painter = ui.painter();
             painter.rect_filled(rect, 0, Color32::from_rgb(6, 6, 12));
-            if let Some(stops) = app.theme_gradient() {
+            if app.settings.beat_pulse && !crate::motion::reduced(ui.ctx()) {
+                let pulse = app.beat.pulse(ui.input(|input| input.time));
+                painter.rect_filled(rect, 0, app.palette.accent.gamma_multiply(0.08 * pulse));
+            }
+            if let Some(stops) = app.background_gradient() {
                 let stops = stops.map(|stop| stop.gamma_multiply(0.18));
                 theme::paint_theme_gradient(ui, rect, stops, 0);
             }
@@ -623,6 +633,11 @@ fn spectrum_effect(
         PlayerBarVis::Kaleidoscope => kaleidoscope(painter, rect, levels, colours, strength, time),
         PlayerBarVis::Lava => lava(painter, rect, levels, colours, strength, time),
         PlayerBarVis::Galaxy => galaxy(painter, rect, levels, colours, strength, time),
+        PlayerBarVis::Matrix => matrix(painter, rect, levels, colours, strength, time),
+        PlayerBarVis::Spectrogram => spectrogram(painter, rect, levels, colours, strength, time),
+        PlayerBarVis::Orb => orb(painter, rect, levels, colours, strength, time),
+        PlayerBarVis::Rose => rose(painter, rect, levels, colours, strength, time),
+        PlayerBarVis::Bubbles => bubbles(painter, rect, levels, colours, strength, time),
         _ => {}
     }
 }
@@ -898,6 +913,297 @@ fn lava(
                 colour.gamma_multiply(alpha * strength * (0.4 + energy * 0.6)),
             );
         }
+    }
+}
+
+/// Columns of glowing glyph-like marks fall like digital rain, each column
+/// falling faster and brighter with its own part of the spectrum.
+fn matrix(
+    painter: &egui::Painter,
+    rect: Rect,
+    levels: &[f32],
+    colours: &[Color32],
+    strength: f32,
+    time: f32,
+) {
+    let energy = scene_energy(levels);
+    let columns = ((rect.width() / 16.0) as usize).clamp(12, 110);
+    let width = rect.width() / columns as f32;
+    let cell = vec2((width * 0.5).clamp(2.0, 7.0), 5.0);
+    // One mesh for every mark: thousands of small shapes cost far more.
+    let mut mesh = egui::Mesh::default();
+    for column in 0..columns {
+        let seed = column as f32;
+        let at = (seed * 0.618_034).fract();
+        let level = scene_band(levels, at, energy);
+        let speed = 0.25 + level * 0.9;
+        let travel = rect.height() * 1.6;
+        let head = rect.top() - rect.height() * 0.3
+            + ((time * speed * 0.5 + seed * 0.37).fract()) * travel;
+        let x = rect.left() + (column as f32 + 0.5) * width;
+        let colour = swept(colours, at);
+        for trail in 0..10 {
+            let y = head - trail as f32 * 8.0;
+            if y < rect.top() + cell.y || y > rect.bottom() - cell.y {
+                continue;
+            }
+            let fade = 1.0 - trail as f32 / 10.0;
+            // The leading mark burns almost white.
+            let mark = if trail == 0 {
+                motion_blend(colour, Color32::WHITE, 0.6)
+            } else {
+                colour
+            };
+            // Glyph-like: some marks are tall, some short and wide.
+            let shape =
+                if ((seed + trail as f32 * 3.7 + (time * 4.0).floor()) * 1.618).fract() > 0.5 {
+                    vec2(cell.x, cell.y)
+                } else {
+                    vec2(cell.x * 1.4, cell.y * 0.6)
+                };
+            mesh.add_colored_rect(
+                Rect::from_center_size(pos2(x, y), shape),
+                mark.gamma_multiply(strength * fade * (0.15 + level * 0.75) * energy.max(0.3)),
+            );
+        }
+    }
+    painter.add(egui::Shape::mesh(mesh));
+}
+
+fn motion_blend(from: Color32, to: Color32, amount: f32) -> Color32 {
+    theme::motion::blend(from, to, amount)
+}
+
+/// How many moments the spectrogram keeps, and how often it takes one.
+const SPECTROGRAM_COLUMNS: usize = 64;
+const SPECTROGRAM_STEP: f32 = 1.0 / 30.0;
+const SPECTROGRAM_BANDS: usize = 24;
+
+#[derive(Clone, Default)]
+struct SpectrogramHistory {
+    columns: std::collections::VecDeque<Vec<f32>>,
+    taken_at: f32,
+}
+
+/// A scrolling heat map: time runs from right to left, low notes at the
+/// bottom and high ones at the top, each cell glowing with its loudness.
+fn spectrogram(
+    painter: &egui::Painter,
+    rect: Rect,
+    levels: &[f32],
+    colours: &[Color32],
+    strength: f32,
+    time: f32,
+) {
+    let id = egui::Id::new("player-bar-spectrogram-history");
+    let mut history = painter
+        .ctx()
+        .data(|data| data.get_temp::<SpectrogramHistory>(id))
+        .unwrap_or_default();
+    let energy = scene_energy(levels);
+    if history.columns.is_empty()
+        || time - history.taken_at >= SPECTROGRAM_STEP
+        || time < history.taken_at
+    {
+        let column: Vec<f32> = (0..SPECTROGRAM_BANDS)
+            .map(|band| {
+                // The loudest of the bands this row covers, so a single
+                // sounding note is never missed between rows.
+                let from = band * levels.len() / SPECTROGRAM_BANDS;
+                let to = ((band + 1) * levels.len() / SPECTROGRAM_BANDS).max(from + 1);
+                let loudest = levels[from..to.min(levels.len())]
+                    .iter()
+                    .copied()
+                    .fold(0.0_f32, f32::max);
+                (loudest.sqrt() * 0.8 + energy * 0.2).min(1.0)
+            })
+            .collect();
+        if history.columns.is_empty() {
+            history
+                .columns
+                .extend(std::iter::repeat_n(column.clone(), SPECTROGRAM_COLUMNS - 1));
+        }
+        history.columns.push_front(column);
+        history.columns.truncate(SPECTROGRAM_COLUMNS);
+        history.taken_at = time;
+    }
+    let cell = vec2(
+        rect.width() / SPECTROGRAM_COLUMNS as f32,
+        rect.height() / SPECTROGRAM_BANDS as f32,
+    );
+    let mut mesh = egui::Mesh::default();
+    for (age, column) in history.columns.iter().enumerate() {
+        let x = rect.right() - (age + 1) as f32 * cell.x;
+        let fade = 1.0 - age as f32 / SPECTROGRAM_COLUMNS as f32 * 0.6;
+        for (band, level) in column.iter().enumerate() {
+            let shimmer = 0.92 + 0.08 * (time * 3.0 + band as f32 + age as f32 * 0.3).sin();
+            let alpha = strength * level * level * fade * shimmer * 0.85;
+            if alpha < 0.01 {
+                continue;
+            }
+            let at = band as f32 / (SPECTROGRAM_BANDS - 1) as f32;
+            let colour = swept(colours, at).gamma_multiply(alpha);
+            let y = rect.bottom() - (band + 1) as f32 * cell.y;
+            mesh.add_colored_rect(
+                Rect::from_min_size(pos2(x, y), cell - vec2(1.0, 1.0)),
+                colour,
+            );
+        }
+    }
+    painter.add(egui::Shape::mesh(mesh));
+    painter.ctx().data_mut(|data| data.insert_temp(id, history));
+}
+
+/// A spinning wireframe globe that swells with the bass, its lines bulging
+/// with the spectrum, inside a tilted ring of light like a planet's.
+fn orb(
+    painter: &egui::Painter,
+    rect: Rect,
+    levels: &[f32],
+    colours: &[Color32],
+    strength: f32,
+    time: f32,
+) {
+    use std::f32::consts::{PI, TAU};
+    let energy = scene_energy(levels);
+    let bass = bass_level(levels).sqrt();
+    let centre = rect.center();
+    let radius = rect.height() * (0.3 + bass * 0.1);
+    let spin = time * 0.6;
+    let tilt = 0.45_f32;
+    // Project a point on the sphere: turn about the vertical, then tip it.
+    let project = |latitude: f32, longitude: f32, swell: f32| {
+        let r = radius * (1.0 + swell);
+        let x = latitude.cos() * (longitude + spin).cos();
+        let y = latitude.sin();
+        let z = latitude.cos() * (longitude + spin).sin();
+        let y_tilted = y * tilt.cos() - z * tilt.sin();
+        let depth = y * tilt.sin() + z * tilt.cos();
+        (centre + vec2(x * r, -y_tilted * r), depth)
+    };
+    for ring in 1..8 {
+        let latitude = -PI / 2.0 + ring as f32 * PI / 8.0;
+        let at = ring as f32 / 8.0;
+        let points: Vec<_> = (0..=48)
+            .map(|step| {
+                let longitude = step as f32 / 48.0 * TAU;
+                let swell = level_at(levels, (step as f32 / 48.0 + at).fract()) * 0.08;
+                project(latitude, longitude, swell).0
+            })
+            .collect();
+        neon_line(painter, points, swept(colours, at), 0.7 * strength * energy);
+    }
+    for meridian in 0..12 {
+        let longitude = meridian as f32 / 12.0 * TAU;
+        let at = meridian as f32 / 12.0;
+        let points: Vec<_> = (0..=24)
+            .map(|step| {
+                let latitude = -PI / 2.0 + step as f32 / 24.0 * PI;
+                let swell = level_at(levels, step as f32 / 24.0) * 0.1;
+                project(latitude, longitude, swell)
+            })
+            .map(|(point, _)| point)
+            .collect();
+        neon_line(
+            painter,
+            points,
+            swept(colours, at),
+            0.45 * strength * energy,
+        );
+    }
+    // The ring: wide and flat, its light following the spectrum around it.
+    let ring = vec2(rect.width() * 0.46, rect.height() * 0.16);
+    let points: Vec<_> = (0..=120)
+        .map(|step| {
+            let angle = step as f32 / 120.0 * TAU + time * 0.2;
+            let lift = level_at(levels, step as f32 / 120.0) * rect.height() * 0.06;
+            centre + vec2(angle.cos() * ring.x, angle.sin() * (ring.y + lift))
+        })
+        .collect();
+    scene_neon_line(
+        painter,
+        points,
+        swept(colours, 0.6),
+        0.5 * strength * energy,
+    );
+}
+
+/// Layered rose curves: each petal reaches out with its part of the spectrum
+/// while the flowers turn, three across the bar.
+fn rose(
+    painter: &egui::Painter,
+    rect: Rect,
+    levels: &[f32],
+    colours: &[Color32],
+    strength: f32,
+    time: f32,
+) {
+    use std::f32::consts::TAU;
+    let energy = scene_energy(levels);
+    for (place, petals, turn) in [(0.17, 5.0, 1.0), (0.5, 7.0, -1.0), (0.83, 4.0, 1.0)] {
+        let centre = pos2(rect.left() + rect.width() * place, rect.center().y);
+        let reach = rect.height() * 0.44;
+        for layer in 0..3 {
+            let layer = layer as f32;
+            let at = (place + layer * 0.21).fract();
+            let points: Vec<_> = (0..=200)
+                .map(|step| {
+                    let angle = step as f32 / 200.0 * TAU;
+                    let band = level_at(levels, (step as f32 / 200.0 + layer * 0.3).fract());
+                    let petal = ((petals + layer) * angle / 2.0).cos().abs();
+                    let r =
+                        reach * (0.25 + 0.75 * petal) * (0.55 + 0.45 * band) * (1.0 - layer * 0.18);
+                    let spun = angle + time * 0.3 * turn + layer;
+                    centre + vec2(spun.cos(), spun.sin()) * r
+                })
+                .collect();
+            neon_line(
+                painter,
+                points,
+                swept(colours, at),
+                0.65 * strength * energy,
+            );
+        }
+    }
+}
+
+/// Bubbles rise from the bottom of the bar, swelling with their part of the
+/// spectrum and fading as they reach the top.
+fn bubbles(
+    painter: &egui::Painter,
+    rect: Rect,
+    levels: &[f32],
+    colours: &[Color32],
+    strength: f32,
+    time: f32,
+) {
+    let energy = scene_energy(levels);
+    let largest = rect.height() * 0.17;
+    for bubble in 0..44 {
+        let seed = bubble as f32;
+        let at = (seed * 0.618_034).fract();
+        let level = scene_band(levels, at, energy);
+        let radius = rect.height() * (0.04 + level * 0.13);
+        let rise = (time * (0.08 + at * 0.1) + seed * 0.37).fract();
+        let margin = largest + 2.0;
+        let centre = pos2(
+            rect.left()
+                + margin
+                + at * (rect.width() - margin * 2.0).max(0.0)
+                + (time * 1.3 + seed).sin() * 4.0,
+            rect.bottom() - margin - rise * (rect.height() - margin * 2.0).max(0.0),
+        );
+        let fade = (std::f32::consts::PI * rise).sin();
+        let colour =
+            swept(colours, at).gamma_multiply(strength * fade * (0.3 + level * 0.7) * energy);
+        painter.circle_filled(centre, radius, colour.gamma_multiply(0.12));
+        painter.circle_stroke(centre, radius, egui::Stroke::new(1.2, colour));
+        // A bright highlight, up and to the left.
+        painter.circle_filled(
+            centre + vec2(-radius * 0.35, -radius * 0.35),
+            (radius * 0.2).max(0.6),
+            colour.gamma_multiply(1.2),
+        );
     }
 }
 
@@ -2018,7 +2324,7 @@ fn transport(app: &mut App, ui: &mut egui::Ui, now: Option<&NowPlaying>, region:
     };
     if pulse > 0.01 && !crate::motion::reduced(ui.ctx()) {
         // A ring that springs out from the play button on each beat.
-        let ring = 20.0 + 9.0 * (1.0 - pulse);
+        let ring = 20.0 + 14.0 * (1.0 - pulse);
         ui.painter().circle_filled(
             disc.center(),
             ring + 6.0,
@@ -2027,10 +2333,7 @@ fn transport(app: &mut App, ui: &mut egui::Ui, now: Option<&NowPlaying>, region:
         ui.painter().circle_stroke(
             disc.center(),
             ring,
-            egui::Stroke::new(
-                1.0 + 2.5 * pulse,
-                palette.accent.gamma_multiply(0.8 * pulse),
-            ),
+            egui::Stroke::new(1.5 + 3.5 * pulse, palette.accent.gamma_multiply(pulse)),
         );
     }
     if loading || app.any_play_pending() {
@@ -2340,6 +2643,27 @@ fn extras(app: &mut App, ui: &mut egui::Ui, now: Option<&NowPlaying>, transport_
         app.actions.push(Action::ToggleFriendsPanel);
     }
     sleep_timer_button(app, ui, transport_right);
+    let left = ui.min_rect().left() - ui.spacing().item_spacing.x - (18.0 + theme::ICON_BUTTON_PAD);
+    if left - transport_right >= TRANSPORT_GAP
+        && theme::icon_button(
+            ui,
+            Icon::Expand,
+            18.0,
+            if app.visualiser_stage {
+                palette.accent
+            } else {
+                palette.secondary
+            },
+            palette.text,
+            super::keys::platform_shortcut(
+                &gettext(app.locale, "Visualiser stage (Ctrl+Shift+S)"),
+                &gettext(app.locale, "Visualiser stage (Cmd+Shift+S)"),
+            ),
+        )
+        .clicked()
+    {
+        app.actions.push(Action::ToggleVisualiserStage);
+    }
 }
 
 /// A moon-and-clock button for the sleep timer, when there is room for it.
@@ -2662,6 +2986,11 @@ mod visualizer_scene_tests {
             PlayerBarVis::Kaleidoscope,
             PlayerBarVis::Lava,
             PlayerBarVis::Galaxy,
+            PlayerBarVis::Matrix,
+            PlayerBarVis::Spectrogram,
+            PlayerBarVis::Orb,
+            PlayerBarVis::Rose,
+            PlayerBarVis::Bubbles,
         ] {
             for width in [360.0, 1440.0] {
                 for dark in [false, true] {
@@ -2692,7 +3021,7 @@ mod visualizer_scene_tests {
         }
     }
 
-    const NEW_SCENES: [PlayerBarVis; 13] = [
+    const NEW_SCENES: [PlayerBarVis; 18] = [
         PlayerBarVis::Waterfall,
         PlayerBarVis::Prism,
         PlayerBarVis::Helix,
@@ -2706,6 +3035,11 @@ mod visualizer_scene_tests {
         PlayerBarVis::Kaleidoscope,
         PlayerBarVis::Lava,
         PlayerBarVis::Galaxy,
+        PlayerBarVis::Matrix,
+        PlayerBarVis::Spectrogram,
+        PlayerBarVis::Orb,
+        PlayerBarVis::Rose,
+        PlayerBarVis::Bubbles,
     ];
 
     #[test]

@@ -1081,6 +1081,11 @@ fn demo_visualizer_mode(name: &str) -> Option<crate::settings::PlayerBarVis> {
         "kaleidoscope" => PlayerBarVis::Kaleidoscope,
         "lava" => PlayerBarVis::Lava,
         "galaxy" => PlayerBarVis::Galaxy,
+        "matrix" => PlayerBarVis::Matrix,
+        "spectrogram" => PlayerBarVis::Spectrogram,
+        "orb" => PlayerBarVis::Orb,
+        "rose" => PlayerBarVis::Rose,
+        "bubbles" => PlayerBarVis::Bubbles,
         _ => return None,
     })
 }
@@ -5784,6 +5789,7 @@ mod tests {
             app.desktop_audio.set_enabled(true);
             app.settings.player_bar_vis = PlayerBarVis::Off;
             app.player_bar_analyser = crate::vis::WideAnalyser::default();
+            app.player_bar_glide = crate::vis::Glide::default();
             desktop_audio_bar_frame(&ctx, &mut app, time);
             let (quiet, _) = desktop_audio_bar_frame(&ctx, &mut app, time);
             app.settings.player_bar_vis = mode;
@@ -5802,12 +5808,14 @@ mod tests {
 
             app.desktop_audio.inject(&second_signal);
             app.player_bar_analyser = crate::vis::WideAnalyser::default();
+            app.player_bar_glide = crate::vis::Glide::default();
             let (second, _) = desktop_audio_bar_frame(&ctx, &mut app, time + 1.0);
             assert_ne!(first, second, "{mode:?} does not respond to changed audio");
 
             // An output stream that stops cannot leave a frozen fake waveform.
             app.desktop_audio.set_enabled(false);
             app.player_bar_analyser = crate::vis::WideAnalyser::default();
+            app.player_bar_glide = crate::vis::Glide::default();
             assert!(
                 app.visualizer_samples(Some(&now), crate::vis::WIDE_SAMPLES)
                     .is_none()

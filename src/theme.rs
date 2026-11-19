@@ -157,6 +157,19 @@ pub fn palette_from_cover(colours: &[[u8; 3]]) -> Option<Palette> {
     })
 }
 
+/// A gradient for a solid theme's living background: its window colour,
+/// washed with its accent and with the accent turned a little round the
+/// colour wheel, so the drift is visible but the page stays readable.
+pub fn living_stops(palette: &Palette) -> [Color32; 3] {
+    let mut turned = egui::ecolor::HsvaGamma::from(palette.accent);
+    turned.h = (turned.h + 0.12).rem_euclid(1.0);
+    let strength = if palette.dark { 0.32 } else { 0.22 };
+    [
+        palette.window,
+        motion::blend(palette.window, palette.accent, strength),
+        motion::blend(palette.window, Color32::from(turned), strength * 0.8),
+    ]
+}
 /// How far apart two hues are around the colour wheel, from 0 to 0.5.
 fn hue_distance(a: f32, b: f32) -> f32 {
     let distance = (a - b).rem_euclid(1.0);

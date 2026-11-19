@@ -99,15 +99,15 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     motion::finish(ctx);
 }
 
-/// How far a living gradient drifts each second: one full sweep takes a
-/// little under a minute and a half.
-const LIVING_DRIFT: f32 = 0.012;
+/// How far a living gradient drifts each second: one full sweep takes about
+/// twenty seconds, slow enough to stay calm and quick enough to see.
+const LIVING_DRIFT: f32 = 0.045;
 
 /// Moves a gradient theme's colours along while music plays, and holds them
 /// where they are while it is paused, so nothing jumps when it starts again.
 fn living_gradient(app: &App, ctx: &Context) {
     let id = Id::new("living-gradient-drift");
-    if !app.settings.living_gradients || app.theme_gradient().is_none() {
+    if !app.settings.living_gradients || app.background_gradient().is_none() {
         theme::set_living_phase(ctx, None);
         return;
     }
@@ -306,7 +306,7 @@ fn central(app: &mut App, ui: &mut egui::Ui) {
         .frame(Frame::new().fill(palette.window))
         .show(ui, |ui| {
             let rect = ui.max_rect();
-            if let Some(stops) = app.theme_gradient() {
+            if let Some(stops) = app.background_gradient() {
                 theme::paint_theme_gradient(ui, rect, stops, 0);
             }
             let page = app.page().clone();

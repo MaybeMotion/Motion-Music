@@ -586,7 +586,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             bottom: if expanded_art { 0 } else { 8 },
         }));
     let response = panel.show(ui, |ui| {
-        if let Some(stops) = app.theme_gradient() {
+        if let Some(stops) = app.background_gradient() {
             let stops = stops.map(|stop| super::blend(palette.panel, stop, 0.45));
             let rect = Rect::from_min_max(
                 ui.max_rect().min - vec2(12.0, top as f32),

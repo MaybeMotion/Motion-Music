@@ -62,7 +62,8 @@ pub fn visualiser_fps(budget: Budget, conditions: Conditions, fps: u32) -> Optio
         Budget::Background => None,
         Budget::Normal => Some(fps),
         Budget::Saver => {
-            let half = if fps == 0 { 30 } else { (fps / 2).max(1) };
+            // Uncapped visualisers keep a smooth 60 behind other windows.
+            let half = if fps == 0 { 60 } else { (fps / 2).max(1) };
             Some(if conditions.saver { half.min(30) } else { half })
         }
     }
@@ -100,7 +101,7 @@ mod tests {
             Some(72),
             "out of focus"
         );
-        assert_eq!(visualiser_fps(Budget::Saver, normal, 0), Some(30));
+        assert_eq!(visualiser_fps(Budget::Saver, normal, 0), Some(60));
         assert_eq!(
             visualiser_fps(Budget::Saver, saving, 144),
             Some(30),

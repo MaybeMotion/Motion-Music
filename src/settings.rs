@@ -108,11 +108,16 @@ pub enum PlayerBarVis {
     Kaleidoscope,
     Lava,
     Galaxy,
+    Matrix,
+    Spectrogram,
+    Orb,
+    Rose,
+    Bubbles,
 }
 
 impl PlayerBarVis {
     /// All modes in the same order as the settings picker and click cycle.
-    pub const ALL: [Self; 22] = [
+    pub const ALL: [Self; 27] = [
         Self::Off,
         Self::Spectrum,
         Self::Waveform,
@@ -135,6 +140,11 @@ impl PlayerBarVis {
         Self::Kaleidoscope,
         Self::Lava,
         Self::Galaxy,
+        Self::Matrix,
+        Self::Spectrogram,
+        Self::Orb,
+        Self::Rose,
+        Self::Bubbles,
     ];
 
     pub fn label(self, locale: crate::i18n::Locale) -> std::borrow::Cow<'static, str> {
@@ -162,6 +172,11 @@ impl PlayerBarVis {
             Self::Kaleidoscope => gettext(locale, "Kaleidoscope"),
             Self::Lava => gettext(locale, "Lava lamp"),
             Self::Galaxy => gettext(locale, "Galaxy"),
+            Self::Matrix => gettext(locale, "Matrix rain"),
+            Self::Spectrogram => gettext(locale, "Spectrogram"),
+            Self::Orb => gettext(locale, "Neon orb"),
+            Self::Rose => gettext(locale, "Rose curves"),
+            Self::Bubbles => gettext(locale, "Bubbles"),
         }
     }
 
@@ -189,7 +204,12 @@ impl PlayerBarVis {
             Self::Terrain => Self::Kaleidoscope,
             Self::Kaleidoscope => Self::Lava,
             Self::Lava => Self::Galaxy,
-            Self::Galaxy => Self::Off,
+            Self::Galaxy => Self::Matrix,
+            Self::Matrix => Self::Spectrogram,
+            Self::Spectrogram => Self::Orb,
+            Self::Orb => Self::Rose,
+            Self::Rose => Self::Bubbles,
+            Self::Bubbles => Self::Off,
         }
     }
 }
@@ -1956,8 +1976,13 @@ mod tests {
             "kaleidoscope",
             "lava",
             "galaxy",
+            "matrix",
+            "spectrogram",
+            "orb",
+            "rose",
+            "bubbles",
         ];
-        assert_eq!(PlayerBarVis::ALL.len(), 22);
+        assert_eq!(PlayerBarVis::ALL.len(), 27);
         assert_eq!(PlayerBarVis::ALL.len(), stored_names.len());
         for (mode, stored) in PlayerBarVis::ALL.into_iter().zip(stored_names) {
             let settings = Settings {

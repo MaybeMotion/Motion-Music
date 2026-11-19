@@ -658,6 +658,59 @@ pub fn scope_line(samples: &[f32], points: usize) -> Vec<f32> {
 /// Winamp's scope reads every seventh sample.
 pub const SCOPE_STEP: usize = 7;
 
+/// How long the scenes' bands take to rise to a new height, and to fall.
+const GLIDE_RISE: f32 = 0.045;
+const GLIDE_FALL: f32 = 0.14;
+
+/// Glides the analyser's bands towards each new spectrum, so the scenes move
+/// smoothly at any frame rate instead of jumping as each one arrives. The
+/// classic spectrum keeps Winamp's instant rise.
+#[derive(Debug)]
+pub struct Glide {
+    levels: [f32; WIDE_BANDS],
+    last: Option<Instant>,
+}
+
+impl Default for Glide {
+    fn default() -> Self {
+        Self {
+            levels: [0.0; WIDE_BANDS],
+            last: None,
+        }
+    }
+}
+
+impl Glide {
+    pub fn step(&mut self, target: &[f32; WIDE_BANDS], now: Instant) -> [f32; WIDE_BANDS] {
+        let elapsed = self
+            .last
+            .map_or(STEP, |last| now.saturating_duration_since(last))
+            .min(Duration::from_millis(250))
+            .as_secs_f32();
+        self.last = Some(now);
+        let rise = 1.0 - (-elapsed / GLIDE_RISE).exp();
+        let fall = 1.0 - (-elapsed / GLIDE_FALL).exp();
+        for (level, &target) in self.levels.iter_mut().zip(target) {
+            let target = if target.is_finite() {
+                target.clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let follow = if target > *level { rise } else { fall };
+            *level += (target - *level) * follow;
+            if *level < 0.004 {
+                *level = 0.0;
+            }
+        }
+        self.levels
+    }
+
+    /// Whether every band has come to rest.
+    pub fn settled(&self) -> bool {
+        self.levels.iter().all(|level| *level == 0.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -13,18 +13,24 @@ const BEAT_RATIO: f32 = 1.35;
 /// The bass must fall back under this much of its average before another
 /// beat can start.
 const REARM_RATIO: f32 = 1.1;
-/// Below this, the bass is too quiet to call anything a beat.
-const QUIET: f32 = 0.012;
+/// How long after a beat the next can start even if the bass stays up.
+const REARM_TIME: f64 = 0.5;
+/// Below this, the bass is too quiet to call anything a beat. It is low so
+/// the pulse still follows quiet listening on the Windows output.
+const QUIET: f32 = 0.0015;
 /// Beats closer together than this are one beat: about 240 bpm at most.
 const REFRACTORY: f64 = 0.25;
-/// How fast the average follows the bass, per frame.
-const AVERAGE_RATE: f32 = 0.08;
+/// How long the average takes to follow the bass, in seconds. It is timed
+/// by the clock, not by frames: at a high refresh rate a per-frame average
+/// caught up with each kick before it could stand out.
+const AVERAGE_TIME: f64 = 0.35;
 /// How long a pulse takes to fade to about a third of its height.
 const FADE: f64 = 0.2;
 
 #[derive(Debug, Default, Clone)]
 pub struct BeatPulse {
     average: f32,
+    last_step: Option<f64>,
     last_beat: Option<f64>,
     /// Set again once the bass falls back towards its average, so one long
     /// swell is one beat.
@@ -36,7 +42,11 @@ impl BeatPulse {
     /// started.
     pub fn step(&mut self, samples: &[f32], now: f64) -> bool {
         let energy = bass_energy(samples);
-        if energy < self.average * REARM_RATIO {
+        // Ready again once the bass falls back, or after a moment anyway, so
+        // a song that starts loud still pulses.
+        if energy < self.average * REARM_RATIO
+            || self.last_beat.is_some_and(|last| now - last >= REARM_TIME)
+        {
             self.spent = false;
         }
         let beat = !self.spent
@@ -49,7 +59,12 @@ impl BeatPulse {
             self.last_beat = Some(now);
             self.spent = true;
         }
-        self.average += (energy - self.average) * AVERAGE_RATE;
+        let elapsed = self
+            .last_step
+            .map_or(1.0 / 60.0, |last| (now - last).clamp(0.0, 0.25));
+        self.last_step = Some(now);
+        let follow = 1.0 - (-elapsed / AVERAGE_TIME).exp();
+        self.average += (energy - self.average) * follow as f32;
         beat
     }
 
@@ -74,12 +89,15 @@ fn bass_energy(samples: &[f32]) -> f32 {
     let Some(&first) = samples.first() else {
         return 0.0;
     };
-    let mut low = first;
+    // Two low-pass stages, so high notes, however loud, barely register.
+    let first = if first.is_finite() { first } else { 0.0 };
+    let (mut low, mut lower) = (first, first);
     let mut total = 0.0;
     for &sample in samples {
         let sample = if sample.is_finite() { sample } else { 0.0 };
         low += (sample - low) * LOW_PASS;
-        total += low.abs();
+        lower += (low - lower) * LOW_PASS;
+        total += lower.abs();
     }
     total / samples.len() as f32
 }
@@ -134,6 +152,28 @@ mod tests {
         assert!(!pulse.step(&[0.0; 512], 0.1));
         assert!(!pulse.step(&[f32::NAN; 512], 0.2));
         assert_eq!(pulse.pulse(0.2), 0.0);
+    }
+
+    #[test]
+    fn quiet_kicks_at_a_high_refresh_rate_still_pulse() {
+        // 170 frames a second, the kick swelling over a few frames, and the
+        // whole song at a low listening volume.
+        let mut pulse = BeatPulse::default();
+        let quiet = tone(60.0, 0.004);
+        let mut beats = 0;
+        for frame in 0..(170 * 4) {
+            let now = frame as f64 / 170.0;
+            let into_beat = frame % 85;
+            let samples = match into_beat {
+                0..=7 => tone(60.0, 0.012 + into_beat as f32 * 0.008),
+                _ => quiet.clone(),
+            };
+            beats += usize::from(pulse.step(&samples, now));
+        }
+        assert!(
+            (7..=9).contains(&beats),
+            "{beats} beats in four seconds at 120 bpm"
+        );
     }
 
     #[test]

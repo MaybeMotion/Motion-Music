@@ -51,6 +51,10 @@ const DEFAULT_SPEAKER_POLL: Duration = Duration::from_secs(4);
 /// How long the sleep timer takes to fade the music out before pausing.
 const SLEEP_FADE: Duration = Duration::from_secs(45);
 
+/// Marks the window picture taken for My Wrapped's share image.
+#[derive(Clone, Copy, Debug)]
+struct WrappedShot;
+
 /// Pauses the music at a set time, fading it out over [SLEEP_FADE] first.
 #[derive(Clone, Copy, Debug)]
 pub struct SleepTimer {
@@ -802,6 +806,8 @@ pub struct App {
     pub winamp: crate::winamp::WinampState,
     /// The spectrum behind the player bar, when that is chosen.
     pub player_bar_analyser: crate::vis::WideAnalyser,
+    /// The analyser's bands, glided for the scenes.
+    pub player_bar_glide: crate::vis::Glide,
     /// Whether the full-window visualiser stage is open.
     pub visualiser_stage: bool,
     /// When the music will fade out and pause, if a sleep timer is set.
@@ -1346,6 +1352,7 @@ impl App {
             held_update: None,
             winamp: crate::winamp::WinampState::new(session.winamp_pos, tap, eq),
             player_bar_analyser: crate::vis::WideAnalyser::default(),
+            player_bar_glide: crate::vis::Glide::default(),
             visualiser_stage: false,
             sleep_timer: None,
             beat: crate::beat::BeatPulse::default(),
@@ -4461,6 +4468,17 @@ impl App {
     /// light, `None` for Motion Music's own Light or Dark.
     fn custom_palette(&self, dark: bool) -> Option<Palette> {
         self.settings.cached_palette(dark)
+    }
+
+    /// What the page, sidebar and player bar are painted with: the theme's
+    /// own gradient, or with living gradients on, one made from a solid
+    /// theme's accent so it has colours to drift too.
+    pub fn background_gradient(&self) -> Option<[egui::Color32; 3]> {
+        self.theme_gradient().or_else(|| {
+            self.settings
+                .living_gradients
+                .then(|| theme::living_stops(&self.palette))
+        })
     }
 
     /// The selected built-in material, including Follow system's paired
@@ -9933,6 +9951,77 @@ impl App {
         );
     }
 
+    /// When the window picture asked for by Save as image arrives, crops it
+    /// to My Wrapped's summary and saves it as a PNG in the Pictures folder.
+    fn save_wrapped_shot(&mut self, ctx: &egui::Context) {
+        let image = ctx.input(|input| {
+            input.raw.events.iter().find_map(|event| match event {
+                egui::Event::Screenshot {
+                    user_data, image, ..
+                } if user_data
+                    .data
+                    .as_ref()
+                    .is_some_and(|data| data.downcast_ref::<WrappedShot>().is_some()) =>
+                {
+                    Some(std::sync::Arc::clone(image))
+                }
+                _ => None,
+            })
+        });
+        let Some(image) = image else {
+            return;
+        };
+        let Some(area) =
+            ctx.data(|data| data.get_temp::<egui::Rect>(egui::Id::new("wrapped-share-rect")))
+        else {
+            return;
+        };
+        let scale = ctx.pixels_per_point();
+        let [width, height] = image.size;
+        let left = ((area.left() * scale).max(0.0) as usize).min(width);
+        let top = ((area.top() * scale).max(0.0) as usize).min(height);
+        let right = ((area.right() * scale) as usize).clamp(left, width);
+        let bottom = ((area.bottom() * scale) as usize).clamp(top, height);
+        if right - left < 8 || bottom - top < 8 {
+            return;
+        }
+        let mut picture = image::RgbaImage::new((right - left) as u32, (bottom - top) as u32);
+        for y in top..bottom {
+            for x in left..right {
+                let [r, g, b, _] = image.pixels[y * width + x].to_srgba_unmultiplied();
+                picture.put_pixel(
+                    (x - left) as u32,
+                    (y - top) as u32,
+                    image::Rgba([r, g, b, 255]),
+                );
+            }
+        }
+        let mut png = std::io::Cursor::new(Vec::new());
+        if picture.write_to(&mut png, image::ImageFormat::Png).is_err() {
+            self.toast_error(gettext(self.locale, "Couldn't make the picture"));
+            return;
+        }
+        // The Pictures folder in the user's home, or the settings folder
+        // when there is no home to find.
+        let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" });
+        let folder = home
+            .map(|home| std::path::PathBuf::from(home).join("Pictures"))
+            .unwrap_or_else(|| self.dirs.config.clone())
+            .join("Motion Music");
+        let path = folder.join(format!(
+            "My Wrapped {}.png",
+            jiff::Zoned::now().strftime("%Y-%m-%d %H%M")
+        ));
+        if !self.offline {
+            self.files
+                .write(&path, png.into_inner(), fastframe_file::Access::Default);
+        }
+        self.toast(
+            gettext(self.locale, "Saved your Wrapped to {path}")
+                .replace("{path}", &path.display().to_string()),
+        );
+    }
+
     /// Fades the music out over the sleep timer's last moments, then pauses
     /// it and puts the volume back for next time.
     fn run_sleep_timer(&mut self, ctx: &egui::Context) {
@@ -12416,6 +12505,12 @@ impl App {
                 }
                 ctx.request_repaint();
             }
+            Action::SaveWrappedImage => {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::new(
+                    WrappedShot,
+                )));
+                ctx.request_repaint();
+            }
             Action::ToggleVisualiserStage => {
                 self.visualiser_stage = !self.visualiser_stage;
                 ctx.request_repaint();
@@ -12809,6 +12904,7 @@ impl App {
         self.sync_power(ctx);
         self.sync_motion(ctx);
         self.run_sleep_timer(ctx);
+        self.save_wrapped_shot(ctx);
         self.handle_tray();
         #[cfg(target_os = "macos")]
         self.handle_dock_menu();

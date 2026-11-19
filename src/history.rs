@@ -15,8 +15,8 @@ use crate::api::models::{Album, Image, PlayHistory, Track};
 /// A play counts after 30 seconds, or halfway through a shorter track.
 const COUNTS_AFTER: std::time::Duration = std::time::Duration::from_secs(30);
 
-/// Maximum number of stored local plays.
-const KEPT: usize = 500;
+/// Maximum number of stored local plays: enough for weeks of My Wrapped.
+const KEPT: usize = 2000;
 
 /// A play made here and a play of the same song Spotify reports within this
 /// many seconds of it are the same play.

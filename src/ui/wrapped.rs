@@ -26,12 +26,31 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     let stats = crate::wrapped::stats(app.plays.plays(), &zone);
 
     ui.add_space(12.0);
-    theme::text(
-        ui,
-        gettext(locale, "My Wrapped").as_ref(),
-        theme::bold(40.0),
-        palette.text,
-    );
+    // Everything from the title to the listening calendar makes the share
+    // picture, so its top is remembered here.
+    let share_top = ui.cursor().top();
+    let save_label = gettext(locale, "Save as image");
+    ui.horizontal(|ui| {
+        theme::text(
+            ui,
+            gettext(locale, "My Wrapped").as_ref(),
+            theme::bold(40.0),
+            palette.text,
+        );
+        if stats.plays > 0 {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if theme::soft_button(ui, &palette, Some(Icon::Sparkles), &save_label, false)
+                    .on_hover_text(gettext(
+                        locale,
+                        "Save this summary as a picture in your Pictures folder, ready to share",
+                    ))
+                    .clicked()
+                {
+                    app.actions.push(Action::SaveWrappedImage);
+                }
+            });
+        }
+    });
     let range = match (stats.first_day, stats.last_day) {
         (Some(first), Some(last)) => gettext(
             locale,
@@ -46,7 +65,33 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         .into_owned(),
     };
     theme::subtle(ui, &palette, &range);
-    ui.add_space(18.0);
+    ui.add_space(12.0);
+
+    // The titles these habits earn.
+    let earned = crate::wrapped::badges(&stats);
+    if !earned.is_empty() {
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
+            for badge in &earned {
+                Frame::new()
+                    .fill(palette.surface)
+                    .stroke(egui::Stroke::new(1.0, palette.accent.gamma_multiply(0.5)))
+                    .corner_radius(CornerRadius::same(18))
+                    .inner_margin(Margin::symmetric(12, 6))
+                    .show(ui, |ui| {
+                        theme::text(
+                            ui,
+                            format!("{} {}", badge.emoji, gettext(locale, badge.title)),
+                            theme::semibold(14.0),
+                            palette.text,
+                        )
+                    })
+                    .response
+                    .on_hover_text(gettext(locale, badge.detail));
+            }
+        });
+        ui.add_space(14.0);
+    }
 
     // The headline numbers, as large cards.
     let cards = [
@@ -98,6 +143,48 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         ui.add_space(8.0);
         listening_clock(app, ui, &stats.hours);
         ui.add_space(16.0);
+        heading(app, ui, &gettext(locale, "Your listening calendar"));
+        theme::subtle(
+            ui,
+            &palette,
+            &gettext(
+                locale,
+                "The last twelve weeks, one square a day. Brighter is more music.",
+            ),
+        );
+        ui.add_space(8.0);
+        listening_calendar(app, ui, &stats.days);
+        ui.add_space(16.0);
+    }
+    let share_bottom = ui.cursor().top();
+    let share = Rect::from_min_max(
+        pos2(ui.max_rect().left() - 8.0, share_top - 8.0),
+        pos2(ui.max_rect().right() + 8.0, share_bottom),
+    );
+    ui.ctx()
+        .data_mut(|data| data.insert_temp(egui::Id::new("wrapped-share-rect"), share));
+
+    // A throwback to the song of the day a week ago.
+    let today = jiff::Zoned::now().date();
+    if let Some(song) = crate::wrapped::week_ago(app.plays.plays(), today, &zone) {
+        heading(app, ui, &gettext(locale, "A week ago today"));
+        let plays =
+            gettext(locale, "{count} plays that day").replace("{count}", &song.plays.to_string());
+        if ranked_row(
+            app,
+            ui,
+            0,
+            song.image.as_deref(),
+            &song.name,
+            &song.detail,
+            &plays,
+        ) {
+            app.actions.push(Action::PlayUris {
+                uris: vec![song.key.clone()],
+                index: 0,
+            });
+        }
+        ui.add_space(16.0);
     }
 
     // On repeat, from this computer's plays.
@@ -119,6 +206,26 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                     uris: vec![song.key.clone()],
                     index: 0,
                 });
+            }
+        }
+        ui.add_space(16.0);
+    }
+    if !stats.top_albums.is_empty() {
+        heading(app, ui, &gettext(locale, "Albums you loved"));
+        for (rank, album) in stats.top_albums.iter().take(3).enumerate() {
+            let plays =
+                gettext(locale, "{count} plays").replace("{count}", &album.plays.to_string());
+            if ranked_row(
+                app,
+                ui,
+                rank,
+                album.image.as_deref(),
+                &album.name,
+                &album.detail,
+                &plays,
+            ) {
+                app.actions
+                    .push(Action::Open(Page::Album(album.key.clone())));
             }
         }
         ui.add_space(16.0);
@@ -147,12 +254,8 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         );
         let genres = top_genres(&spotify_artists);
         if !genres.is_empty() {
-            theme::subtle(
-                ui,
-                &palette,
-                &gettext(locale, "Your sound: {genres}").replace("{genres}", &genres.join(", ")),
-            );
-            ui.add_space(6.0);
+            genre_mix(app, ui, &genres);
+            ui.add_space(10.0);
         }
         for (rank, artist) in spotify_artists.iter().take(5).enumerate() {
             let image = crate::api::models::pick_image(&artist.images, 64).map(str::to_owned);
@@ -190,8 +293,8 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     }
 }
 
-/// The genres that come up most among the top artists.
-fn top_genres(artists: &[crate::api::models::Artist]) -> Vec<String> {
+/// The genres that come up most among the top artists, with how often.
+fn top_genres(artists: &[crate::api::models::Artist]) -> Vec<(String, usize)> {
     let mut counts: Vec<(String, usize)> = Vec::new();
     for genre in artists.iter().flat_map(|artist| &artist.genres) {
         match counts.iter_mut().find(|(name, _)| name == genre) {
@@ -200,7 +303,93 @@ fn top_genres(artists: &[crate::api::models::Artist]) -> Vec<String> {
         }
     }
     counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-    counts.into_iter().take(3).map(|(name, _)| name).collect()
+    counts.into_iter().take(6).collect()
+}
+
+/// Your sound: the top genres as bars, longest first.
+fn genre_mix(app: &App, ui: &mut Ui, genres: &[(String, usize)]) {
+    let palette = app.palette;
+    let most = genres.first().map_or(1, |(_, count)| *count).max(1);
+    let width = ui.available_width().min(560.0);
+    for (index, (genre, count)) in genres.iter().enumerate() {
+        let (rect, _) = ui.allocate_exact_size(vec2(width, 26.0), Sense::hover());
+        let label_width = 170.0_f32.min(width * 0.4);
+        ui.painter().text(
+            rect.left_center(),
+            egui::Align2::LEFT_CENTER,
+            genre,
+            theme::medium(13.5),
+            palette.text,
+        );
+        let track = Rect::from_min_max(
+            pos2(rect.left() + label_width, rect.center().y - 6.0),
+            pos2(rect.right(), rect.center().y + 6.0),
+        );
+        ui.painter()
+            .rect_filled(track, CornerRadius::same(6), palette.surface);
+        let mut hue = egui::ecolor::Hsva::from(palette.accent);
+        hue.h = (hue.h + index as f32 * 0.06).fract();
+        let fill = Rect::from_min_size(
+            track.min,
+            vec2(track.width() * *count as f32 / most as f32, track.height()),
+        );
+        ui.painter()
+            .rect_filled(fill, CornerRadius::same(6), Color32::from(hue));
+    }
+}
+
+/// Twelve weeks of days as a grid of squares, Monday at the top, lit by how
+/// much music each day had.
+fn listening_calendar(app: &App, ui: &mut Ui, days: &[(jiff::civil::Date, usize)]) {
+    let palette = app.palette;
+    let today = jiff::Zoned::now().date();
+    let weeks = 12;
+    let size = 15.0;
+    let gap = 4.0;
+    let (rect, _) = ui.allocate_exact_size(
+        vec2(weeks as f32 * (size + gap), 7.0 * (size + gap)),
+        Sense::hover(),
+    );
+    let most = days
+        .iter()
+        .map(|(_, count)| *count)
+        .max()
+        .unwrap_or(1)
+        .max(1);
+    let monday_offset = i64::from(today.weekday().to_monday_zero_offset());
+    for week in 0..weeks {
+        for weekday in 0..7_i64 {
+            let back = (weeks - 1 - week) as i64 * 7 + monday_offset - weekday;
+            if back < 0 {
+                continue;
+            }
+            let Ok(day) = today.checked_sub(jiff::Span::new().days(back)) else {
+                continue;
+            };
+            let count = days
+                .iter()
+                .find(|(date, _)| *date == day)
+                .map_or(0, |(_, count)| *count);
+            let cell = Rect::from_min_size(
+                pos2(
+                    rect.left() + week as f32 * (size + gap),
+                    rect.top() + weekday as f32 * (size + gap),
+                ),
+                vec2(size, size),
+            );
+            let colour = if count == 0 {
+                palette.surface
+            } else {
+                theme::motion::blend(
+                    palette.surface_active,
+                    palette.accent,
+                    0.3 + 0.7 * count as f32 / most as f32,
+                )
+            };
+            ui.painter()
+                .rect_filled(cell, CornerRadius::same(4), colour);
+        }
+    }
 }
 
 fn heading(app: &App, ui: &mut Ui, text: &str) {

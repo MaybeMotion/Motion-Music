@@ -124,7 +124,8 @@ pub fn handle(app: &mut App, ctx: &egui::Context) {
             );
             key(
                 Modifiers::COMMAND | Modifiers::SHIFT,
-                Key::V,
+                // Not V: Windows turns Ctrl+Shift+V into a paste first.
+                Key::S,
                 Action::ToggleVisualiserStage,
             );
             key(
@@ -321,7 +322,7 @@ pub fn shortcuts(locale: Locale) -> Vec<(Cow<'static, str>, Cow<'static, str>)> 
             gettext(locale, "Next player bar visualizer"),
         ),
         (
-            keys(platform_shortcut("Ctrl+Shift+V", "Cmd+Shift+V")),
+            keys(platform_shortcut("Ctrl+Shift+S", "Cmd+Shift+S")),
             gettext(locale, "Full-window visualiser"),
         ),
         (

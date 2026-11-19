@@ -1342,6 +1342,8 @@ pub enum Action {
     /// Fade out and pause the music in this many minutes, or turn the
     /// sleep timer off.
     SetSleepTimer(Option<u32>),
+    /// Save the top of My Wrapped as a picture in the Pictures folder.
+    SaveWrappedImage,
     /// Set the visualizer mode directly.
     SetVisualiser(crate::settings::VisMode),
     /// Open or close the playlist window under the mini player.

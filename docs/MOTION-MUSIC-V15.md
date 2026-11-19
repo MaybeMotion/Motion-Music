@@ -22,7 +22,7 @@ Choose them in **Settings > Appearance > Player bar visualizer**, click empty pl
 
 ## The visualiser stage
 
-Press **Ctrl+Shift+V** to fill the whole window with the chosen visualiser in full colour, with the playing song along the bottom. Click anywhere or press **Esc** to close it. If the player-bar visualiser is off, the stage opens on the galaxy. All twenty-one effects work on the stage.
+Press **Ctrl+Shift+S** (from v16; Ctrl+Shift+V was taken by Windows paste) to fill the whole window with the chosen visualiser in full colour, with the playing song along the bottom. Click anywhere or press **Esc** to close it. If the player-bar visualiser is off, the stage opens on the galaxy. All twenty-one effects work on the stage.
 
 ## Beat pulse
 
@@ -59,7 +59,7 @@ Click the clock button in the player bar and choose 5 to 90 minutes. In the last
 
 | Keys | What they do |
 | --- | --- |
-| Ctrl+Shift+V | Visualiser stage |
+| Ctrl+Shift+S | Visualiser stage (Ctrl+Shift+V in the v15 download did not work) |
 | Ctrl+Shift+T | Make a theme from this cover |
 | Ctrl+Shift+E | Next player bar visualiser |
 | Ctrl+Shift+← / → | Previous or next theme |

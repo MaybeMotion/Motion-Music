@@ -26,6 +26,7 @@ pub struct Stats {
     pub artists: usize,
     pub top_songs: Vec<Ranked>,
     pub top_artists: Vec<Ranked>,
+    pub top_albums: Vec<Ranked>,
     /// Plays started in each hour of the day, local time.
     pub hours: [usize; 24],
     /// Plays on each weekday, Monday first.
@@ -35,6 +36,87 @@ pub struct Stats {
     /// The first and last day the plays cover.
     pub first_day: Option<jiff::civil::Date>,
     pub last_day: Option<jiff::civil::Date>,
+    /// Plays on each day that had any, oldest first.
+    pub days: Vec<(jiff::civil::Date, usize)>,
+    /// The share of plays by the most played artist and song, 0 to 1.
+    pub top_artist_share: f32,
+}
+
+/// A fun title earned from the way someone listens.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Badge {
+    pub emoji: &'static str,
+    pub title: &'static str,
+    pub detail: &'static str,
+}
+
+/// The titles these stats earn, most telling first. Too few plays earn none.
+pub fn badges(stats: &Stats) -> Vec<Badge> {
+    let mut earned = Vec::new();
+    if stats.plays < 10 {
+        return earned;
+    }
+    let share = |count: usize| count as f32 / stats.plays as f32;
+    let night: usize = stats.hours[22..].iter().chain(&stats.hours[..4]).sum();
+    let morning: usize = stats.hours[5..10].iter().sum();
+    let weekend: usize = stats.weekdays[5..].iter().sum();
+    if share(night) >= 0.3 {
+        earned.push(Badge {
+            emoji: "🦉",
+            title: "Night owl",
+            detail: "A lot of your listening happens after 10 at night",
+        });
+    }
+    if share(morning) >= 0.3 {
+        earned.push(Badge {
+            emoji: "🌅",
+            title: "Early bird",
+            detail: "You start the day with music",
+        });
+    }
+    if stats.top_artist_share >= 0.3 {
+        earned.push(Badge {
+            emoji: "💜",
+            title: "Superfan",
+            detail: "One artist takes up almost a third of your plays",
+        });
+    }
+    if stats.artists as f32 >= stats.plays as f32 * 0.5 && stats.plays >= 20 {
+        earned.push(Badge {
+            emoji: "🧭",
+            title: "Explorer",
+            detail: "You rarely play the same artist twice in a row",
+        });
+    }
+    if stats.top_songs.first().is_some_and(|song| song.plays >= 8) {
+        earned.push(Badge {
+            emoji: "🔁",
+            title: "On repeat",
+            detail: "There is a song you just cannot stop playing",
+        });
+    }
+    if share(weekend) >= 0.4 {
+        earned.push(Badge {
+            emoji: "🎉",
+            title: "Weekend warrior",
+            detail: "Saturdays and Sundays are when the music really plays",
+        });
+    }
+    if stats.longest_streak >= 7 {
+        earned.push(Badge {
+            emoji: "🔥",
+            title: "On a streak",
+            detail: "A week or more of music every single day",
+        });
+    }
+    if stats.minutes >= 1_000 {
+        earned.push(Badge {
+            emoji: "🎧",
+            title: "Marathon listener",
+            detail: "Over a thousand minutes of music",
+        });
+    }
+    earned
 }
 
 impl Stats {
@@ -59,7 +141,9 @@ pub fn stats(plays: &[PlayHistory], zone: &jiff::tz::TimeZone) -> Stats {
     let mut stats = Stats::default();
     let mut songs: HashMap<&str, Ranked> = HashMap::new();
     let mut artists: HashMap<String, Ranked> = HashMap::new();
+    let mut albums: HashMap<String, Ranked> = HashMap::new();
     let mut days = BTreeSet::new();
+    let mut day_counts: std::collections::BTreeMap<jiff::civil::Date, usize> = Default::default();
     for play in plays {
         let track = &play.track;
         if track.uri.is_empty() {
@@ -83,6 +167,18 @@ pub fn stats(plays: &[PlayHistory], zone: &jiff::tz::TimeZone) -> Stats {
                 plays: 0,
             })
             .plays += 1;
+        if let Some(album) = track.album.as_ref().filter(|album| !album.id.is_empty()) {
+            albums
+                .entry(album.id.clone())
+                .or_insert_with(|| Ranked {
+                    name: album.name.clone(),
+                    detail: artist.map(|artist| artist.name.clone()).unwrap_or_default(),
+                    key: album.id.clone(),
+                    image: image.clone(),
+                    plays: 0,
+                })
+                .plays += 1;
+        }
         for artist in &track.artists {
             let key = artist
                 .id
@@ -111,13 +207,26 @@ pub fn stats(plays: &[PlayHistory], zone: &jiff::tz::TimeZone) -> Stats {
             let local = at.to_zoned(zone.clone());
             stats.hours[usize::from(local.hour() as u8) % 24] += 1;
             stats.weekdays[local.weekday().to_monday_zero_offset() as usize] += 1;
+            *day_counts.entry(local.date()).or_insert(0) += 1;
             days.insert(local.date());
         }
     }
+    stats.days = day_counts.into_iter().collect();
     stats.songs = songs.len();
     stats.artists = artists.len();
     stats.top_songs = top(songs.into_values().collect());
+    stats.top_artist_share = if stats.plays == 0 {
+        0.0
+    } else {
+        artists
+            .values()
+            .map(|artist| artist.plays)
+            .max()
+            .unwrap_or(0) as f32
+            / stats.plays as f32
+    };
     stats.top_artists = top(artists.into_values().collect());
+    stats.top_albums = top(albums.into_values().collect());
     stats.first_day = days.first().copied();
     stats.last_day = days.last().copied();
     let mut run = 0;
@@ -131,6 +240,26 @@ pub fn stats(plays: &[PlayHistory], zone: &jiff::tz::TimeZone) -> Stats {
         previous = Some(day);
     }
     stats
+}
+
+/// The song played most on the day a week before today, for a throwback.
+pub fn week_ago(
+    plays: &[PlayHistory],
+    today: jiff::civil::Date,
+    zone: &jiff::tz::TimeZone,
+) -> Option<Ranked> {
+    let day = today.checked_sub(jiff::Span::new().days(7)).ok()?;
+    let then: Vec<PlayHistory> = plays
+        .iter()
+        .filter(|play| {
+            play.played_at
+                .as_deref()
+                .and_then(|at| at.parse::<jiff::Timestamp>().ok())
+                .is_some_and(|at| at.to_zoned(zone.clone()).date() == day)
+        })
+        .cloned()
+        .collect();
+    stats(&then, zone).top_songs.into_iter().next()
 }
 
 /// The five most played, most plays first, then by name for a stable order.
@@ -220,6 +349,78 @@ mod tests {
         assert_eq!(stats.last_day, Some(jiff::civil::date(2026, 11, 15)));
         // 12 November 2026 is a Thursday, with two plays.
         assert_eq!(stats.favourite_weekday(), Some(3));
+        assert_eq!(stats.days.len(), 4);
+        assert_eq!(stats.days[2], (jiff::civil::date(2026, 11, 12), 2));
+        assert!((stats.top_artist_share - 0.8).abs() < 0.001);
+    }
+
+    #[test]
+    fn albums_are_ranked_and_a_week_ago_finds_that_days_favourite() {
+        let mut plays = vec![
+            play(
+                "spotify:track:a",
+                "Rosewood",
+                "Bonobo",
+                "2026-11-12T21:05:00Z",
+            ),
+            play(
+                "spotify:track:a",
+                "Rosewood",
+                "Bonobo",
+                "2026-11-12T21:30:00Z",
+            ),
+            play(
+                "spotify:track:b",
+                "Kerala",
+                "Bonobo",
+                "2026-11-12T08:00:00Z",
+            ),
+            play(
+                "spotify:track:c",
+                "Otomo",
+                "Khruangbin",
+                "2026-11-19T10:00:00Z",
+            ),
+        ];
+        for play in &mut plays {
+            play.track.album = Some(crate::api::models::Album {
+                id: format!("album-{}", play.track.artists[0].name),
+                name: format!("{} album", play.track.artists[0].name),
+                ..Default::default()
+            });
+        }
+        let utc = jiff::tz::TimeZone::UTC;
+        let stats = stats(&plays, &utc);
+        assert_eq!(stats.top_albums[0].name, "Bonobo album");
+        assert_eq!(stats.top_albums[0].plays, 3);
+        assert_eq!(stats.top_albums[0].key, "album-Bonobo");
+        let throwback = week_ago(&plays, jiff::civil::date(2026, 11, 19), &utc).unwrap();
+        assert_eq!(throwback.name, "Rosewood");
+        assert_eq!(throwback.plays, 2);
+        assert!(week_ago(&plays, jiff::civil::date(2026, 11, 20), &utc).is_none());
+    }
+
+    #[test]
+    fn listening_habits_earn_badges_and_a_few_plays_earn_none() {
+        let late: Vec<_> = (0..30)
+            .map(|day| {
+                play(
+                    "spotify:track:a",
+                    "Rosewood",
+                    "Bonobo",
+                    &format!("2026-10-{:02}T23:15:00Z", day % 28 + 1),
+                )
+            })
+            .collect();
+        let stats = stats(&late, &jiff::tz::TimeZone::UTC);
+        let titles: Vec<_> = badges(&stats).iter().map(|badge| badge.title).collect();
+        assert!(titles.contains(&"Night owl"), "{titles:?}");
+        assert!(titles.contains(&"Superfan"), "{titles:?}");
+        assert!(titles.contains(&"On repeat"), "{titles:?}");
+        assert!(titles.contains(&"On a streak"), "{titles:?}");
+        assert!(!titles.contains(&"Early bird"));
+        assert!(!titles.contains(&"Explorer"));
+        assert!(badges(&super::stats(&late[..5], &jiff::tz::TimeZone::UTC)).is_empty());
     }
 
     #[test]
