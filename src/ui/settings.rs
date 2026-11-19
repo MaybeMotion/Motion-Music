@@ -719,6 +719,13 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         )
         .when(!cfg!(target_os = "macos")),
         RowText::new(start_with_computer.clone(), start_detail).when(start_available),
+        RowText::new(
+            gettext(locale, "Default speaker"),
+            gettext(
+                locale,
+                "The speaker Motion Music controls when it starts. It is chosen as soon as Spotify lists it, unless something is already playing elsewhere.",
+            ),
+        ),
     ];
     if section_matches(&needle, &playback, &playback_rows) {
         any_visible = true;
@@ -762,6 +769,19 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     playback_dirty = true;
                 }
             });
+            filtered_row_sized(
+                ui,
+                &palette,
+                &needle,
+                &playback,
+                &playback_rows[18],
+                220.0,
+                |ui| {
+                    if default_speaker_picker(app, ui) {
+                        changed = true;
+                    }
+                },
+            );
             // Normal to Very high, left to right when side by side and top
             // to bottom in a column.
             let choices = [
@@ -3279,6 +3299,64 @@ fn pair_picker(app: &mut App, ui: &mut egui::Ui, base: fastframe_theme::Base, na
         info.current_text_value = Some(selected.to_string());
         info
     });
+}
+
+/// This computer, or a Spotify Connect speaker by name: the ones Spotify lists
+/// now, and the saved one even while it is off.
+fn default_speaker_picker(app: &mut App, ui: &mut egui::Ui) -> bool {
+    let locale = app.locale;
+    let this_computer = gettext(locale, "This computer");
+    let current = app.settings.default_speaker().map(str::to_owned);
+    let mut names: Vec<String> = app
+        .devices
+        .iter()
+        .filter(|device| device.id.is_none() || device.id != app.local_device_id)
+        .map(|device| device.name.trim().to_owned())
+        .filter(|name| !name.is_empty())
+        .collect();
+    if let Some(saved) = &current
+        && !names.iter().any(|name| name.eq_ignore_ascii_case(saved))
+    {
+        names.insert(0, saved.clone());
+    }
+    names.dedup();
+    let selected = current.clone().unwrap_or_else(|| this_computer.to_string());
+    let mut choice = None;
+    let response = egui::ComboBox::from_id_salt("default_speaker")
+        .selected_text(&selected)
+        .width(220.0_f32.min(ui.available_width()))
+        .show_ui(ui, |ui| {
+            if ui
+                .selectable_label(current.is_none(), this_computer.as_ref())
+                .clicked()
+            {
+                choice = Some(None);
+            }
+            for name in &names {
+                let on = current
+                    .as_deref()
+                    .is_some_and(|saved| saved.eq_ignore_ascii_case(name));
+                if ui.selectable_label(on, name).clicked() {
+                    choice = Some(Some(name.clone()));
+                }
+            }
+        });
+    response.response.widget_info(|| {
+        let mut info = egui::WidgetInfo::labeled(
+            egui::WidgetType::ComboBox,
+            ui.is_enabled(),
+            gettext(locale, "Default speaker"),
+        );
+        info.current_text_value = Some(selected.clone());
+        info
+    });
+    match choice {
+        Some(choice) if choice != current => {
+            app.settings.default_speaker = choice;
+            true
+        }
+        _ => false,
+    }
 }
 
 fn language_picker(app: &mut App, ui: &mut egui::Ui) {

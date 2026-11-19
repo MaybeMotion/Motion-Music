@@ -45,6 +45,9 @@ const REMOTE_FRESH: Duration = Duration::from_secs(60);
 /// How often the open Friend activity panel asks for news.
 const FRIENDS_POLL: Duration = Duration::from_secs(15);
 const DEVICES_FRESH: Duration = Duration::from_secs(12);
+/// How long after start-up the default speaker is looked for, and how often.
+const DEFAULT_SPEAKER_WINDOW: Duration = Duration::from_secs(60);
+const DEFAULT_SPEAKER_POLL: Duration = Duration::from_secs(4);
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(280);
 /// How long a suspend or the end of the session waits for pending file
 /// writes. fastframe-power holds the system back for 1.5 s before a
@@ -458,6 +461,11 @@ pub struct App {
     pub output_devices: Loadable<Vec<fastframe_audio::DeviceInfo>>,
     devices_fetched_at: Option<Instant>,
     pub selected_device: Option<String>,
+    /// Whether the default speaker was chosen, or no longer should be: the
+    /// listener picked a device, or something was already playing.
+    default_speaker_settled: bool,
+    /// Until when start-up keeps looking for the default speaker.
+    default_speaker_until: Option<Instant>,
     pub queue: Loadable<Queue>,
     queue_fetched_at: Option<Instant>,
     /// Latest queue request sequence. Older responses are discarded.
@@ -1127,6 +1135,8 @@ impl App {
             output_devices: Loadable::NotLoaded,
             devices_fetched_at: None,
             selected_device: None,
+            default_speaker_settled: false,
+            default_speaker_until: None,
             queue: if session.last_track.is_some() && !session.last_queue_rows.is_empty() {
                 // The queue as it was at close, shown until something
                 // plays; then the live queue takes over.
@@ -3852,6 +3862,15 @@ impl App {
                 && self
                     .devices_fetched_at
                     .is_none_or(|at| at.elapsed() > DEVICES_FRESH)
+            {
+                self.refresh_devices();
+            }
+            // Speakers can take a moment to show up after start-up.
+            if self.looking_for_default_speaker()
+                && !self.devices_loading
+                && self
+                    .devices_fetched_at
+                    .is_none_or(|at| at.elapsed() > DEFAULT_SPEAKER_POLL)
             {
                 self.refresh_devices();
             }
@@ -6875,6 +6894,7 @@ impl App {
                     Ok(devices) => {
                         self.devices = devices;
                         self.control_devices_stale = true;
+                        self.choose_default_speaker();
                         if let Some((name, since)) = self.pending_transfer_to.clone() {
                             // The receiver's own id keeps another device of the
                             // same name from taking over. A rescan can drop the
@@ -9761,6 +9781,60 @@ impl App {
         }
     }
 
+    /// Whether start-up is still looking for the default speaker. The search
+    /// starts once connected and stops after a minute.
+    fn looking_for_default_speaker(&mut self) -> bool {
+        if self.default_speaker_settled || self.settings.default_speaker().is_none() {
+            return false;
+        }
+        let until = *self
+            .default_speaker_until
+            .get_or_insert_with(|| Instant::now() + DEFAULT_SPEAKER_WINDOW);
+        if Instant::now() >= until {
+            self.default_speaker_settled = true;
+            return false;
+        }
+        true
+    }
+
+    /// Make the default speaker the device Motion Music controls, once, as
+    /// soon as Spotify lists it. Playback already on a device, or a device the
+    /// listener picked, is left alone. Nothing starts playing; the next song
+    /// played goes to that speaker.
+    fn choose_default_speaker(&mut self) {
+        if self.default_speaker_settled {
+            return;
+        }
+        let Some(name) = self.settings.default_speaker().map(str::to_owned) else {
+            return;
+        };
+        if self.selected_device.is_some() || self.local.is_active() {
+            self.default_speaker_settled = true;
+            return;
+        }
+        let local = self.local_device_id.clone();
+        let is_local = |id: Option<&String>| id.is_some() && id == local.as_ref();
+        let Some(speaker) = self
+            .devices
+            .iter()
+            .find(|device| {
+                device.name.trim().eq_ignore_ascii_case(&name) && !is_local(device.id.as_ref())
+            })
+            .and_then(|device| device.id.clone())
+        else {
+            return;
+        };
+        self.default_speaker_settled = true;
+        let busy_elsewhere = self.devices.iter().any(|device| {
+            device.is_active
+                && device.id.as_ref() != Some(&speaker)
+                && !is_local(device.id.as_ref())
+        });
+        if !busy_elsewhere {
+            self.selected_device = Some(speaker);
+        }
+    }
+
     /// Records only explicit choices for the currently verified account.
     fn remember_device_choice(&mut self, device_id: &str) {
         if let Some(account) = self.user_id().map(str::to_owned) {
@@ -11387,11 +11461,13 @@ impl App {
             Action::Transfer(device_id) => {
                 // The listener chose where to play instead.
                 self.audio_key_banner = false;
+                self.default_speaker_settled = true;
                 self.remember_device_choice(&device_id);
                 self.transfer(device_id);
             }
             Action::ActivateReceiver(receiver) => {
                 self.audio_key_banner = false;
+                self.default_speaker_settled = true;
                 if self.activating_receiver.is_none() {
                     if let Some(key) = receiver.preference_key() {
                         self.remember_device_choice(&key);
@@ -30353,6 +30429,80 @@ mod tests {
             ),
             "{transfers:?}"
         );
+        app.backend.shutdown();
+    }
+
+    fn speakers(active: &[&str]) -> Vec<Device> {
+        ["this-computer", "motion-speaker", "phone"]
+            .into_iter()
+            .zip(["Spotifast", "MotionMusic", "Pixel"])
+            .map(|(id, name)| Device {
+                id: Some(id.into()),
+                name: name.into(),
+                is_active: active.contains(&id),
+                ..Device::default()
+            })
+            .collect()
+    }
+
+    /// Start-up picks the default speaker, by name, as soon as Spotify lists
+    /// it, and then leaves the choice to the listener.
+    #[test]
+    fn the_default_speaker_is_chosen_once_when_spotify_lists_it() {
+        let mut app = headless_app();
+        app.local_device_id = Some("this-computer".into());
+        app.settings.default_speaker = Some("  motionmusic ".into());
+        app.handle_api(ApiResponse::Devices(Ok(speakers(&[])[..1].to_vec())));
+        assert_eq!(app.selected_device, None, "not listed yet");
+        app.handle_api(ApiResponse::Devices(Ok(speakers(&[]))));
+        assert_eq!(app.selected_device.as_deref(), Some("motion-speaker"));
+        assert!(
+            matches!(app.target(), Target::Remote(Some(id)) if id == "motion-speaker"),
+            "songs played now go to the default speaker"
+        );
+        // A later choice by the listener stands.
+        app.selected_device = None;
+        app.handle_api(ApiResponse::Devices(Ok(speakers(&[]))));
+        assert_eq!(app.selected_device, None, "chosen once only");
+        app.backend.shutdown();
+    }
+
+    #[test]
+    fn the_default_speaker_never_takes_over_playback_elsewhere_or_an_explicit_choice() {
+        // Music already playing on the phone keeps playing there.
+        let mut app = headless_app();
+        app.local_device_id = Some("this-computer".into());
+        app.settings.default_speaker = Some("MotionMusic".into());
+        app.handle_api(ApiResponse::Devices(Ok(speakers(&["phone"]))));
+        assert_eq!(app.selected_device, None);
+        app.handle_api(ApiResponse::Devices(Ok(speakers(&[]))));
+        assert_eq!(app.selected_device, None, "the moment has passed");
+        app.backend.shutdown();
+
+        // A device picked before the speaker appeared wins.
+        let mut app = headless_app();
+        app.backend.set_offline(true);
+        app.local_device_id = Some("this-computer".into());
+        app.settings.default_speaker = Some("MotionMusic".into());
+        app.apply(Action::Transfer("phone".into()), &egui::Context::default());
+        app.handle_api(ApiResponse::Devices(Ok(speakers(&[]))));
+        assert_ne!(app.selected_device.as_deref(), Some("motion-speaker"));
+        app.backend.shutdown();
+
+        // Without a default speaker, start-up stays on this computer.
+        let mut app = headless_app();
+        app.local_device_id = Some("this-computer".into());
+        app.handle_api(ApiResponse::Devices(Ok(speakers(&[]))));
+        assert_eq!(app.selected_device, None);
+        assert!(!app.looking_for_default_speaker());
+        app.backend.shutdown();
+
+        // A speaker that never appears is no longer looked for after a while.
+        let mut app = headless_app();
+        app.settings.default_speaker = Some("MotionMusic".into());
+        assert!(app.looking_for_default_speaker());
+        app.default_speaker_until = Some(Instant::now() - Duration::from_secs(1));
+        assert!(!app.looking_for_default_speaker());
         app.backend.shutdown();
     }
 

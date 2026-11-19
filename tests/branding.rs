@@ -96,12 +96,7 @@ fn existing_preferences_and_custom_connect_names_survive_a_save() {
 
     let scratch = Scratch::new();
     let path = scratch.0.join("settings.json");
-    for (name, loaded) in [
-        // Spotifast's own default becomes Motion Music's speaker name.
-        ("Spotifast", "Motion Music"),
-        ("Living room", "Living room"),
-        ("Carmine's laptop", "Carmine's laptop"),
-    ] {
+    for name in ["Spotifast", "Living room", "Carmine's laptop"] {
         let saved = Settings {
             device_name: name.into(),
             theme: ThemeChoice::Light,
@@ -113,13 +108,7 @@ fn existing_preferences_and_custom_connect_names_survive_a_save() {
             ..Settings::default()
         };
         saved.save(&path);
-        assert_eq!(
-            Settings::load(&path),
-            Settings {
-                device_name: loaded.into(),
-                ..saved
-            }
-        );
+        assert_eq!(Settings::load(&path), saved);
     }
     assert_eq!(Settings::default().device_name, "Motion Music");
 }

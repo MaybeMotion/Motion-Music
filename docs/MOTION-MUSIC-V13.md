@@ -57,7 +57,7 @@ Like the existing styles they take 360 ms, keep the page content in its final po
 
 ## Your speaker is called Motion Music
 
-If your computer still appeared in Spotify's device list as **Spotifast**, the old default name, it now appears as **Motion Music**. A name you chose yourself in **Settings > Playback on this computer > Device name** is kept.
+If your computer still appeared in Spotify's device list as **Spotifast**, the old default name, it now appears as **Motion Music**. A name you chose yourself in **Settings > Playback on this computer > Device name** is kept. (Later reverted: from the next version a saved name is always kept as it is, and **Default speaker** chooses which speaker Motion Music controls at start-up.)
 
 ## Visualiser colours
 

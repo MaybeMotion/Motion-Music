@@ -129,7 +129,7 @@ Demo visual flags include **--demo-show motion-aurora**, **motion-radial**, **mo
 
 ## Compatibility and updates
 
-The executable, windows, tray/menu entries, playback device default, and native icons identify as Motion Music. Internal crate names, Spotify authentication identifiers, credential keys, profile folders, IPC identifiers, and package IDs remain compatible with Spotifast. Existing saved settings and sign-ins are preserved. A speaker still named **Spotifast**, the old default, appears in Spotify as **Motion Music** from v13 onwards; any other name you chose is kept.
+The executable, windows, tray/menu entries, playback device default, and native icons identify as Motion Music. Internal crate names, Spotify authentication identifiers, credential keys, profile folders, IPC identifiers, and package IDs remain compatible with Spotifast. Existing saved settings, sign-ins and custom device names are preserved. To have Motion Music control another Spotify Connect speaker as soon as it starts, choose it in **Settings > Playback on this computer > Default speaker**. It is picked as soon as Spotify lists it, unless music is already playing on another device.
 
 Self-updates remain disabled for this custom build, preventing an upstream Spotifast download from replacing Motion Music. Update manually from [Motion Music releases](https://github.com/MaybeMotion/Motion-Music/releases), or rebuild this source. The custom v14 label identifies this portable update; the underlying package version remains 0.14.1.
 

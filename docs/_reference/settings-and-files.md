@@ -333,7 +333,8 @@ main fields are:
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `device_name` | `Motion Music` | Name on Spotify Connect. A saved `Spotifast`, the old default, or an empty name loads as `Motion Music` |
+| `device_name` | `Motion Music` | Name on Spotify Connect |
+| `default_speaker` | absent | Name of the Spotify Connect speaker to control at start-up instead of this computer. It is chosen once, as soon as Spotify lists it within the first minute, unless something is already playing on another device or you pick a device first. Absent starts on this computer |
 | `bitrate` | `320` | 96, 160, or 320 kbps |
 | `normalisation` | `false` | Volume normalisation |
 | `autoplay` | `true` | Keep playing similar music at the end |
