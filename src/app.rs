@@ -48,6 +48,17 @@ const DEVICES_FRESH: Duration = Duration::from_secs(12);
 /// How long after start-up the default speaker is looked for, and how often.
 const DEFAULT_SPEAKER_WINDOW: Duration = Duration::from_secs(60);
 const DEFAULT_SPEAKER_POLL: Duration = Duration::from_secs(4);
+/// How long the sleep timer takes to fade the music out before pausing.
+const SLEEP_FADE: Duration = Duration::from_secs(45);
+
+/// Pauses the music at a set time, fading it out over [SLEEP_FADE] first.
+#[derive(Clone, Copy, Debug)]
+pub struct SleepTimer {
+    pub ends: Instant,
+    /// The volume when the fade began, put back once the music is paused.
+    faded_from: Option<u8>,
+    last_step: Option<Instant>,
+}
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(280);
 /// How long a suspend or the end of the session waits for pending file
 /// writes. fastframe-power holds the system back for 1.5 s before a
@@ -791,6 +802,12 @@ pub struct App {
     pub winamp: crate::winamp::WinampState,
     /// The spectrum behind the player bar, when that is chosen.
     pub player_bar_analyser: crate::vis::WideAnalyser,
+    /// Whether the full-window visualiser stage is open.
+    pub visualiser_stage: bool,
+    /// When the music will fade out and pause, if a sleep timer is set.
+    pub sleep_timer: Option<SleepTimer>,
+    /// The beat found in the visualisers' audio, for the beat pulse.
+    pub beat: crate::beat::BeatPulse,
     /// Windows output audio, separate from the native player tap.
     pub desktop_audio: crate::desktop_audio::DesktopAudio,
     #[cfg(any(test, feature = "demo"))]
@@ -1329,6 +1346,9 @@ impl App {
             held_update: None,
             winamp: crate::winamp::WinampState::new(session.winamp_pos, tap, eq),
             player_bar_analyser: crate::vis::WideAnalyser::default(),
+            visualiser_stage: false,
+            sleep_timer: None,
+            beat: crate::beat::BeatPulse::default(),
             desktop_audio: crate::desktop_audio::DesktopAudio::default(),
             #[cfg(any(test, feature = "demo"))]
             demo_windows_audio: false,
@@ -2897,6 +2917,14 @@ impl App {
                     self.load_top_songs(true);
                 }
             }
+            Page::Wrapped => {
+                if self.home.top_songs.get().is_none() {
+                    self.load_top_songs(true);
+                }
+                if self.home.top_artists.get().is_none() {
+                    self.load_home(false);
+                }
+            }
             Page::NewReleases => {
                 if self.home.new_release_tracks.get().is_none() {
                     self.load_new_release_page(true);
@@ -4102,6 +4130,8 @@ impl App {
             !self.settings.winamp_shaded && self.settings.vis != VisMode::Off
         } else {
             self.settings.player_bar_vis != PlayerBarVis::Off
+                || self.settings.beat_pulse
+                || self.visualiser_stage
         };
         let main_visible = chosen
             && self.visualiser_fps().is_some()
@@ -5305,6 +5335,14 @@ impl App {
             Page::TopSongs => {
                 if self.network_reachable {
                     self.load_top_songs(false);
+                }
+            }
+            Page::Wrapped => {
+                if self.network_reachable {
+                    self.load_top_songs(false);
+                    if self.home.top_artists.get().is_none() {
+                        self.load_home(false);
+                    }
                 }
             }
             Page::NewReleases => {
@@ -9835,6 +9873,109 @@ impl App {
         }
     }
 
+    /// Builds a theme from the playing cover's colours, saves it to the
+    /// themes folder and applies it at once.
+    fn theme_from_cover(&mut self, ctx: &egui::Context) {
+        let Some(now) = self.now_playing() else {
+            self.toast(gettext(
+                self.locale,
+                "Play something to make a theme from its cover",
+            ));
+            return;
+        };
+        let Some(url) = now.art_small.clone().or(now.art_url.clone()) else {
+            self.toast(gettext(
+                self.locale,
+                "This song has no cover to make a theme from",
+            ));
+            return;
+        };
+        let Some(colours) = self.art_palettes.get(&url).cloned() else {
+            // The cover's colours are read in the background; ask for them.
+            self.tint_for(Some(&url));
+            self.toast(gettext(
+                self.locale,
+                "Reading the cover's colours. Try again in a moment.",
+            ));
+            return;
+        };
+        let Some(palette) = theme::palette_from_cover(&colours) else {
+            self.toast(gettext(
+                self.locale,
+                "This cover has no colour to make a theme from",
+            ));
+            return;
+        };
+        let name = if now.album_name.trim().is_empty() {
+            now.title.clone()
+        } else {
+            now.album_name.clone()
+        };
+        let filename = theme::cover_theme_filename(&name);
+        if !self.offline {
+            self.files.write(
+                &self.dirs.config.join("themes").join(&filename),
+                theme::palette_file(&palette),
+                fastframe_file::Access::Default,
+            );
+        }
+        self.settings.custom_theme_cache = Some(theme::CustomTheme {
+            filename: filename.clone(),
+            palette,
+        });
+        self.settings.custom_theme = Some(filename.clone());
+        self.mark_settings_dirty();
+        ctx.set_theme(self.theme_preference());
+        self.apply_theme(ctx);
+        self.toast(
+            gettext(self.locale, "Made the theme {name} from this cover")
+                .replace("{name}", filename.trim_end_matches(".json")),
+        );
+    }
+
+    /// Fades the music out over the sleep timer's last moments, then pauses
+    /// it and puts the volume back for next time.
+    fn run_sleep_timer(&mut self, ctx: &egui::Context) {
+        let Some(mut timer) = self.sleep_timer else {
+            return;
+        };
+        let now = Instant::now();
+        let left = timer.ends.saturating_duration_since(now);
+        if left.is_zero() {
+            self.sleep_timer = None;
+            if self.now_playing().is_some_and(|now| now.playing) {
+                self.toggle_play();
+            }
+            if let Some(volume) = timer.faded_from {
+                self.set_volume(volume, true);
+            }
+            self.toast(gettext(self.locale, "Sleep timer: the music is paused"));
+            return;
+        }
+        if left <= SLEEP_FADE {
+            let volume = *timer.faded_from.get_or_insert_with(|| {
+                self.now_playing()
+                    .map(|now| now.volume_percent)
+                    .unwrap_or(50)
+            });
+            // A speaker elsewhere is asked less often than this computer.
+            let step = if matches!(self.target(), Target::Local) {
+                Duration::from_millis(250)
+            } else {
+                Duration::from_secs(3)
+            };
+            if timer.last_step.is_none_or(|last| now - last >= step) {
+                timer.last_step = Some(now);
+                let share = left.as_secs_f32() / SLEEP_FADE.as_secs_f32();
+                self.set_volume((f32::from(volume) * share).round() as u8, true);
+            }
+            self.sleep_timer = Some(timer);
+            ctx.request_repaint_after(Duration::from_millis(250));
+        } else {
+            ctx.request_repaint_after((left - SLEEP_FADE).min(Duration::from_secs(30)));
+        }
+    }
+
     /// Records only explicit choices for the currently verified account.
     fn remember_device_choice(&mut self, device_id: &str) {
         if let Some(account) = self.user_id().map(str::to_owned) {
@@ -11850,6 +11991,7 @@ impl App {
                 self.actions
                     .push(Action::SetTheme(ThemeChoice::Motion(choices[next])));
             }
+            Action::ThemeFromCover => self.theme_from_cover(ctx),
             Action::SurpriseTheme => {
                 use rand::seq::IndexedRandom;
                 let current = match (self.settings.custom_theme.as_deref(), self.settings.theme) {
@@ -12250,6 +12392,34 @@ impl App {
             // The same request the window's own close button makes, so the
             // close-to-tray setting decides what follows.
             Action::CloseWindow => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            Action::SetSleepTimer(minutes) => {
+                // Cancelling mid-fade puts the volume back as it was.
+                if let Some(volume) = self.sleep_timer.and_then(|timer| timer.faded_from) {
+                    self.set_volume(volume, true);
+                }
+                self.sleep_timer = minutes.map(|minutes| SleepTimer {
+                    ends: Instant::now() + Duration::from_secs(u64::from(minutes) * 60),
+                    faded_from: None,
+                    last_step: None,
+                });
+                match minutes {
+                    Some(minutes) => self.toast(
+                        ngettext(
+                            self.locale,
+                            "The music will fade out and pause in {count} minute",
+                            "The music will fade out and pause in {count} minutes",
+                            minutes,
+                        )
+                        .replace("{count}", &minutes.to_string()),
+                    ),
+                    None => self.toast(gettext(self.locale, "Sleep timer off")),
+                }
+                ctx.request_repaint();
+            }
+            Action::ToggleVisualiserStage => {
+                self.visualiser_stage = !self.visualiser_stage;
+                ctx.request_repaint();
+            }
             Action::CyclePlayerBarVis => {
                 self.settings.player_bar_vis = self.settings.player_bar_vis.next();
                 self.settings_dirty = true;
@@ -12638,6 +12808,7 @@ impl App {
         self.handle_media_commands();
         self.sync_power(ctx);
         self.sync_motion(ctx);
+        self.run_sleep_timer(ctx);
         self.handle_tray();
         #[cfg(target_os = "macos")]
         self.handle_dock_menu();
@@ -30506,6 +30677,56 @@ mod tests {
         app.backend.shutdown();
     }
 
+    #[test]
+    fn the_sleep_timer_fades_out_then_pauses_and_can_be_turned_off() {
+        let mut app = headless_app();
+        let ctx = egui::Context::default();
+        app.apply(Action::SetSleepTimer(Some(30)), &ctx);
+        let timer = app.sleep_timer.expect("set");
+        let left = timer.ends.saturating_duration_since(Instant::now());
+        assert!(left > Duration::from_secs(29 * 60) && left <= Duration::from_secs(30 * 60));
+        app.apply(Action::SetSleepTimer(None), &ctx);
+        assert!(app.sleep_timer.is_none());
+
+        // In its last moments it starts fading, remembering the volume.
+        app.sleep_timer = Some(SleepTimer {
+            ends: Instant::now() + Duration::from_secs(10),
+            faded_from: None,
+            last_step: None,
+        });
+        app.run_sleep_timer(&ctx);
+        let fading = app.sleep_timer.expect("still running");
+        assert!(fading.faded_from.is_some());
+        assert!(fading.last_step.is_some());
+
+        // Once it is over it is gone.
+        app.sleep_timer = Some(SleepTimer {
+            ends: Instant::now() - Duration::from_secs(1),
+            faded_from: Some(40),
+            last_step: None,
+        });
+        app.run_sleep_timer(&ctx);
+        assert!(app.sleep_timer.is_none());
+        app.backend.shutdown();
+    }
+
+    #[test]
+    fn the_stage_toggles_and_a_cover_theme_needs_something_playing() {
+        let mut app = headless_app();
+        let ctx = egui::Context::default();
+        assert!(!app.visualiser_stage);
+        app.apply(Action::ToggleVisualiserStage, &ctx);
+        assert!(app.visualiser_stage);
+        app.apply(Action::ToggleVisualiserStage, &ctx);
+        assert!(!app.visualiser_stage);
+        let before = app.settings.custom_theme.clone();
+        app.apply(Action::ThemeFromCover, &ctx);
+        assert_eq!(
+            app.settings.custom_theme, before,
+            "nothing playing, nothing changes"
+        );
+        app.backend.shutdown();
+    }
     /// Spotify device responses update the control snapshot.
     #[test]
     fn a_device_list_reaches_the_slot_when_spotify_answers() {

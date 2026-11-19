@@ -27,6 +27,7 @@ pub mod topbar;
 mod update;
 pub mod widgets;
 pub mod winamp;
+pub mod wrapped;
 
 use egui::{Align2, Color32, Context, CornerRadius, Frame, Id, Margin, Rect, Stroke, vec2};
 
@@ -67,6 +68,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             ),
         );
     }
+    living_gradient(app, ctx);
     player_bar::show(app, ui);
     if app.lyrics_fullscreen.is_some() {
         lyrics::fullscreen(app, ui);
@@ -91,9 +93,34 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     update::show(app, ctx);
     widgets::drag_ghost(ctx, &app.palette, app.locale);
     toasts(app, ctx, theme::PLAYER_BAR_HEIGHT + 16.0);
+    player_bar::stage(app, ctx);
     caption_buttons(ui, &app.palette, app.locale);
     fastframe_titlebar::resize(ui);
     motion::finish(ctx);
+}
+
+/// How far a living gradient drifts each second: one full sweep takes a
+/// little under a minute and a half.
+const LIVING_DRIFT: f32 = 0.012;
+
+/// Moves a gradient theme's colours along while music plays, and holds them
+/// where they are while it is paused, so nothing jumps when it starts again.
+fn living_gradient(app: &App, ctx: &Context) {
+    let id = Id::new("living-gradient-drift");
+    if !app.settings.living_gradients || app.theme_gradient().is_none() {
+        theme::set_living_phase(ctx, None);
+        return;
+    }
+    let mut phase = ctx.data(|data| data.get_temp::<f32>(id)).unwrap_or(0.0);
+    let playing = app.now_playing().is_some_and(|now| now.playing);
+    if playing && !crate::motion::reduced(ctx) {
+        let step = ctx.input(|input| input.stable_dt).clamp(0.0, 0.25);
+        phase = (phase + step * LIVING_DRIFT).rem_euclid(1.0);
+        // A gentle pace is enough for so slow a drift.
+        ctx.request_repaint_after(std::time::Duration::from_millis(66));
+    }
+    ctx.data_mut(|data| data.insert_temp(id, phase));
+    theme::set_living_phase(ctx, Some(phase));
 }
 
 /// The main window's narrowest width with these panels open: their least
@@ -280,7 +307,7 @@ fn central(app: &mut App, ui: &mut egui::Ui) {
         .show(ui, |ui| {
             let rect = ui.max_rect();
             if let Some(stops) = app.theme_gradient() {
-                theme::paint_gradient(ui, rect, stops, 0);
+                theme::paint_theme_gradient(ui, rect, stops, 0);
             }
             let page = app.page().clone();
             let overview = matches!(
@@ -354,6 +381,7 @@ fn central(app: &mut App, ui: &mut egui::Ui) {
                                     Page::Radio(seed) => radio::radio(app, ui, &seed),
                                     Page::Queue => queue::page(app, ui),
                                     Page::Settings => settings::show(app, ui),
+                                    Page::Wrapped => wrapped::show(app, ui),
                                 },
                             );
                         });

@@ -37,6 +37,8 @@ const WAVE_ECHO_ALPHA: f32 = 0.18;
 const LIGHT_STRENGTH: f32 = 1.5;
 /// The gap between spectrum bars.
 const SPECTRUM_GAP: f32 = 2.0;
+/// How much more strongly the full-window stage paints every effect.
+const STAGE_STRENGTH: f32 = 1.6;
 
 /// Forget this bar's animation session while the sign-in screen is shown.
 pub(crate) fn end_tint_session(ctx: &egui::Context) {
@@ -62,9 +64,10 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             let behind = rect.expand2(vec2(16.0, 0.0));
             if let Some(stops) = app.theme_gradient() {
                 let stops = stops.map(|stop| stop.gamma_multiply(0.45));
-                theme::paint_gradient(ui, behind, stops, 0);
+                theme::paint_theme_gradient(ui, behind, stops, 0);
             }
-            if visualizer(app, ui, behind, now.as_ref()) {
+            // The stage, when open, draws the visualizer big instead.
+            if !app.visualiser_stage && visualizer(app, ui, behind, now.as_ref(), false) {
                 theme::visualiser_frame(ui.ctx(), app.visualiser_fps());
             }
             // Its empty space is the visualizer's control, as Winamp's
@@ -90,6 +93,20 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 if empty.clicked() {
                     app.actions.push(Action::CyclePlayerBarVis);
                 }
+            }
+            let pulse = beat_pulse(app, ui, now.as_ref());
+            if pulse > 0.01 {
+                // A soft flash along the top edge of the bar.
+                let mut glow = egui::Mesh::default();
+                let accent = palette.accent.gamma_multiply(0.55 * pulse);
+                let top = rect.top();
+                glow.colored_vertex(pos2(behind.left(), top), accent);
+                glow.colored_vertex(pos2(behind.right(), top), accent);
+                glow.colored_vertex(pos2(behind.right(), top + 14.0), Color32::TRANSPARENT);
+                glow.colored_vertex(pos2(behind.left(), top + 14.0), Color32::TRANSPARENT);
+                glow.add_triangle(0, 1, 2);
+                glow.add_triangle(0, 2, 3);
+                ui.painter().add(egui::Shape::mesh(glow));
             }
             desktop_audio_badge(app, ui, behind);
             ui.painter().hline(
@@ -125,6 +142,31 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         });
 }
 
+/// Reads this frame's audio for beats when the beat pulse is on, and keeps
+/// frames coming while there is sound. Answers the pulse's height now.
+fn beat_pulse(app: &mut App, ui: &egui::Ui, now: Option<&NowPlaying>) -> f32 {
+    if !app.settings.beat_pulse {
+        return 0.0;
+    }
+    let time = ui.input(|input| input.time);
+    match app.visualizer_samples(now, crate::vis::WIDE_SAMPLES) {
+        Some(samples) => {
+            app.beat.step(&samples, time);
+            theme::visualiser_frame(ui.ctx(), app.visualiser_fps());
+        }
+        None => app.beat.reset(),
+    }
+    let pulse = app.beat.pulse(time);
+    if pulse > 0.01 {
+        ui.ctx().request_repaint();
+    }
+    if crate::motion::reduced(ui.ctx()) {
+        0.0
+    } else {
+        pulse
+    }
+}
+
 /// Names the fallback honestly: this is the PC's mix, not remote-device PCM.
 fn desktop_audio_badge(app: &App, ui: &egui::Ui, rect: Rect) {
     use crate::desktop_audio::Status;
@@ -153,10 +195,21 @@ fn desktop_audio_badge(app: &App, ui: &egui::Ui, rect: Rect) {
 
 /// Draws the chosen backdrop from native PCM or fresh Windows output audio.
 /// Native PCM remains post-EQ and pre-volume. Returns whether it is moving.
-fn visualizer(app: &mut App, ui: &egui::Ui, rect: Rect, now: Option<&NowPlaying>) -> bool {
+fn visualizer(
+    app: &mut App,
+    ui: &egui::Ui,
+    rect: Rect,
+    now: Option<&NowPlaying>,
+    stage: bool,
+) -> bool {
     use crate::settings::PlayerBarVis;
     use crate::vis;
-    let mode = app.settings.player_bar_vis;
+    let mode = match app.settings.player_bar_vis {
+        // The stage always shows something; with the bar's visualizer off
+        // it opens on the galaxy.
+        PlayerBarVis::Off if stage => PlayerBarVis::Galaxy,
+        mode => mode,
+    };
     if mode == PlayerBarVis::Off {
         return false;
     }
@@ -180,8 +233,20 @@ fn visualizer(app: &mut App, ui: &egui::Ui, rect: Rect, now: Option<&NowPlaying>
     };
     let source_colours =
         art_colours.or_else(|| gradient_colours.as_ref().map(|colours| colours.as_slice()));
-    let colours = vis_colours(source_colours, app.palette.accent, dark);
-    let strength = if dark { 1.0 } else { LIGHT_STRENGTH };
+    // On the stage nothing is read over the scene, so colours stay at full
+    // brightness and every effect is drawn more strongly.
+    let colours = if stage {
+        stage_colours(source_colours, app.palette.accent)
+    } else {
+        vis_colours(source_colours, app.palette.accent, dark)
+    };
+    let strength = if stage {
+        STAGE_STRENGTH
+    } else if dark {
+        1.0
+    } else {
+        LIGHT_STRENGTH
+    };
     let painter = ui.painter().with_clip_rect(rect);
     // Audio still reacts when reduced motion is requested, but decorative
     // travel and rotation stay still.
@@ -234,6 +299,93 @@ fn visualizer(app: &mut App, ui: &egui::Ui, rect: Rect, now: Option<&NowPlaying>
 /// brightness, so the words the bars pass behind always stand out: no lighter
 /// than [`DARK_CEILING`] under the dark theme's white text, no darker than
 /// [`LIGHT_FLOOR`] under the light theme's dark text.
+/// The visualizer's colours at full brightness, for the stage.
+fn stage_colours(art: Option<&[[u8; 3]]>, accent: Color32) -> Vec<Color32> {
+    use crate::images::has_hue;
+    use egui::ecolor::Hsva;
+    let keep = |mut colour: Hsva, vivid: bool| {
+        colour.s = if vivid { colour.s.max(0.65) } else { 0.0 };
+        colour.v = 1.0;
+        colour.a = 1.0;
+        Color32::from(colour)
+    };
+    if let Some(art) = art.filter(|art| !art.is_empty()) {
+        let colours: Vec<_> = art
+            .iter()
+            .filter(|&&rgb| has_hue(rgb))
+            .map(|&rgb| keep(Hsva::from_srgb(rgb), true))
+            .collect();
+        if colours.len() >= 2 {
+            return colours;
+        }
+    }
+    let low = Hsva::from(accent);
+    let mut high = low;
+    high.h = (high.h + 1.0 / 6.0).fract();
+    let mut far = low;
+    far.h = (far.h + 0.45).fract();
+    vec![keep(low, true), keep(high, true), keep(far, true)]
+}
+
+/// The full-window visualiser stage: the chosen effect drawn across the
+/// whole window in full colour, with the playing song along the bottom.
+/// A click or Esc closes it.
+pub fn stage(app: &mut App, ctx: &egui::Context) {
+    if !app.visualiser_stage {
+        return;
+    }
+    let rect = ctx.content_rect();
+    let now = app.now_playing();
+    egui::Area::new(egui::Id::new("visualiser-stage"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(rect.min)
+        .show(ctx, |ui| {
+            let (rect, response) = ui.allocate_exact_size(rect.size(), Sense::click());
+            let painter = ui.painter();
+            painter.rect_filled(rect, 0, Color32::from_rgb(6, 6, 12));
+            if let Some(stops) = app.theme_gradient() {
+                let stops = stops.map(|stop| stop.gamma_multiply(0.18));
+                theme::paint_theme_gradient(ui, rect, stops, 0);
+            }
+            // The effect fills the middle band; the scenes are made for a
+            // wide strip, so it keeps a cinematic shape on any window.
+            let band = Rect::from_center_size(
+                rect.center(),
+                vec2(rect.width(), (rect.width() * 0.42).min(rect.height() * 0.8)),
+            );
+            if visualizer(app, ui, band, now.as_ref(), true) {
+                theme::visualiser_frame(ui.ctx(), app.visualiser_fps());
+            }
+            if let Some(now) = &now {
+                let at = rect.left_bottom() + vec2(40.0, -40.0);
+                painter.text(
+                    at - vec2(0.0, 30.0),
+                    egui::Align2::LEFT_BOTTOM,
+                    &now.title,
+                    theme::semibold(30.0),
+                    Color32::WHITE,
+                );
+                painter.text(
+                    at,
+                    egui::Align2::LEFT_BOTTOM,
+                    &now.subtitle,
+                    theme::regular(17.0),
+                    Color32::from_white_alpha(170),
+                );
+            }
+            painter.text(
+                rect.right_bottom() + vec2(-40.0, -40.0),
+                egui::Align2::RIGHT_BOTTOM,
+                gettext(app.locale, "Click or press Esc to close"),
+                theme::regular(13.0),
+                Color32::from_white_alpha(110),
+            );
+            if response.clicked() {
+                app.actions.push(Action::ToggleVisualiserStage);
+            }
+        });
+}
+
 fn vis_colours(art: Option<&[[u8; 3]]>, accent: Color32, dark: bool) -> Vec<Color32> {
     use crate::images::has_hue;
     use egui::ecolor::Hsva;
@@ -466,7 +618,334 @@ fn spectrum_effect(
         PlayerBarVis::Ripples => ripples(painter, rect, levels, colours, strength, time),
         PlayerBarVis::Lasers => lasers(painter, rect, levels, colours, strength, time),
         PlayerBarVis::Fireworks => fireworks(painter, rect, levels, colours, strength, time),
+        PlayerBarVis::Synthwave => synthwave(painter, rect, levels, colours, strength, time),
+        PlayerBarVis::Terrain => terrain(painter, rect, levels, colours, strength, time),
+        PlayerBarVis::Kaleidoscope => kaleidoscope(painter, rect, levels, colours, strength, time),
+        PlayerBarVis::Lava => lava(painter, rect, levels, colours, strength, time),
+        PlayerBarVis::Galaxy => galaxy(painter, rect, levels, colours, strength, time),
         _ => {}
+    }
+}
+
+/// The bass, as one smooth number: the lowest bands carry the beat.
+fn bass_level(levels: &[f32]) -> f32 {
+    mean_level(&levels[..levels.len().min(8)])
+}
+
+/// A retro sunset: a striped sun that swells with the bass sits on a horizon
+/// of spectrum mountains, over a neon grid rushing towards the listener.
+fn synthwave(
+    painter: &egui::Painter,
+    rect: Rect,
+    levels: &[f32],
+    colours: &[Color32],
+    strength: f32,
+    time: f32,
+) {
+    let energy = scene_energy(levels);
+    let bass = bass_level(levels).sqrt();
+    let horizon = rect.top() + rect.height() * 0.55;
+    let sun_colour = |at: f32| swept(colours, at);
+    // The sun: horizontal slices of a disc, with gaps that widen downwards.
+    let centre = pos2(rect.center().x, horizon);
+    let radius = rect.height() * (0.38 + bass * 0.12);
+    let slices = 18;
+    let mut sun = egui::Mesh::default();
+    for slice in 0..slices {
+        let top = slice as f32 / slices as f32;
+        let gap = if slice > slices / 3 {
+            (slice - slices / 3) as f32 / slices as f32 * 0.55
+        } else {
+            0.0
+        };
+        let bottom = (slice + 1) as f32 / slices as f32 - gap / slices as f32 * 3.0;
+        if bottom <= top {
+            continue;
+        }
+        let y0 = centre.y - radius + top * radius;
+        let y1 = centre.y - radius + bottom * radius;
+        let half = |y: f32| (radius * radius - (centre.y - y).powi(2)).max(0.0).sqrt();
+        // Never past full opacity, which would wash the sun out to white.
+        let colour = sun_colour(top).gamma_multiply((strength * (0.35 + energy * 0.45)).min(0.95));
+        let base = sun.vertices.len() as u32;
+        sun.colored_vertex(pos2(centre.x - half(y0), y0), colour);
+        sun.colored_vertex(pos2(centre.x + half(y0), y0), colour);
+        sun.colored_vertex(pos2(centre.x + half(y1), y1), colour);
+        sun.colored_vertex(pos2(centre.x - half(y1), y1), colour);
+        sun.add_triangle(base, base + 1, base + 2);
+        sun.add_triangle(base, base + 2, base + 3);
+    }
+    painter.circle_filled(
+        centre,
+        radius * 0.95,
+        sun_colour(0.2).gamma_multiply(0.06 * strength * energy),
+    );
+    painter.add(egui::Shape::mesh(sun));
+    // Spectrum mountains along the horizon, mirrored from the middle.
+    let ridge: Vec<_> = (0..=96)
+        .map(|index| {
+            let at = index as f32 / 96.0;
+            let mirrored = (at - 0.5).abs() * 2.0;
+            let level = scene_band(levels, mirrored, energy);
+            pos2(
+                rect.left() + at * rect.width(),
+                horizon - level * rect.height() * 0.3 * (0.4 + mirrored * 0.6),
+            )
+        })
+        .collect();
+    scene_neon_line(
+        painter,
+        ridge,
+        swept(colours, 0.7),
+        0.55 * strength * energy,
+    );
+    // The grid: lines from the vanishing point, and rows rushing forward.
+    let grid = swept(colours, 0.9);
+    let floor = rect.bottom() - horizon;
+    for column in -12..=12 {
+        let x = rect.center().x + column as f32 * rect.width() / 24.0;
+        painter.line_segment(
+            [
+                pos2(rect.center().x + column as f32 * 6.0, horizon),
+                pos2(x, rect.bottom()),
+            ],
+            egui::Stroke::new(1.0, grid.gamma_multiply(0.35 * strength * energy)),
+        );
+    }
+    let speed = 0.6 + energy * 1.4;
+    for row in 0..8 {
+        let depth = (row as f32 / 8.0 + time * speed * 0.25).fract();
+        let y = horizon + (floor - 3.0).max(0.0) * depth * depth;
+        painter.line_segment(
+            [pos2(rect.left(), y), pos2(rect.right(), y)],
+            egui::Stroke::new(
+                1.0 + depth,
+                grid.gamma_multiply(strength * energy * (0.15 + depth * 0.5)),
+            ),
+        );
+    }
+}
+
+/// How many spectra the terrain remembers, and how often it takes one.
+const TERRAIN_ROWS: usize = 22;
+const TERRAIN_STEP: f32 = 1.0 / 24.0;
+
+#[derive(Clone, Default)]
+struct TerrainHistory {
+    rows: std::collections::VecDeque<Vec<f32>>,
+    taken_at: f32,
+}
+
+/// Ridges of recent spectra receding into the distance, newest at the front:
+/// the music's last second as a landscape of glowing contour lines.
+fn terrain(
+    painter: &egui::Painter,
+    rect: Rect,
+    levels: &[f32],
+    colours: &[Color32],
+    strength: f32,
+    time: f32,
+) {
+    let id = egui::Id::new("player-bar-terrain-history");
+    let mut history = painter
+        .ctx()
+        .data(|data| data.get_temp::<TerrainHistory>(id))
+        .unwrap_or_default();
+    if history.rows.is_empty() || time - history.taken_at >= TERRAIN_STEP || time < history.taken_at
+    {
+        let energy = scene_energy(levels);
+        let row: Vec<f32> = (0..48)
+            .map(|index| scene_band(levels, index as f32 / 47.0, energy))
+            .collect();
+        // The first spectrum fills the whole landscape at once, rather than
+        // the hills growing in row by row.
+        if history.rows.is_empty() {
+            history
+                .rows
+                .extend(std::iter::repeat_n(row.clone(), TERRAIN_ROWS - 1));
+        }
+        history.rows.push_front(row);
+        history.rows.truncate(TERRAIN_ROWS);
+        history.taken_at = time;
+    }
+    let energy = scene_energy(levels);
+    // Far rows first, so nearer ridges are drawn over them.
+    for (index, row) in history.rows.iter().enumerate().rev() {
+        let depth = 1.0 - index as f32 / TERRAIN_ROWS as f32;
+        let spread = 0.45 + depth * 0.55;
+        let base = rect.top() + rect.height() * (0.2 + depth * 0.75);
+        let lift = rect.height() * 0.55 * (0.35 + depth * 0.65);
+        let points: Vec<_> = row
+            .iter()
+            .enumerate()
+            .map(|(column, level)| {
+                let at = column as f32 / (row.len() - 1) as f32;
+                // Taper at both sides, like hills on the edge of a valley.
+                let taper = (std::f32::consts::PI * at).sin().max(0.0).powf(0.6);
+                let swell = (time * 0.9 + at * 7.0 + depth * 3.0).sin() * rect.height() * 0.012;
+                pos2(
+                    rect.center().x + (at - 0.5) * rect.width() * spread,
+                    base - level * lift * taper + swell,
+                )
+            })
+            .collect();
+        let mut fill = egui::Mesh::default();
+        let colour = swept(colours, 1.0 - depth);
+        for point in &points {
+            let base_index = fill.vertices.len() as u32;
+            fill.colored_vertex(*point, colour.gamma_multiply(0.12 * strength * depth));
+            fill.colored_vertex(pos2(point.x, base + 2.0), Color32::TRANSPARENT);
+            if base_index > 0 {
+                fill.add_triangle(base_index - 2, base_index, base_index + 1);
+                fill.add_triangle(base_index - 2, base_index + 1, base_index - 1);
+            }
+        }
+        painter.add(egui::Shape::mesh(fill));
+        painter.add(egui::Shape::line(
+            points,
+            egui::Stroke::new(
+                0.8 + depth * 1.2,
+                colour.gamma_multiply(strength * (0.12 + depth * 0.6) * energy.max(0.3)),
+            ),
+        ));
+    }
+    painter.ctx().data_mut(|data| data.insert_temp(id, history));
+}
+
+/// Three mirrored mandalas whose petals open with their own part of the
+/// spectrum and slowly turn.
+fn kaleidoscope(
+    painter: &egui::Painter,
+    rect: Rect,
+    levels: &[f32],
+    colours: &[Color32],
+    strength: f32,
+    time: f32,
+) {
+    use std::f32::consts::TAU;
+    let energy = scene_energy(levels);
+    let segments = 12;
+    for (place, size) in [(0.5, 1.0), (0.17, 0.72), (0.83, 0.72)] {
+        let centre = pos2(rect.left() + rect.width() * place, rect.center().y);
+        let reach = rect.height() * 0.44 * size;
+        let turn = time * 0.25 * if place < 0.5 { -1.0 } else { 1.0 };
+        for ring in 0..5 {
+            let at = (ring as f32 + 0.5) / 5.0;
+            let level = scene_band(levels, (at + place * 0.3).fract(), energy);
+            let colour = swept(colours, at).gamma_multiply(strength * (0.12 + level * 0.5));
+            let inner = reach * (0.12 + at * 0.55);
+            let outer = inner + reach * (0.1 + level * 0.35);
+            let mut mesh = egui::Mesh::default();
+            for segment in 0..segments {
+                let mid = segment as f32 / segments as f32 * TAU + turn + ring as f32 * 0.4;
+                // Each petal and its mirror image share one wedge.
+                for side in [-1.0, 1.0] {
+                    let spread = side * TAU / segments as f32 * (0.18 + level * 0.3);
+                    let points = [
+                        centre + Vec2::angled(mid) * inner,
+                        centre + Vec2::angled(mid + spread) * (inner + outer) * 0.5,
+                        centre + Vec2::angled(mid) * outer,
+                    ];
+                    let base = mesh.vertices.len() as u32;
+                    mesh.colored_vertex(points[0], colour.gamma_multiply(0.4));
+                    mesh.colored_vertex(points[1], colour);
+                    mesh.colored_vertex(points[2], colour.gamma_multiply(0.2));
+                    mesh.add_triangle(base, base + 1, base + 2);
+                }
+            }
+            painter.add(egui::Shape::mesh(mesh));
+        }
+        painter.circle_filled(
+            centre,
+            reach * (0.08 + bass_level(levels) * 0.12),
+            swept(colours, 0.0).gamma_multiply(0.5 * strength * energy),
+        );
+    }
+}
+
+/// Soft glowing blobs drift up and down like wax in a lava lamp, swelling
+/// with their part of the spectrum where they overlap and merge.
+fn lava(
+    painter: &egui::Painter,
+    rect: Rect,
+    levels: &[f32],
+    colours: &[Color32],
+    strength: f32,
+    time: f32,
+) {
+    let energy = scene_energy(levels);
+    for blob in 0..11 {
+        let seed = blob as f32;
+        let at = (seed * 0.618_034 + 0.1).fract();
+        let level = scene_band(levels, at, energy);
+        let rise = ((time * (0.08 + at * 0.06) + seed * 0.37) * std::f32::consts::TAU).sin();
+        // Room at both ends for the widest glow, so no blob leaves the bar.
+        let margin = rect.height() * 0.4 + rect.width() * 0.02;
+        let centre = pos2(
+            rect.left()
+                + margin
+                + at * (rect.width() - margin * 2.0).max(0.0)
+                + (time * 0.2 + seed).sin() * rect.width() * 0.02,
+            rect.center().y + rise * rect.height() * 0.18,
+        );
+        let radius = rect.height() * (0.11 + level * 0.15);
+        let colour = swept(colours, at);
+        // Layered glows read as one gooey shape where blobs meet.
+        for (scale, alpha) in [(1.5, 0.06), (1.2, 0.12), (1.0, 0.24), (0.65, 0.32)] {
+            painter.circle_filled(
+                centre,
+                radius * scale,
+                colour.gamma_multiply(alpha * strength * (0.4 + energy * 0.6)),
+            );
+        }
+    }
+}
+
+/// A spiral galaxy: three arms of stars turning around a core that flares
+/// with the bass, each star lit by the band at its distance from the centre.
+fn galaxy(
+    painter: &egui::Painter,
+    rect: Rect,
+    levels: &[f32],
+    colours: &[Color32],
+    strength: f32,
+    time: f32,
+) {
+    use std::f32::consts::TAU;
+    let energy = scene_energy(levels);
+    let bass = bass_level(levels).sqrt();
+    let centre = rect.center();
+    let scale = vec2(rect.width() * 0.46, rect.height() * 0.46);
+    let core = rect.height() * (0.08 + bass * 0.1);
+    painter.circle_filled(
+        centre,
+        core * 1.8,
+        swept(colours, 0.0).gamma_multiply(0.06 * strength * energy),
+    );
+    painter.circle_filled(
+        centre,
+        core,
+        swept(colours, 0.0).gamma_multiply(0.45 * strength * energy),
+    );
+    for star in 0..280 {
+        let seed = star as f32;
+        let along = (seed * 0.618_034).fract().powf(0.8);
+        let arm = star % 3;
+        let jitter = ((seed * 12.9898).sin() * 43_758.547).fract() - 0.5;
+        let angle = arm as f32 / 3.0 * TAU + along * 4.2 + time * 0.18 + jitter * 0.5;
+        let level = scene_band(levels, along, energy);
+        let distance = along * (1.0 + jitter * 0.12) * (0.92 + level * 0.12);
+        let place = centre + vec2(angle.cos() * scale.x, angle.sin() * scale.y) * distance;
+        if !rect.shrink(4.0).contains(place) {
+            continue;
+        }
+        let colour =
+            swept(colours, along).gamma_multiply(strength * (0.25 + level * 0.75) * energy);
+        let size = 0.6 + level * 1.8 * (1.0 - along * 0.5);
+        if level > 0.3 {
+            painter.circle_filled(place, size * 2.2, colour.gamma_multiply(0.12));
+        }
+        painter.circle_filled(place, size, colour);
     }
 }
 
@@ -1532,6 +2011,28 @@ fn transport(app: &mut App, ui: &mut egui::Ui, now: Option<&NowPlaying>, region:
     }
 
     let disc = slot(widths[2]);
+    let pulse = if app.settings.beat_pulse {
+        app.beat.pulse(ui.input(|input| input.time))
+    } else {
+        0.0
+    };
+    if pulse > 0.01 && !crate::motion::reduced(ui.ctx()) {
+        // A ring that springs out from the play button on each beat.
+        let ring = 20.0 + 9.0 * (1.0 - pulse);
+        ui.painter().circle_filled(
+            disc.center(),
+            ring + 6.0,
+            palette.accent.gamma_multiply(0.12 * pulse),
+        );
+        ui.painter().circle_stroke(
+            disc.center(),
+            ring,
+            egui::Stroke::new(
+                1.0 + 2.5 * pulse,
+                palette.accent.gamma_multiply(0.8 * pulse),
+            ),
+        );
+    }
     if loading || app.any_play_pending() {
         ui.painter()
             .circle_filled(disc.center(), 18.0, palette.text);
@@ -1838,6 +2339,64 @@ fn extras(app: &mut App, ui: &mut egui::Ui, now: Option<&NowPlaying>, transport_
     {
         app.actions.push(Action::ToggleFriendsPanel);
     }
+    sleep_timer_button(app, ui, transport_right);
+}
+
+/// A moon-and-clock button for the sleep timer, when there is room for it.
+fn sleep_timer_button(app: &mut App, ui: &mut egui::Ui, transport_right: f32) {
+    let palette = app.palette;
+    let left = ui.min_rect().left() - ui.spacing().item_spacing.x - (18.0 + theme::ICON_BUTTON_PAD);
+    if left - transport_right < TRANSPORT_GAP {
+        return;
+    }
+    let remaining = app.sleep_timer.map(|timer| {
+        timer
+            .ends
+            .saturating_duration_since(std::time::Instant::now())
+    });
+    let tooltip = match remaining {
+        Some(left) => gettext(app.locale, "Sleep timer: {minutes} min left")
+            .replace("{minutes}", &left.as_secs().div_ceil(60).to_string()),
+        None => gettext(app.locale, "Sleep timer").into_owned(),
+    };
+    let response = theme::icon_button(
+        ui,
+        Icon::Clock,
+        18.0,
+        if remaining.is_some() {
+            palette.accent
+        } else {
+            palette.secondary
+        },
+        palette.text,
+        &tooltip,
+    );
+    egui::Popup::menu(&response)
+        .id(egui::Id::new("player-bar-sleep-timer"))
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
+        .show(|ui| {
+            ui.set_min_width(170.0);
+            theme::text(
+                ui,
+                gettext(app.locale, "Fade out and pause in").as_ref(),
+                theme::semibold(13.0),
+                palette.secondary,
+            );
+            for minutes in [5_u32, 15, 30, 45, 60, 90] {
+                let label =
+                    gettext(app.locale, "{count} minutes").replace("{count}", &minutes.to_string());
+                if ui.button(label).clicked() {
+                    app.actions.push(Action::SetSleepTimer(Some(minutes)));
+                }
+            }
+            if remaining.is_some()
+                && ui
+                    .button(gettext(app.locale, "Turn off").as_ref())
+                    .clicked()
+            {
+                app.actions.push(Action::SetSleepTimer(None));
+            }
+        });
 }
 
 #[cfg(test)]
@@ -2098,6 +2657,11 @@ mod visualizer_scene_tests {
             PlayerBarVis::Ripples,
             PlayerBarVis::Lasers,
             PlayerBarVis::Fireworks,
+            PlayerBarVis::Synthwave,
+            PlayerBarVis::Terrain,
+            PlayerBarVis::Kaleidoscope,
+            PlayerBarVis::Lava,
+            PlayerBarVis::Galaxy,
         ] {
             for width in [360.0, 1440.0] {
                 for dark in [false, true] {
@@ -2128,7 +2692,7 @@ mod visualizer_scene_tests {
         }
     }
 
-    const NEW_SCENES: [PlayerBarVis; 8] = [
+    const NEW_SCENES: [PlayerBarVis; 13] = [
         PlayerBarVis::Waterfall,
         PlayerBarVis::Prism,
         PlayerBarVis::Helix,
@@ -2137,6 +2701,11 @@ mod visualizer_scene_tests {
         PlayerBarVis::Ripples,
         PlayerBarVis::Lasers,
         PlayerBarVis::Fireworks,
+        PlayerBarVis::Synthwave,
+        PlayerBarVis::Terrain,
+        PlayerBarVis::Kaleidoscope,
+        PlayerBarVis::Lava,
+        PlayerBarVis::Galaxy,
     ];
 
     #[test]
@@ -2158,7 +2727,11 @@ mod visualizer_scene_tests {
                         vertices
                             .iter()
                             .all(|vertex| rect.expand(8.0).contains(vertex.pos)),
-                        "{mode:?} at {time} escaped its bar"
+                        "{mode:?} at {time} escaped its bar: {:?}",
+                        vertices
+                            .iter()
+                            .find(|vertex| !rect.expand(8.0).contains(vertex.pos))
+                            .map(|vertex| vertex.pos)
                     );
                     let left = vertices
                         .iter()

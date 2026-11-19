@@ -1127,6 +1127,9 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let player_bar_vis = gettext(locale, "Player bar visualizer");
     let player_bar_vis_click = gettext(locale, "Click player bar to change visualizer");
     let visualizer_colours = gettext(locale, "Visualizer colours");
+    let beat_pulse = gettext(locale, "Beat pulse");
+    let living_gradients = gettext(locale, "Living gradients");
+    let cover_theme = gettext(locale, "Theme from this cover");
     let page_transitions = gettext(locale, "Page transitions");
     // Follow system's own light and dark palettes. Omarchy's palette already
     // follows the desktop, so they are offered only without it.
@@ -1261,6 +1264,27 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             gettext(
                 locale,
                 "Choose the styles shuffled when a page changes. Back and Forward always swipe their own way. Turn every style off to change pages at once.",
+            ),
+        ),
+        RowText::new(
+            beat_pulse.clone(),
+            gettext(
+                locale,
+                "Flash the play button and the top of the player bar on the beat, from the same audio the visualizers use.",
+            ),
+        ),
+        RowText::new(
+            living_gradients.clone(),
+            gettext(
+                locale,
+                "Let a gradient theme's colours drift slowly while music plays. They hold still while paused.",
+            ),
+        ),
+        RowText::new(
+            cover_theme.clone(),
+            gettext(
+                locale,
+                "Make a dark theme from the playing song's cover, save it in your themes folder and use it now. Ctrl+Shift+T does the same.",
             ),
         ),
     ];
@@ -1560,6 +1584,63 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                                 }
                             }
                         });
+                    },
+                );
+            }
+            filtered_row(
+                ui,
+                &palette,
+                &needle,
+                &appearance,
+                &appearance_rows[15],
+                |ui| {
+                    if widgets::switch(ui, &palette, &beat_pulse, &mut app.settings.beat_pulse)
+                        .changed()
+                    {
+                        changed = true;
+                    }
+                },
+            );
+            filtered_row(
+                ui,
+                &palette,
+                &needle,
+                &appearance,
+                &appearance_rows[16],
+                |ui| {
+                    if widgets::switch(
+                        ui,
+                        &palette,
+                        &living_gradients,
+                        &mut app.settings.living_gradients,
+                    )
+                    .changed()
+                    {
+                        changed = true;
+                    }
+                },
+            );
+            {
+                let make = gettext(locale, "Make theme");
+                let width = theme::soft_button_width(ui, &make);
+                filtered_row_sized(
+                    ui,
+                    &palette,
+                    &needle,
+                    &appearance,
+                    &appearance_rows[17],
+                    width,
+                    |ui| {
+                        let ready = app.now_playing().is_some();
+                        if ui
+                            .add_enabled_ui(ready, |ui| {
+                                theme::soft_button(ui, &palette, Some(Icon::Sparkles), &make, false)
+                            })
+                            .inner
+                            .clicked()
+                        {
+                            app.actions.push(Action::ThemeFromCover);
+                        }
                     },
                 );
             }

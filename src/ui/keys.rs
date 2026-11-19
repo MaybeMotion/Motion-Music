@@ -122,6 +122,16 @@ pub fn handle(app: &mut App, ctx: &egui::Context) {
                 Key::E,
                 Action::CyclePlayerBarVis,
             );
+            key(
+                Modifiers::COMMAND | Modifiers::SHIFT,
+                Key::V,
+                Action::ToggleVisualiserStage,
+            );
+            key(
+                Modifiers::COMMAND | Modifiers::SHIFT,
+                Key::T,
+                Action::ThemeFromCover,
+            );
             key(Modifiers::ALT, Key::ArrowLeft, Action::Back);
             key(Modifiers::ALT, Key::ArrowRight, Action::Forward);
             key(Modifiers::COMMAND, Key::ArrowLeft, Action::Previous);
@@ -198,7 +208,9 @@ pub fn handle(app: &mut App, ctx: &egui::Context) {
         app.actions.push(Action::Forward);
     }
     if ctx.input(|input| input.key_pressed(Key::Escape)) {
-        if app.dialog.is_some() {
+        if app.visualiser_stage {
+            app.actions.push(Action::ToggleVisualiserStage);
+        } else if app.dialog.is_some() {
             app.actions.push(Action::CloseDialog);
         } else if app.show_devices {
             app.show_devices = false;
@@ -307,6 +319,14 @@ pub fn shortcuts(locale: Locale) -> Vec<(Cow<'static, str>, Cow<'static, str>)> 
         (
             keys(platform_shortcut("Ctrl+Shift+E", "Cmd+Shift+E")),
             gettext(locale, "Next player bar visualizer"),
+        ),
+        (
+            keys(platform_shortcut("Ctrl+Shift+V", "Cmd+Shift+V")),
+            gettext(locale, "Full-window visualiser"),
+        ),
+        (
+            keys(platform_shortcut("Ctrl+Shift+T", "Cmd+Shift+T")),
+            gettext(locale, "Make a theme from this cover"),
         ),
         (keys(WINAMP_SHORTCUT), gettext(locale, "Winamp mini player")),
         (

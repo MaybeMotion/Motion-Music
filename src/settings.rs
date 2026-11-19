@@ -103,11 +103,16 @@ pub enum PlayerBarVis {
     Ripples,
     Lasers,
     Fireworks,
+    Synthwave,
+    Terrain,
+    Kaleidoscope,
+    Lava,
+    Galaxy,
 }
 
 impl PlayerBarVis {
     /// All modes in the same order as the settings picker and click cycle.
-    pub const ALL: [Self; 17] = [
+    pub const ALL: [Self; 22] = [
         Self::Off,
         Self::Spectrum,
         Self::Waveform,
@@ -125,6 +130,11 @@ impl PlayerBarVis {
         Self::Ripples,
         Self::Lasers,
         Self::Fireworks,
+        Self::Synthwave,
+        Self::Terrain,
+        Self::Kaleidoscope,
+        Self::Lava,
+        Self::Galaxy,
     ];
 
     pub fn label(self, locale: crate::i18n::Locale) -> std::borrow::Cow<'static, str> {
@@ -147,6 +157,11 @@ impl PlayerBarVis {
             Self::Ripples => gettext(locale, "Ripple pool"),
             Self::Lasers => gettext(locale, "Laser fan"),
             Self::Fireworks => gettext(locale, "Fireworks"),
+            Self::Synthwave => gettext(locale, "Synthwave sunset"),
+            Self::Terrain => gettext(locale, "Sound terrain"),
+            Self::Kaleidoscope => gettext(locale, "Kaleidoscope"),
+            Self::Lava => gettext(locale, "Lava lamp"),
+            Self::Galaxy => gettext(locale, "Galaxy"),
         }
     }
 
@@ -169,7 +184,12 @@ impl PlayerBarVis {
             Self::Plasma => Self::Ripples,
             Self::Ripples => Self::Lasers,
             Self::Lasers => Self::Fireworks,
-            Self::Fireworks => Self::Off,
+            Self::Fireworks => Self::Synthwave,
+            Self::Synthwave => Self::Terrain,
+            Self::Terrain => Self::Kaleidoscope,
+            Self::Kaleidoscope => Self::Lava,
+            Self::Lava => Self::Galaxy,
+            Self::Galaxy => Self::Off,
         }
     }
 }
@@ -444,6 +464,10 @@ pub struct Settings {
     /// The Motion themes applied most recently, newest first.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub recent_themes: Vec<String>,
+    /// Flash the play button and the top of the player bar on the beat.
+    pub beat_pulse: bool,
+    /// Let a gradient theme's colours drift slowly while music plays.
+    pub living_gradients: bool,
     /// Page reveal styles left out of the shuffle, by their saved name.
     /// Empty uses every style, as before this setting existed.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -645,6 +669,8 @@ impl Default for Settings {
             favourite_themes: Vec::new(),
             recent_themes: Vec::new(),
             page_reveals_off: Vec::new(),
+            beat_pulse: false,
+            living_gradients: false,
             visualizer_fps: crate::milkdrop::DEFAULT_FPS,
             discord_presence: false,
             discord_application_id: crate::discord_activity::DEFAULT_APPLICATION_ID.to_owned(),
@@ -1845,6 +1871,8 @@ mod tests {
         assert!(settings.favourite_themes.is_empty());
         assert!(settings.recent_themes.is_empty());
         assert!(settings.page_reveals_off.is_empty());
+        assert!(!settings.beat_pulse, "the beat pulse starts off");
+        assert!(!settings.living_gradients, "gradients start still");
         assert_eq!(settings.visualizer_colours, VisColours::Auto);
         // Untouched, the new lists add nothing to an existing file.
         let json = serde_json::to_value(&settings).unwrap();
@@ -1923,8 +1951,13 @@ mod tests {
             "ripples",
             "lasers",
             "fireworks",
+            "synthwave",
+            "terrain",
+            "kaleidoscope",
+            "lava",
+            "galaxy",
         ];
-        assert_eq!(PlayerBarVis::ALL.len(), 17);
+        assert_eq!(PlayerBarVis::ALL.len(), 22);
         assert_eq!(PlayerBarVis::ALL.len(), stored_names.len());
         for (mode, stored) in PlayerBarVis::ALL.into_iter().zip(stored_names) {
             let settings = Settings {

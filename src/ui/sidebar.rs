@@ -592,7 +592,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 ui.max_rect().min - vec2(12.0, top as f32),
                 ui.max_rect().max + vec2(8.0, if expanded_art { 0.0 } else { 8.0 }),
             );
-            theme::paint_gradient(ui, rect, stops, 0);
+            theme::paint_theme_gradient(ui, rect, stops, 0);
         }
         let art_rect = expanded_art.then(|| expanded_art_rect(ui));
         if let Some(rect) = art_rect.filter(|_| !floating_art) {
@@ -1017,6 +1017,21 @@ fn contents(app: &mut App, ui: &mut egui::Ui, grid_art: Option<Rect>) {
     .clicked()
     {
         app.actions.push(Action::FocusSearch);
+    }
+    if ui
+        .push_id("my-wrapped-navigation", |ui| {
+            nav_row(
+                ui,
+                &palette,
+                Icon::Sparkles,
+                &gettext(locale, "My Wrapped"),
+                page == Page::Wrapped,
+            )
+        })
+        .inner
+        .clicked()
+    {
+        app.actions.push(Action::Open(Page::Wrapped));
     }
     ui.add_space(10.0);
     ui.painter().hline(

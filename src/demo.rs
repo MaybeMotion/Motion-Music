@@ -1076,6 +1076,11 @@ fn demo_visualizer_mode(name: &str) -> Option<crate::settings::PlayerBarVis> {
         "ripples" => PlayerBarVis::Ripples,
         "lasers" => PlayerBarVis::Lasers,
         "fireworks" => PlayerBarVis::Fireworks,
+        "synthwave" => PlayerBarVis::Synthwave,
+        "terrain" => PlayerBarVis::Terrain,
+        "kaleidoscope" => PlayerBarVis::Kaleidoscope,
+        "lava" => PlayerBarVis::Lava,
+        "galaxy" => PlayerBarVis::Galaxy,
         _ => return None,
     })
 }
@@ -1557,6 +1562,27 @@ pub fn apply_flags(app: &mut App, page: Option<&str>, show: Option<&str>) {
                         ascending: false,
                     },
                 );
+            }
+            "visualiser-stage" => app.visualiser_stage = true,
+            "wrapped-stats" => {
+                // A few weeks of sample plays, favouring a handful of songs
+                // and the evening, for the My Wrapped page.
+                let tracks: Vec<_> = app
+                    .recents
+                    .items
+                    .iter()
+                    .map(|play| play.track.clone())
+                    .collect();
+                if !tracks.is_empty() {
+                    let now = jiff::Timestamp::now();
+                    for index in 0..90_usize {
+                        let track =
+                            tracks[(index * index + index / 3) % tracks.len().min(9)].clone();
+                        let at = now - jiff::SignedDuration::from_mins(index as i64 * 331);
+                        app.plays.record(track, at);
+                    }
+                }
+                app.open(Page::Wrapped);
             }
             "lyrics" | "lyrics-fullscreen" => {
                 app.lyrics_uri = app.now_playing().map(|now| now.uri);
@@ -2546,12 +2572,28 @@ mod tests {
             assert!(app.manual_queue.is_empty());
             assert_eq!(app.queue.get().unwrap().queue, rows[2..]);
             let tree = accessible_frame(&ctx, &mut app, vec![]);
-            let recent = accessible_node(&tree, &gettext(locale, "Recent"), Role::Button);
-            accessible_frame(
-                &ctx,
-                &mut app,
-                vec![accessible_action(recent, AccessibleAction::Click, None)],
-            );
+            // Some languages give the queue's Recent tab the same words as
+            // the library's Recently played order, so try each in turn.
+            let label = gettext(locale, "Recent");
+            let candidates: Vec<_> = tree
+                .nodes
+                .iter()
+                .filter(|(_, node)| {
+                    node.label() == Some(label.as_ref()) && node.role() == Role::Button
+                })
+                .map(|(id, _)| *id)
+                .collect();
+            assert!(!candidates.is_empty(), "missing {label:?}");
+            for recent in candidates {
+                accessible_frame(
+                    &ctx,
+                    &mut app,
+                    vec![accessible_action(recent, AccessibleAction::Click, None)],
+                );
+                if app.queue_tab == QueueTab::Recents {
+                    break;
+                }
+            }
             assert_eq!(app.queue_tab, QueueTab::Recents);
             let tree = accessible_frame(&ctx, &mut app, vec![]);
             let close = accessible_node(&tree, &gettext(locale, "Close"), Role::Button);

@@ -127,6 +127,8 @@ pub enum Page {
     Radio(String),
     Queue,
     Settings,
+    /// Listening stats from this computer's plays and Spotify's top lists.
+    Wrapped,
 }
 
 impl Page {
@@ -148,6 +150,7 @@ impl Page {
             Page::Radio(seed) => format!("radio:{seed}"),
             Page::Queue => "queue".into(),
             Page::Settings => "settings".into(),
+            Page::Wrapped => "wrapped".into(),
         }
     }
 
@@ -164,6 +167,7 @@ impl Page {
             "episodes" => Page::Episodes,
             "queue" => Page::Queue,
             "settings" => Page::Settings,
+            "wrapped" => Page::Wrapped,
             other => {
                 let (kind, id) = other.split_once(':')?;
                 match kind {
@@ -1276,6 +1280,8 @@ pub enum Action {
     StepTheme(bool),
     /// Apply a random Motion theme of the current light or dark appearance.
     SurpriseTheme,
+    /// Make a theme from the playing song's cover, save it and apply it.
+    ThemeFromCover,
     /// Draw the interface in this language from the next frame on.
     SetLanguage(crate::settings::LanguageChoice),
     OpenThemesFolder,
@@ -1331,6 +1337,11 @@ pub enum Action {
     CycleVisualiser,
     /// A click on the player bar's empty space: spectrum, waveform, off.
     CyclePlayerBarVis,
+    /// Open or close the full-window visualiser stage.
+    ToggleVisualiserStage,
+    /// Fade out and pause the music in this many minutes, or turn the
+    /// sleep timer off.
+    SetSleepTimer(Option<u32>),
     /// Set the visualizer mode directly.
     SetVisualiser(crate::settings::VisMode),
     /// Open or close the playlist window under the mini player.

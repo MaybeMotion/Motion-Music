@@ -2,7 +2,7 @@
 
 <h1 align="center">Motion Music</h1>
 
-<p align="center"><strong>Your music, in full colour.</strong><br>A native Spotify client with 212 curated themes and sixteen audio-reactive player-bar visualisers.</p>
+<p align="center"><strong>Your music, in full colour.</strong><br>A native Spotify client with 212 curated themes and twenty-one audio-reactive visualisers.</p>
 
 Motion Music is a personal customisation of [Spotifast](https://github.com/crmne/spotifast), built with Rust, egui, fastframe, and librespot. Original copyright, licence, and upstream credits are retained. Upstream documentation and release links describe Spotifast; official downloads do not include these customisations.
 
@@ -44,6 +44,14 @@ Point at a theme card and click its **heart** to keep it in **Favourites**, a ta
 **Colour from album art** lets covers tint the page and visualisers. Turn it off in Appearance for colours driven by your selected theme. **Visualizer colours** set to **Theme** keeps the visualiser in your theme's colours, including a gradient theme's three, while pages still follow the cover.
 
 Load your own JSON palettes through **Open themes folder**, choose separate custom themes for light and dark appearances, or use the existing shared desktop presets. See [custom theme format](docs/_reference/settings-and-files.md#custom-themes). The existing custom-file picker supports up to 128 valid palettes; the 212 built-in Motion themes are separate.
+
+## Fun extras
+
+- **Beat pulse** (Settings > Appearance): the play button and the top of the player bar flash softly on the beat, found in the bass of the same audio the visualisers use.
+- **Living gradients** (Settings > Appearance): a gradient theme's colours drift slowly while music plays and hold still while it is paused.
+- **Theme from this cover** (Settings > Appearance, or **Ctrl+Shift+T**): makes a dark theme from the playing song's cover, saves it in your themes folder as "Cover - album name" and uses it at once.
+- **My Wrapped** (in the sidebar under Search): minutes listened, plays, songs, artists and your longest daily streak, a chart of when you listen, your most played songs and artists from this computer's plays, and Spotify's own top artists, genres and songs. Nothing is sent anywhere.
+- **Sleep timer** (the clock button in the player bar): fades the music out over its last 45 seconds and pauses it after 5 to 90 minutes, then puts the volume back.
 
 ## Smooth motion
 
@@ -87,6 +95,13 @@ Open **Settings > Appearance > Player bar visualizer** and choose:
 | Ripple pool | Concentric ripples and bright droplets |
 | Laser fan | Crossing fans of spectral light beams |
 | Fireworks | Bursts of sparks with falling trails |
+| Synthwave sunset | A striped retro sun over spectrum mountains and a neon grid rushing towards you |
+| Sound terrain | The last second of music as glowing ridges receding into the distance |
+| Kaleidoscope | Three mirrored mandalas whose petals open with the spectrum |
+| Lava lamp | Soft glowing blobs drifting and merging like wax |
+| Galaxy | A spiral galaxy of stars around a core that flares with the bass |
+
+Press **Ctrl+Shift+V** for the **visualiser stage**: the chosen effect fills the whole window in full colour, with the playing song along the bottom. Click or press **Esc** to close it. With the player-bar visualiser off, the stage opens on the galaxy.
 
 Visualisation starts off, preserving existing preferences. Click empty space in the bar to cycle modes when **Click player bar to change visualizer** is enabled, or press **Ctrl+Shift+E** anywhere. All sixteen effects and the Winamp mini player's bars and scope react to Motion Music's own local playback, including supported local files.
 

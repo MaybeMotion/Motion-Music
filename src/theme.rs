@@ -7,7 +7,7 @@
 mod gradient;
 pub mod motion;
 mod presets;
-pub use gradient::paint_gradient;
+pub use gradient::{paint_gradient, paint_theme_gradient, set_living_phase};
 pub use presets::MotionTheme;
 
 use crate::i18n::{Locale, gettext};
@@ -77,6 +77,150 @@ impl Palette {
             )
         };
         Color32::from_rgb((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8)
+    }
+}
+
+/// A dark palette built from an album cover's colours: its most vivid colour
+/// becomes the accent and tints the surfaces, and its second hue washes the
+/// top of the page. `None` when the cover has no colour to work with.
+pub fn palette_from_cover(colours: &[[u8; 3]]) -> Option<Palette> {
+    // Perceptual brightness, so 0.1 really is a deep, dark shade.
+    use egui::ecolor::HsvaGamma as Hsva;
+    let from_srgb = |rgb: [u8; 3]| Hsva::from(Color32::from_rgb(rgb[0], rgb[1], rgb[2]));
+    let vivid = |rgb: &[u8; 3]| {
+        let colour = from_srgb(*rgb);
+        colour.s * colour.v
+    };
+    let mut ranked: Vec<_> = colours
+        .iter()
+        .filter(|rgb| crate::images::has_hue(**rgb))
+        .collect();
+    ranked.sort_by(|a, b| vivid(b).total_cmp(&vivid(a)));
+    let main = from_srgb(**ranked.first()?);
+    let other = ranked
+        .iter()
+        .map(|rgb| from_srgb(**rgb))
+        .find(|colour| hue_distance(colour.h, main.h) > 0.08)
+        .unwrap_or(main);
+    let hue = main.h;
+    let at = |s: f32, v: f32| {
+        Color32::from(Hsva {
+            h: hue,
+            s,
+            v,
+            a: 1.0,
+        })
+    };
+    let accent = Color32::from(Hsva {
+        h: hue,
+        s: main.s.max(0.55),
+        v: 0.92,
+        a: 1.0,
+    });
+    let accent_hover = Color32::from(Hsva {
+        h: hue,
+        s: main.s.max(0.5),
+        v: 1.0,
+        a: 1.0,
+    });
+    let light_accent = {
+        let [r, g, b, _] = accent.to_array();
+        0.299 * f32::from(r) + 0.587 * f32::from(g) + 0.114 * f32::from(b) > 150.0
+    };
+    let base = Palette::dark();
+    let wash = Color32::from(Hsva {
+        h: other.h,
+        s: other.s.max(0.5),
+        v: 0.55,
+        a: 1.0,
+    });
+    Some(Palette {
+        dark: true,
+        window: at(0.45, 0.10),
+        panel: at(0.5, 0.07),
+        surface: at(0.38, 0.16),
+        surface_hover: at(0.34, 0.21),
+        surface_active: at(0.3, 0.26),
+        outline: at(0.25, 0.3),
+        text: at(0.05, 0.96),
+        secondary: at(0.12, 0.72),
+        dim: at(0.12, 0.5),
+        accent,
+        accent_hover,
+        on_accent: if light_accent {
+            Color32::from_rgb(12, 12, 16)
+        } else {
+            Color32::WHITE
+        },
+        tint: Color32::from_rgba_unmultiplied(wash.r(), wash.g(), wash.b(), 0x38),
+        ..base
+    })
+}
+
+/// How far apart two hues are around the colour wheel, from 0 to 0.5.
+fn hue_distance(a: f32, b: f32) -> f32 {
+    let distance = (a - b).rem_euclid(1.0);
+    distance.min(1.0 - distance)
+}
+
+/// A palette as a palette file for the themes folder.
+pub fn palette_file(palette: &Palette) -> String {
+    let hex = |colour: Color32| {
+        let [r, g, b, a] = colour.to_srgba_unmultiplied();
+        if a == 255 {
+            format!("#{r:02x}{g:02x}{b:02x}")
+        } else {
+            format!("#{r:02x}{g:02x}{b:02x}{a:02x}")
+        }
+    };
+    let colours = [
+        ("window", palette.window),
+        ("panel", palette.panel),
+        ("surface", palette.surface),
+        ("surface_hover", palette.surface_hover),
+        ("surface_active", palette.surface_active),
+        ("outline", palette.outline),
+        ("text", palette.text),
+        ("secondary", palette.secondary),
+        ("dim", palette.dim),
+        ("accent", palette.accent),
+        ("accent_hover", palette.accent_hover),
+        ("on_accent", palette.on_accent),
+        ("tint", palette.tint),
+    ];
+    let mut text = format!(
+        "{{\n  \"base\": \"{}\",\n  \"colors\": {{\n",
+        if palette.dark { "dark" } else { "light" }
+    );
+    for (index, (name, colour)) in colours.iter().enumerate() {
+        let comma = if index + 1 < colours.len() { "," } else { "" };
+        text.push_str(&format!("    \"{name}\": \"{}\"{comma}\n", hex(*colour)));
+    }
+    text.push_str("  }\n}\n");
+    text
+}
+
+/// A safe theme filename for a cover's song or album name.
+pub fn cover_theme_filename(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || matches!(c, ' ' | '-' | '\'' | '&' | '(' | ')') {
+                c
+            } else {
+                ' '
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let cleaned: String = cleaned.chars().take(48).collect();
+    let cleaned = cleaned.trim();
+    if cleaned.is_empty() {
+        "Cover theme.json".to_owned()
+    } else {
+        format!("Cover - {cleaned}.json")
     }
 }
 
@@ -1295,5 +1439,73 @@ mod tests {
             5.0 + interval,
             "after a pause"
         );
+    }
+}
+
+#[cfg(test)]
+mod cover_theme_tests {
+    use super::*;
+
+    #[test]
+    fn a_cover_makes_a_readable_dark_theme_in_its_own_colour() {
+        let cover = [[200, 40, 60], [30, 30, 30], [40, 90, 200], [220, 210, 200]];
+        let palette = palette_from_cover(&cover).expect("a colourful cover");
+        assert!(palette.dark);
+        let hue = |colour: Color32| egui::ecolor::HsvaGamma::from(colour).h;
+        let red = egui::ecolor::HsvaGamma::from(Color32::from_rgb(200, 40, 60)).h;
+        assert!(
+            hue_distance(hue(palette.accent), red) < 0.02,
+            "the most vivid colour leads"
+        );
+        assert!(
+            hue_distance(hue(palette.window), red) < 0.05,
+            "and tints the surfaces"
+        );
+        let light = |colour: Color32| {
+            let [r, g, b, _] = colour.to_array();
+            0.299 * f32::from(r) + 0.587 * f32::from(g) + 0.114 * f32::from(b)
+        };
+        assert!(
+            light(palette.text) - light(palette.window) > 180.0,
+            "text stands out"
+        );
+        assert!(light(palette.window) < 40.0);
+        assert!(
+            palette.tint.a() > 0 && palette.tint.a() < 128,
+            "a soft wash of the second hue"
+        );
+        // A grey cover has no colour to build from.
+        assert_eq!(palette_from_cover(&[[30, 30, 30], [200, 200, 200]]), None);
+        assert_eq!(palette_from_cover(&[]), None);
+    }
+
+    #[test]
+    fn a_cover_theme_file_reads_back_as_the_same_palette() {
+        let palette = palette_from_cover(&[[40, 160, 120], [230, 120, 40]]).unwrap();
+        let text = palette_file(&palette);
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["base"], "dark");
+        let colours = value["colors"].as_object().unwrap();
+        for name in ["window", "panel", "surface", "text", "accent", "tint"] {
+            let hex = colours[name].as_str().unwrap();
+            assert!(
+                hex.starts_with('#') && (hex.len() == 7 || hex.len() == 9),
+                "{name}: {hex}"
+            );
+        }
+        let accent = colours["accent"].as_str().unwrap();
+        let [r, g, b, _] = palette.accent.to_array();
+        assert_eq!(accent, format!("#{r:02x}{g:02x}{b:02x}"));
+    }
+
+    #[test]
+    fn cover_theme_filenames_are_safe_and_short() {
+        assert_eq!(cover_theme_filename("Fragments"), "Cover - Fragments.json");
+        assert_eq!(
+            cover_theme_filename("AC/DC: Back in Black?"),
+            "Cover - AC DC Back in Black.json"
+        );
+        assert_eq!(cover_theme_filename("  :/\\*  "), "Cover theme.json");
+        assert!(cover_theme_filename(&"a".repeat(200)).len() <= "Cover - .json".len() + 48);
     }
 }
