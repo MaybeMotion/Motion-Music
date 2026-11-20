@@ -208,6 +208,11 @@ objc2-foundation = { version = "0.3", default-features = false, features = ["std
 [target.'cfg(windows)'.dependencies]
 # WASAPI output loopback for visualizers; reuses the existing patched audio crate.
 cpal = { version = "0.18", default-features = false }
+# Hearing one app (such as Soloist) alone for visualizers through Windows
+# process loopback, which cpal does not offer. The same windows and
+# windows-core versions cpal already builds, so nothing new is downloaded.
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Media_Audio", "Win32_Security", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading", "Win32_System_Variant"] }
+windows-core = "0.62"
 windows-native-keyring-store = { version = "1.1", default-features = false }
 # Message loops, the taskbar thumbnail buttons and window styles, and DPAPI
 # for the sealed copies of the grants (src/credentials.rs).

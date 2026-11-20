@@ -4164,6 +4164,8 @@ impl App {
 
     fn sync_desktop_audio(&mut self) {
         let wanted = self.desktop_visualizer_wanted();
+        self.desktop_audio
+            .set_player_only(self.settings.visualiser_audio == crate::settings::VisAudio::Player);
         self.desktop_audio.set_enabled(wanted);
     }
 
@@ -4183,6 +4185,11 @@ impl App {
     /// Short explanation shared by the output-audio badge and mini player.
     pub fn desktop_audio_hint(&self) -> String {
         use crate::desktop_audio::Status;
+        if let Some(player) = self.desktop_audio.player() {
+            return format!(
+                "Listening only to {player}. Visualisers react to its sound alone, not other apps. No microphone, recordings or uploads. This input follows {player}'s volume and EQ."
+            );
+        }
         let detail = match self.desktop_audio.status() {
             Status::Unavailable(error) => {
                 format!("Windows audio is unavailable: {error}")

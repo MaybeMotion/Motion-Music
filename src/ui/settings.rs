@@ -1389,6 +1389,13 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 "Change to a different visualizer for each song or every minute, fading softly from one to the next.",
             ),
         ),
+        RowText::new(
+            gettext(locale, "Visualizer listens to"),
+            gettext(
+                locale,
+                "On Windows, while another app such as Soloist plays the music, listen only to that player (Soloist, else the Spotify app) or to everything on this PC. Uses everything while neither is open.",
+            ),
+        ),
     ];
     let motion_themes_match = theme::MotionTheme::ALL
         .into_iter()
@@ -1788,6 +1795,19 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     &appearance_rows[22],
                     &shuffles,
                     &mut app.settings.visualiser_shuffle,
+                );
+                let sources: Vec<_> = crate::settings::VisAudio::ALL
+                    .into_iter()
+                    .map(|choice| (choice, choice.label(locale)))
+                    .collect();
+                changed |= choice_row(
+                    ui,
+                    &palette,
+                    &needle,
+                    &appearance,
+                    &appearance_rows[23],
+                    &sources,
+                    &mut app.settings.visualiser_audio,
                 );
             }
             {

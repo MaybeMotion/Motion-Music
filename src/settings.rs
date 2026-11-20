@@ -387,6 +387,31 @@ impl VisShuffle {
         }
     }
 }
+/// What the visualizers listen to on Windows while the music plays in
+/// another app on this PC, such as Soloist, rather than in Motion Music.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VisAudio {
+    /// Only the Spotify player app's own sound (Soloist, else the Spotify
+    /// app); everything on the PC while neither is open.
+    #[default]
+    Player,
+    /// Everything audible on the PC, as before this setting existed.
+    Everything,
+}
+
+impl VisAudio {
+    pub const ALL: [Self; 2] = [Self::Player, Self::Everything];
+
+    pub fn label(self, locale: crate::i18n::Locale) -> std::borrow::Cow<'static, str> {
+        use crate::i18n::gettext;
+        match self {
+            Self::Player => gettext(locale, "Spotify player only"),
+            Self::Everything => gettext(locale, "All PC audio"),
+        }
+    }
+}
+
 /// Where the player bar visualizer takes its colours from.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -671,6 +696,8 @@ pub struct Settings {
     pub box_shape: BoxShape,
     /// When the player bar visualizer changes to another by itself.
     pub visualiser_shuffle: VisShuffle,
+    /// What the visualizers listen to while another app plays the music.
+    pub visualiser_audio: VisAudio,
     /// Page reveal styles left out of the shuffle, by their saved name.
     /// Empty uses every style, as before this setting existed.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -879,6 +906,7 @@ impl Default for Settings {
             click_effect: ClickEffect::Ripple,
             box_shape: BoxShape::Rounded,
             visualiser_shuffle: VisShuffle::Off,
+            visualiser_audio: VisAudio::Player,
             visualizer_fps: crate::milkdrop::DEFAULT_FPS,
             discord_presence: false,
             discord_application_id: crate::discord_activity::DEFAULT_APPLICATION_ID.to_owned(),
@@ -2074,8 +2102,8 @@ mod tests {
     #[test]
     fn favourites_recents_and_motion_choices_default_empty_and_round_trip() {
         use super::{
-            BoxShape, ClickEffect, GradientDrift, PulseStrength, RECENT_THEMES, VisColours,
-            VisShuffle,
+            BoxShape, ClickEffect, GradientDrift, PulseStrength, RECENT_THEMES, VisAudio,
+            VisColours, VisShuffle,
         };
         use crate::theme::MotionTheme;
         let mut settings: Settings = serde_json::from_str("{}").unwrap();
@@ -2110,6 +2138,14 @@ mod tests {
         let json = serde_json::to_value(&more).unwrap();
         assert_eq!(json["visualiser_shuffle"], "song");
         assert_eq!(json["box_shape"], "leaf");
+        assert_eq!(settings.visualiser_audio, VisAudio::Player);
+        let everything: Settings =
+            serde_json::from_str(r#"{"visualiser_audio":"everything"}"#).unwrap();
+        assert_eq!(everything.visualiser_audio, VisAudio::Everything);
+        assert_eq!(
+            serde_json::to_value(&everything).unwrap()["visualiser_audio"],
+            "everything"
+        );
         // Each choice has its own name in the picker.
         for (index, effect) in ClickEffect::ALL.into_iter().enumerate() {
             assert!(

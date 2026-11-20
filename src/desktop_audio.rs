@@ -121,6 +121,10 @@ struct Shared {
     #[cfg(any(test, feature = "demo", windows))]
     sensitivity: Mutex<Sensitivity>,
     enabled: AtomicBool,
+    /// Listen only to the Spotify player app's own sound when one is open.
+    player_only: AtomicBool,
+    /// The player app being listened to alone, if any.
+    player: Mutex<Option<String>>,
     shutdown: AtomicBool,
     generation: AtomicU64,
     origin: Instant,
@@ -138,6 +142,8 @@ impl Default for Shared {
             #[cfg(any(test, feature = "demo", windows))]
             sensitivity: Mutex::new(Sensitivity::default()),
             enabled: AtomicBool::new(false),
+            player_only: AtomicBool::new(true),
+            player: Mutex::new(None),
             shutdown: AtomicBool::new(false),
             generation: AtomicU64::new(0),
             origin: Instant::now(),
@@ -324,6 +330,34 @@ impl DesktopAudio {
             .unwrap_or_else(|p| p.into_inner()) = Some(ctx);
     }
 
+    /// The player app heard alone right now, such as `soloist.exe`; `None`
+    /// while listening to everything on the PC.
+    pub fn player(&self) -> Option<String> {
+        if self.status() == Status::Listening {
+            self.shared
+                .player
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .clone()
+        } else {
+            None
+        }
+    }
+
+    /// Listen only to the Spotify player app (Soloist, else Spotify) while
+    /// one is open, or always to everything. A change reopens the capture.
+    pub fn set_player_only(&mut self, player_only: bool) {
+        let changed = self.shared.player_only.swap(player_only, Ordering::AcqRel) != player_only;
+        if changed && self.shared.enabled.load(Ordering::Acquire) {
+            self.shared.generation.fetch_add(1, Ordering::AcqRel);
+            self.shared.clear();
+            self.shared.set_status(Status::Starting);
+            if let Some(worker) = &self.worker {
+                worker.unpark();
+            }
+        }
+    }
+
     pub fn set_enabled(&mut self, enabled: bool) {
         let changed = self.shared.enabled.swap(enabled, Ordering::AcqRel) != enabled;
         if changed {
@@ -482,7 +516,13 @@ mod capture {
         at: Instant,
     }
 
+    /// After the player app cannot be heard alone (an older Windows, say),
+    /// listen to everything for this long before trying it again.
+    const PLAYER_RETRY: Duration = Duration::from_secs(30);
+
     pub(super) fn run(shared: Arc<Shared>) {
+        super::player::init_com();
+        let mut player_failed: Option<Instant> = None;
         while !shared.shutdown.load(Ordering::Acquire) {
             if !shared.enabled.load(Ordering::Acquire) {
                 shared.clear();
@@ -490,10 +530,33 @@ mod capture {
                 continue;
             }
             let generation = shared.generation.load(Ordering::Acquire);
+            let watch_player = shared.player_only.load(Ordering::Acquire)
+                && player_failed.is_none_or(|at| at.elapsed() >= PLAYER_RETRY);
+            if let Some((pid, name)) = watch_player.then(super::player::find).flatten() {
+                *shared.player.lock().unwrap_or_else(|p| p.into_inner()) = Some(name.clone());
+                let heard = super::player::session(pid, &name, &shared, generation);
+                *shared.player.lock().unwrap_or_else(|p| p.into_inner()) = None;
+                match heard {
+                    Ok(()) => player_failed = None,
+                    Err(error) => {
+                        // Fall back to everything on the PC rather than
+                        // leave the visualizers still.
+                        *shared
+                            .counters
+                            .endpoint
+                            .lock()
+                            .unwrap_or_else(|p| p.into_inner()) =
+                            Some(format!("{name} alone was unavailable: {error}"));
+                        player_failed = Some(Instant::now());
+                        shared.clear();
+                    }
+                }
+                continue;
+            }
             // Explicitly use WASAPI. Only its output endpoint is opened.
             let attempt = cpal::host_from_id(cpal::HostId::Wasapi)
                 .map_err(|error| format!("Windows audio is unavailable: {error}"))
-                .and_then(|host| session(&host, &shared, generation));
+                .and_then(|host| session(&host, &shared, generation, watch_player));
             match attempt {
                 Ok(()) => {}
                 Err(error) if shared.current(generation) => {
@@ -510,7 +573,14 @@ mod capture {
         shared.clear();
     }
 
-    fn session(host: &cpal::Host, shared: &Shared, generation: u64) -> Result<(), String> {
+    /// `watch_player` ends the session once the Spotify player app opens,
+    /// so the next one listens to it alone.
+    fn session(
+        host: &cpal::Host,
+        shared: &Shared,
+        generation: u64,
+        watch_player: bool,
+    ) -> Result<(), String> {
         let device = host
             .default_output_device()
             .ok_or("No default Windows output device is available.")?;
@@ -558,7 +628,9 @@ mod capture {
                 let current = host
                     .default_output_device()
                     .and_then(|device| device.id().ok());
-                if current.as_ref() != Some(&id) {
+                if current.as_ref() != Some(&id)
+                    || (watch_player && super::player::find().is_some())
+                {
                     shared.clear();
                     shared.set_status(Status::Starting);
                     return Ok(());
@@ -705,9 +777,327 @@ mod capture {
     }
 }
 
+/// The Spotify player app heard alone: Windows can record one program's
+/// sound (and its child processes') without the rest of the PC's.
+mod player {
+    /// Apps that play Spotify on this PC, most wanted first: Soloist, a
+    /// Spotify Connect speaker, then the Spotify app itself.
+    #[cfg(any(test, all(windows, not(feature = "demo"))))]
+    const PLAYERS: [&str; 2] = ["soloist.exe", "spotify.exe"];
+
+    /// The player to listen to among running processes, as
+    /// (id, parent id, executable name): the first of `PLAYERS` that runs,
+    /// taking the top of its process tree, since a child's sound is
+    /// included with its parent's.
+    #[cfg(any(test, all(windows, not(feature = "demo"))))]
+    pub(super) fn pick(processes: &[(u32, u32, String)]) -> Option<(u32, String)> {
+        PLAYERS.iter().find_map(|wanted| {
+            let named = |name: &str| name.eq_ignore_ascii_case(wanted);
+            processes
+                .iter()
+                .filter(|(_, _, name)| named(name))
+                .find(|(_, parent, _)| {
+                    !processes
+                        .iter()
+                        .any(|(pid, _, name)| pid == parent && named(name))
+                })
+                .map(|(pid, _, name)| (*pid, name.clone()))
+        })
+    }
+
+    #[cfg(all(windows, not(test), not(feature = "demo")))]
+    pub(super) use windows_capture::{find, init_com, session};
+
+    #[cfg(all(windows, not(test), not(feature = "demo")))]
+    mod windows_capture {
+        use super::super::{Shared, Status, StereoConverter};
+        use std::sync::atomic::Ordering;
+        use std::time::{Duration, Instant};
+        use windows::Win32::Foundation::{CloseHandle, HANDLE};
+        use windows::Win32::Media::Audio::{
+            AUDCLNT_BUFFERFLAGS_SILENT, AUDCLNT_SHAREMODE_SHARED,
+            AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM, AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
+            AUDCLNT_STREAMFLAGS_LOOPBACK, AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY,
+            AUDIOCLIENT_ACTIVATION_PARAMS, AUDIOCLIENT_ACTIVATION_PARAMS_0,
+            AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK, AUDIOCLIENT_PROCESS_LOOPBACK_PARAMS,
+            ActivateAudioInterfaceAsync, IActivateAudioInterfaceAsyncOperation,
+            IActivateAudioInterfaceCompletionHandler,
+            IActivateAudioInterfaceCompletionHandler_Impl, IAudioCaptureClient, IAudioClient,
+            PROCESS_LOOPBACK_MODE_INCLUDE_TARGET_PROCESS_TREE,
+            VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK, WAVEFORMATEX,
+        };
+        use windows::Win32::System::Com::StructuredStorage::PROPVARIANT;
+        use windows::Win32::System::Com::{BLOB, COINIT_MULTITHREADED, CoInitializeEx};
+        use windows::Win32::System::Diagnostics::ToolHelp::{
+            CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
+            TH32CS_SNAPPROCESS,
+        };
+        use windows::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
+        use windows::Win32::System::Variant::VT_BLOB;
+        use windows_core::{Interface, implement};
+
+        const RATE: u32 = 44_100;
+        const WAVE_FORMAT_IEEE_FLOAT: u16 = 3;
+        const POLL_MS: u32 = 40;
+
+        /// Process loopback activates through COM. The multithreaded
+        /// apartment suits a worker thread, and cpal accepts it too.
+        pub(in super::super) fn init_com() {
+            // SAFETY: called once at the start of the worker thread.
+            let _ = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
+        }
+
+        /// The running Spotify player app, if any.
+        pub(in super::super) fn find() -> Option<(u32, String)> {
+            let mut processes = Vec::new();
+            // SAFETY: a process snapshot, walked with a correctly sized
+            // entry and closed afterwards.
+            unsafe {
+                let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).ok()?;
+                let mut entry = PROCESSENTRY32W {
+                    dwSize: size_of::<PROCESSENTRY32W>() as u32,
+                    ..Default::default()
+                };
+                let mut more = Process32FirstW(snapshot, &mut entry).is_ok();
+                while more {
+                    let length = entry
+                        .szExeFile
+                        .iter()
+                        .position(|&unit| unit == 0)
+                        .unwrap_or(entry.szExeFile.len());
+                    processes.push((
+                        entry.th32ProcessID,
+                        entry.th32ParentProcessID,
+                        String::from_utf16_lossy(&entry.szExeFile[..length]),
+                    ));
+                    more = Process32NextW(snapshot, &mut entry).is_ok();
+                }
+                let _ = CloseHandle(snapshot);
+            }
+            super::pick(&processes)
+        }
+
+        #[implement(IActivateAudioInterfaceCompletionHandler)]
+        struct Activated(std::sync::mpsc::SyncSender<()>);
+
+        impl IActivateAudioInterfaceCompletionHandler_Impl for Activated_Impl {
+            fn ActivateCompleted(
+                &self,
+                _: windows_core::Ref<IActivateAudioInterfaceAsyncOperation>,
+            ) -> windows_core::Result<()> {
+                let _ = self.0.try_send(());
+                Ok(())
+            }
+        }
+
+        fn activate(pid: u32) -> Result<IAudioClient, String> {
+            let mut params = AUDIOCLIENT_ACTIVATION_PARAMS {
+                ActivationType: AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK,
+                Anonymous: AUDIOCLIENT_ACTIVATION_PARAMS_0 {
+                    ProcessLoopbackParams: AUDIOCLIENT_PROCESS_LOOPBACK_PARAMS {
+                        TargetProcessId: pid,
+                        ProcessLoopbackMode: PROCESS_LOOPBACK_MODE_INCLUDE_TARGET_PROCESS_TREE,
+                    },
+                },
+            };
+            let mut variant = std::mem::ManuallyDrop::new(PROPVARIANT::default());
+            // SAFETY: a VT_BLOB pointing at `params`, which outlives the
+            // activation below; the variant is never cleared, so Windows
+            // never frees memory it does not own.
+            unsafe {
+                let inner = &mut *variant.Anonymous.Anonymous;
+                inner.vt = VT_BLOB;
+                inner.Anonymous.blob = BLOB {
+                    cbSize: size_of::<AUDIOCLIENT_ACTIVATION_PARAMS>() as u32,
+                    pBlobData: (&raw mut params).cast(),
+                };
+            }
+            let (done, finished) = std::sync::mpsc::sync_channel(1);
+            let handler: IActivateAudioInterfaceCompletionHandler = Activated(done).into();
+            // SAFETY: valid interface id, parameters and handler.
+            let operation = unsafe {
+                ActivateAudioInterfaceAsync(
+                    VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK,
+                    &IAudioClient::IID,
+                    Some(&raw const *variant),
+                    &handler,
+                )
+            }
+            .map_err(|error| format!("Windows could not listen to one app: {error}"))?;
+            finished
+                .recv_timeout(Duration::from_secs(5))
+                .map_err(|_| "Windows took too long to listen to the app.".to_owned())?;
+            let mut result = windows_core::HRESULT(0);
+            let mut client = None;
+            // SAFETY: the operation has completed.
+            unsafe { operation.GetActivateResult(&mut result, &mut client) }
+                .map_err(|error| error.to_string())?;
+            result.ok().map_err(|error| error.to_string())?;
+            client
+                .ok_or("Windows gave no audio client.")?
+                .cast::<IAudioClient>()
+                .map_err(|error| error.to_string())
+        }
+
+        struct Event(HANDLE);
+
+        impl Drop for Event {
+            fn drop(&mut self) {
+                // SAFETY: the event was created by this session.
+                let _ = unsafe { CloseHandle(self.0) };
+            }
+        }
+
+        /// Hear `pid`'s process tree alone until the session ends, the
+        /// setting or generation changes, or the player closes.
+        pub(in super::super) fn session(
+            pid: u32,
+            name: &str,
+            shared: &Shared,
+            generation: u64,
+        ) -> Result<(), String> {
+            let client = activate(pid)?;
+            // Process loopback has no mix format of its own: ask for float
+            // stereo and let Windows convert.
+            let format = WAVEFORMATEX {
+                wFormatTag: WAVE_FORMAT_IEEE_FLOAT,
+                nChannels: 2,
+                nSamplesPerSec: RATE,
+                nAvgBytesPerSec: RATE * 8,
+                nBlockAlign: 8,
+                wBitsPerSample: 32,
+                cbSize: 0,
+            };
+            // SAFETY: COM calls on a freshly activated client with a valid
+            // format, an event this session owns, and buffers released
+            // after each read.
+            unsafe {
+                client
+                    .Initialize(
+                        AUDCLNT_SHAREMODE_SHARED,
+                        AUDCLNT_STREAMFLAGS_LOOPBACK
+                            | AUDCLNT_STREAMFLAGS_EVENTCALLBACK
+                            | AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM
+                            | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY,
+                        200_000,
+                        0,
+                        &format,
+                        None,
+                    )
+                    .map_err(|error| error.to_string())?;
+                let event = Event(
+                    CreateEventW(None, false, false, windows_core::PCWSTR::null())
+                        .map_err(|error| error.to_string())?,
+                );
+                client
+                    .SetEventHandle(event.0)
+                    .map_err(|error| error.to_string())?;
+                let capture: IAudioCaptureClient =
+                    client.GetService().map_err(|error| error.to_string())?;
+                if !shared.current(generation) {
+                    return Ok(());
+                }
+                client.Start().map_err(|error| error.to_string())?;
+                *shared
+                    .counters
+                    .endpoint
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner()) = Some(format!(
+                    "{name} (process {pid}) alone; {RATE} Hz; 2 channels; f32"
+                ));
+                shared.set_status(Status::Listening);
+                let mut converter = StereoConverter::new(RATE, 2);
+                let mut check_player = Instant::now() + Duration::from_secs(1);
+                let ended = loop {
+                    if !shared.current(generation) {
+                        break Ok(());
+                    }
+                    // Wakes on each packet, or after POLL_MS to notice
+                    // silence and changes.
+                    let _ = WaitForSingleObject(event.0, POLL_MS);
+                    let read = (|| -> windows_core::Result<()> {
+                        while capture.GetNextPacketSize()? > 0 {
+                            let mut data = std::ptr::null_mut();
+                            let mut frames = 0;
+                            let mut flags = 0;
+                            capture.GetBuffer(&mut data, &mut frames, &mut flags, None, None)?;
+                            let count = frames as usize * 2;
+                            let silent = flags & AUDCLNT_BUFFERFLAGS_SILENT.0 as u32 != 0;
+                            let samples = if silent || data.is_null() {
+                                vec![0.0_f32; count]
+                            } else {
+                                std::slice::from_raw_parts(data.cast::<f32>(), count).to_vec()
+                            };
+                            capture.ReleaseBuffer(frames)?;
+                            let counters = &shared.counters;
+                            let peak = samples
+                                .iter()
+                                .filter(|sample| sample.is_finite())
+                                .fold(0.0_f32, |peak, sample| peak.max(sample.abs()));
+                            counters
+                                .raw_peak
+                                .fetch_max(u64::from(peak.to_bits()), Ordering::Relaxed);
+                            counters.callbacks.fetch_add(1, Ordering::Relaxed);
+                            counters
+                                .callback_samples
+                                .fetch_add(count as u64, Ordering::Relaxed);
+                            counters.received_blocks.fetch_add(1, Ordering::Relaxed);
+                            let at = Instant::now();
+                            let stereo = converter.process(&samples);
+                            if !stereo.is_empty() {
+                                shared.accept_at(&stereo, at, at, generation);
+                            }
+                        }
+                        Ok(())
+                    })();
+                    if let Err(error) = read {
+                        break Err(format!("Listening to {name} stopped: {error}"));
+                    }
+                    let now = Instant::now();
+                    shared.expire_at(now);
+                    if now >= check_player {
+                        // The player closed, or another took its place.
+                        if find().map(|(found, _)| found) != Some(pid) {
+                            shared.set_status(Status::Starting);
+                            break Ok(());
+                        }
+                        check_player = now + Duration::from_secs(1);
+                    }
+                };
+                let _ = client.Stop();
+                shared.clear();
+                ended
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn soloist_is_heard_before_the_spotify_app_and_at_the_top_of_its_tree() {
+        let process = |pid, parent, name: &str| (pid, parent, name.to_owned());
+        let running = [
+            process(4, 0, "System"),
+            process(20, 10, "Spotify.exe"),
+            process(10, 1, "Spotify.exe"),
+            process(30, 10, "Spotify.exe"),
+        ];
+        assert_eq!(
+            player::pick(&running),
+            Some((10, "Spotify.exe".to_owned())),
+            "the Spotify app's main process, whose children are included"
+        );
+        let mut with_soloist = running.to_vec();
+        with_soloist.push(process(50, 1, "soloist.exe"));
+        assert_eq!(
+            player::pick(&with_soloist),
+            Some((50, "soloist.exe".to_owned()))
+        );
+        assert_eq!(player::pick(&[process(4, 0, "System")]), None);
+    }
 
     fn quiet_tone(frames: usize, amplitude: f64) -> Vec<f64> {
         (0..frames)
