@@ -1062,30 +1062,24 @@ fn demo_visualizer_mode(name: &str) -> Option<crate::settings::PlayerBarVis> {
     Some(match name {
         "spectrum" => PlayerBarVis::Spectrum,
         "waveform" => PlayerBarVis::Waveform,
-        "aurora" => PlayerBarVis::Aurora,
-        "radial" => PlayerBarVis::Radial,
-        "orbit" => PlayerBarVis::Orbit,
-        "embers" => PlayerBarVis::Embers,
         "mirror" => PlayerBarVis::Mirror,
-        "tunnel" => PlayerBarVis::Tunnel,
         "waterfall" => PlayerBarVis::Waterfall,
         "prism" => PlayerBarVis::Prism,
         "helix" => PlayerBarVis::Helix,
-        "starfield" => PlayerBarVis::Starfield,
-        "plasma" => PlayerBarVis::Plasma,
-        "ripples" => PlayerBarVis::Ripples,
-        "lasers" => PlayerBarVis::Lasers,
-        "fireworks" => PlayerBarVis::Fireworks,
         "synthwave" => PlayerBarVis::Synthwave,
         "terrain" => PlayerBarVis::Terrain,
-        "kaleidoscope" => PlayerBarVis::Kaleidoscope,
         "lava" => PlayerBarVis::Lava,
         "galaxy" => PlayerBarVis::Galaxy,
         "matrix" => PlayerBarVis::Matrix,
         "spectrogram" => PlayerBarVis::Spectrogram,
         "orb" => PlayerBarVis::Orb,
-        "rose" => PlayerBarVis::Rose,
         "bubbles" => PlayerBarVis::Bubbles,
+        "skyline" => PlayerBarVis::Skyline,
+        "ocean" => PlayerBarVis::Ocean,
+        "led" => PlayerBarVis::Led,
+        "fireflies" => PlayerBarVis::Fireflies,
+        "heartbeat" => PlayerBarVis::Heartbeat,
+        "circuit" => PlayerBarVis::Circuit,
         _ => return None,
     })
 }
@@ -8399,7 +8393,7 @@ mod tests {
                 // Draw the full Settings page, including MilkDrop.
                 screen_rect: Some(egui::Rect::from_min_size(
                     egui::Pos2::ZERO,
-                    egui::vec2(1280.0, 4600.0),
+                    egui::vec2(1280.0, 5400.0),
                 )),
                 ..Default::default()
             };

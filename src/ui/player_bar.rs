@@ -11,6 +11,9 @@ use crate::util;
 
 use super::widgets::{SliderEvent, thin_slider};
 
+mod scenes;
+use scenes::{circuit, fireflies, heartbeat, led_meter, ocean, skyline};
+
 /// How much of the playing art's tint the bar's fill carries.
 const TINT_STRENGTH: f32 = 0.12;
 /// How long the bar takes to cross over to a new song's tint.
@@ -96,20 +99,13 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             }
             let pulse = beat_pulse(app, ui, now.as_ref());
             if pulse > 0.01 {
-                // A soft flash along the top edge of the bar.
-                let mut glow = egui::Mesh::default();
-                let accent = palette.accent.gamma_multiply(0.85 * pulse);
-                let top = rect.top();
-                glow.colored_vertex(pos2(behind.left(), top), accent);
-                glow.colored_vertex(pos2(behind.right(), top), accent);
-                glow.colored_vertex(pos2(behind.right(), top + 30.0), Color32::TRANSPARENT);
-                glow.colored_vertex(pos2(behind.left(), top + 30.0), Color32::TRANSPARENT);
-                // The whole bar warms with each beat as well.
-                ui.painter()
-                    .rect_filled(behind, 0, palette.accent.gamma_multiply(0.1 * pulse));
-                glow.add_triangle(0, 1, 2);
-                glow.add_triangle(0, 2, 3);
-                ui.painter().add(egui::Shape::mesh(glow));
+                paint_pulse_glow(
+                    ui.painter(),
+                    behind,
+                    rect.top(),
+                    palette.accent,
+                    pulse * app.settings.beat_pulse_strength.amount(),
+                );
             }
             desktop_audio_badge(app, ui, behind);
             ui.painter().hline(
@@ -145,6 +141,33 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         });
 }
 
+/// A soft glow falling from the top edge of the bar, `amount` (0 to 1) of
+/// its full brightness. It fades out smoothly down the bar, so even at full
+/// strength there is no hard edge to flash.
+fn paint_pulse_glow(painter: &egui::Painter, behind: Rect, top: f32, accent: Color32, amount: f32) {
+    let mut glow = egui::Mesh::default();
+    // Three bands, each fainter, so the light thins out gradually.
+    let stops = [(0.0, 0.55), (8.0, 0.3), (20.0, 0.1), (34.0, 0.0)];
+    for pair in stops.windows(2) {
+        let ((from, high), (to, low)) = (pair[0], pair[1]);
+        shaded(
+            &mut glow,
+            Rect::from_min_max(
+                pos2(behind.left(), top + from),
+                pos2(behind.right(), top + to),
+            ),
+            accent.gamma_multiply(high * amount),
+            accent.gamma_multiply(low * amount),
+        );
+    }
+    painter.add(egui::Shape::mesh(glow));
+    // At Strong the whole bar warms a touch with each beat as well.
+    let wash = ((amount - 0.6) / 0.4).clamp(0.0, 1.0) * 0.06 * amount;
+    if wash > 0.0 {
+        painter.rect_filled(behind, 0, accent.gamma_multiply(wash));
+    }
+}
+
 /// Reads this frame's audio for beats when the beat pulse is on, and keeps
 /// frames coming while there is sound. Answers the pulse's height now.
 fn beat_pulse(app: &mut App, ui: &egui::Ui, now: Option<&NowPlaying>) -> f32 {
@@ -152,15 +175,20 @@ fn beat_pulse(app: &mut App, ui: &egui::Ui, now: Option<&NowPlaying>) -> f32 {
         return 0.0;
     }
     let time = ui.input(|input| input.time);
-    match app.visualizer_samples(now, crate::vis::WIDE_SAMPLES) {
+    // A beat starts at nothing and eases in, so its first frame asks for
+    // the next even before there is anything to see.
+    let started = match app.visualizer_samples(now, crate::vis::WIDE_SAMPLES) {
         Some(samples) => {
-            app.beat.step(&samples, time);
             theme::visualiser_frame(ui.ctx(), app.visualiser_fps());
+            app.beat.step(&samples, time)
         }
-        None => app.beat.reset(),
-    }
+        None => {
+            app.beat.reset();
+            false
+        }
+    };
     let pulse = app.beat.pulse(time);
-    if pulse > 0.01 {
+    if started || pulse > 0.01 {
         ui.ctx().request_repaint();
     }
     if crate::motion::reduced(ui.ctx()) {
@@ -350,8 +378,9 @@ pub fn stage(app: &mut App, ctx: &egui::Context) {
             let painter = ui.painter();
             painter.rect_filled(rect, 0, Color32::from_rgb(6, 6, 12));
             if app.settings.beat_pulse && !crate::motion::reduced(ui.ctx()) {
-                let pulse = app.beat.pulse(ui.input(|input| input.time));
-                painter.rect_filled(rect, 0, app.palette.accent.gamma_multiply(0.08 * pulse));
+                let pulse = app.beat.pulse(ui.input(|input| input.time))
+                    * app.settings.beat_pulse_strength.amount();
+                painter.rect_filled(rect, 0, app.palette.accent.gamma_multiply(0.05 * pulse));
             }
             if let Some(stops) = app.background_gradient() {
                 let stops = stops.map(|stop| stop.gamma_multiply(0.18));
@@ -615,29 +644,23 @@ fn spectrum_effect(
         return;
     }
     match mode {
-        PlayerBarVis::Aurora => aurora(painter, rect, levels, colours, strength, time),
-        PlayerBarVis::Radial => radial(painter, rect, levels, colours, strength, time),
-        PlayerBarVis::Orbit => orbit(painter, rect, levels, colours, strength, time),
-        PlayerBarVis::Embers => embers(painter, rect, levels, colours, strength, time),
-        PlayerBarVis::Tunnel => tunnel(painter, rect, levels, colours, strength, time),
         PlayerBarVis::Waterfall => waterfall(painter, rect, levels, colours, strength, time),
         PlayerBarVis::Prism => prism(painter, rect, levels, colours, strength, time),
         PlayerBarVis::Helix => helix(painter, rect, levels, colours, strength, time),
-        PlayerBarVis::Starfield => starfield(painter, rect, levels, colours, strength, time),
-        PlayerBarVis::Plasma => plasma(painter, rect, levels, colours, strength, time),
-        PlayerBarVis::Ripples => ripples(painter, rect, levels, colours, strength, time),
-        PlayerBarVis::Lasers => lasers(painter, rect, levels, colours, strength, time),
-        PlayerBarVis::Fireworks => fireworks(painter, rect, levels, colours, strength, time),
         PlayerBarVis::Synthwave => synthwave(painter, rect, levels, colours, strength, time),
         PlayerBarVis::Terrain => terrain(painter, rect, levels, colours, strength, time),
-        PlayerBarVis::Kaleidoscope => kaleidoscope(painter, rect, levels, colours, strength, time),
         PlayerBarVis::Lava => lava(painter, rect, levels, colours, strength, time),
         PlayerBarVis::Galaxy => galaxy(painter, rect, levels, colours, strength, time),
         PlayerBarVis::Matrix => matrix(painter, rect, levels, colours, strength, time),
         PlayerBarVis::Spectrogram => spectrogram(painter, rect, levels, colours, strength, time),
         PlayerBarVis::Orb => orb(painter, rect, levels, colours, strength, time),
-        PlayerBarVis::Rose => rose(painter, rect, levels, colours, strength, time),
         PlayerBarVis::Bubbles => bubbles(painter, rect, levels, colours, strength, time),
+        PlayerBarVis::Skyline => skyline(painter, rect, levels, colours, strength, time),
+        PlayerBarVis::Ocean => ocean(painter, rect, levels, colours, strength, time),
+        PlayerBarVis::Led => led_meter(painter, rect, levels, colours, strength, time),
+        PlayerBarVis::Fireflies => fireflies(painter, rect, levels, colours, strength, time),
+        PlayerBarVis::Heartbeat => heartbeat(painter, rect, levels, colours, strength, time),
+        PlayerBarVis::Circuit => circuit(painter, rect, levels, colours, strength, time),
         _ => {}
     }
 }
@@ -825,57 +848,6 @@ fn terrain(
         ));
     }
     painter.ctx().data_mut(|data| data.insert_temp(id, history));
-}
-
-/// Three mirrored mandalas whose petals open with their own part of the
-/// spectrum and slowly turn.
-fn kaleidoscope(
-    painter: &egui::Painter,
-    rect: Rect,
-    levels: &[f32],
-    colours: &[Color32],
-    strength: f32,
-    time: f32,
-) {
-    use std::f32::consts::TAU;
-    let energy = scene_energy(levels);
-    let segments = 12;
-    for (place, size) in [(0.5, 1.0), (0.17, 0.72), (0.83, 0.72)] {
-        let centre = pos2(rect.left() + rect.width() * place, rect.center().y);
-        let reach = rect.height() * 0.44 * size;
-        let turn = time * 0.25 * if place < 0.5 { -1.0 } else { 1.0 };
-        for ring in 0..5 {
-            let at = (ring as f32 + 0.5) / 5.0;
-            let level = scene_band(levels, (at + place * 0.3).fract(), energy);
-            let colour = swept(colours, at).gamma_multiply(strength * (0.12 + level * 0.5));
-            let inner = reach * (0.12 + at * 0.55);
-            let outer = inner + reach * (0.1 + level * 0.35);
-            let mut mesh = egui::Mesh::default();
-            for segment in 0..segments {
-                let mid = segment as f32 / segments as f32 * TAU + turn + ring as f32 * 0.4;
-                // Each petal and its mirror image share one wedge.
-                for side in [-1.0, 1.0] {
-                    let spread = side * TAU / segments as f32 * (0.18 + level * 0.3);
-                    let points = [
-                        centre + Vec2::angled(mid) * inner,
-                        centre + Vec2::angled(mid + spread) * (inner + outer) * 0.5,
-                        centre + Vec2::angled(mid) * outer,
-                    ];
-                    let base = mesh.vertices.len() as u32;
-                    mesh.colored_vertex(points[0], colour.gamma_multiply(0.4));
-                    mesh.colored_vertex(points[1], colour);
-                    mesh.colored_vertex(points[2], colour.gamma_multiply(0.2));
-                    mesh.add_triangle(base, base + 1, base + 2);
-                }
-            }
-            painter.add(egui::Shape::mesh(mesh));
-        }
-        painter.circle_filled(
-            centre,
-            reach * (0.08 + bass_level(levels) * 0.12),
-            swept(colours, 0.0).gamma_multiply(0.5 * strength * energy),
-        );
-    }
 }
 
 /// Soft glowing blobs drift up and down like wax in a lava lamp, swelling
@@ -1128,45 +1100,6 @@ fn orb(
     );
 }
 
-/// Layered rose curves: each petal reaches out with its part of the spectrum
-/// while the flowers turn, three across the bar.
-fn rose(
-    painter: &egui::Painter,
-    rect: Rect,
-    levels: &[f32],
-    colours: &[Color32],
-    strength: f32,
-    time: f32,
-) {
-    use std::f32::consts::TAU;
-    let energy = scene_energy(levels);
-    for (place, petals, turn) in [(0.17, 5.0, 1.0), (0.5, 7.0, -1.0), (0.83, 4.0, 1.0)] {
-        let centre = pos2(rect.left() + rect.width() * place, rect.center().y);
-        let reach = rect.height() * 0.44;
-        for layer in 0..3 {
-            let layer = layer as f32;
-            let at = (place + layer * 0.21).fract();
-            let points: Vec<_> = (0..=200)
-                .map(|step| {
-                    let angle = step as f32 / 200.0 * TAU;
-                    let band = level_at(levels, (step as f32 / 200.0 + layer * 0.3).fract());
-                    let petal = ((petals + layer) * angle / 2.0).cos().abs();
-                    let r =
-                        reach * (0.25 + 0.75 * petal) * (0.55 + 0.45 * band) * (1.0 - layer * 0.18);
-                    let spun = angle + time * 0.3 * turn + layer;
-                    centre + vec2(spun.cos(), spun.sin()) * r
-                })
-                .collect();
-            neon_line(
-                painter,
-                points,
-                swept(colours, at),
-                0.65 * strength * energy,
-            );
-        }
-    }
-}
-
 /// Bubbles rise from the bottom of the bar, swelling with their part of the
 /// spectrum and fading as they reach the top.
 fn bubbles(
@@ -1284,188 +1217,6 @@ fn neon_line(painter: &egui::Painter, points: Vec<egui::Pos2>, colour: Color32, 
         points,
         egui::Stroke::new(1.25, colour.gamma_multiply(alpha)),
     ));
-}
-
-/// Four translucent curtains, with their contours lifted by different bands.
-fn aurora(
-    painter: &egui::Painter,
-    rect: Rect,
-    levels: &[f32],
-    colours: &[Color32],
-    strength: f32,
-    time: f32,
-) {
-    let energy = mean_level(levels);
-    for layer in 0..4 {
-        let lane = layer as f32;
-        let colour = swept(colours, lane / 3.0);
-        let mut mesh = egui::Mesh::default();
-        let mut edge = Vec::with_capacity(65);
-        for index in 0..=64 {
-            let at = index as f32 / 64.0;
-            let band = level_at(levels, (at + lane * 0.17).fract());
-            let bend = (at * std::f32::consts::TAU * (1.0 + lane * 0.22)
-                + time * (0.35 + lane * 0.11)
-                + lane)
-                .sin();
-            let y = rect.center().y
-                + bend * rect.height() * (0.07 + energy * 0.16)
-                + (lane - 1.5) * rect.height() * 0.08;
-            let reach = rect.height() * (0.05 + band * 0.22) * energy.sqrt();
-            let top = pos2(rect.left() + at * rect.width(), y - reach);
-            let bottom = pos2(top.x, y + reach);
-            edge.push(top);
-            let base = mesh.vertices.len() as u32;
-            mesh.colored_vertex(top, colour.gamma_multiply(0.28 * strength * energy));
-            mesh.colored_vertex(bottom, Color32::TRANSPARENT);
-            if index > 0 {
-                mesh.add_triangle(base - 2, base, base + 1);
-                mesh.add_triangle(base - 2, base + 1, base - 1);
-            }
-        }
-        painter.add(egui::Shape::mesh(mesh));
-        neon_line(painter, edge, colour, 0.42 * strength * energy);
-    }
-}
-
-/// Three halos whose individual rays follow the spectrum from bass to treble.
-fn radial(
-    painter: &egui::Painter,
-    rect: Rect,
-    levels: &[f32],
-    colours: &[Color32],
-    strength: f32,
-    time: f32,
-) {
-    let energy = mean_level(levels);
-    for halo in 0..3 {
-        let center = pos2(
-            rect.left() + rect.width() * (halo as f32 + 0.5) / 3.0,
-            rect.center().y,
-        );
-        let radius = rect.height() * (0.14 + energy * 0.04);
-        for (index, level) in levels.iter().enumerate() {
-            let at = index as f32 / levels.len() as f32;
-            let angle = at * std::f32::consts::TAU + time * 0.12 * (halo as f32 - 1.0);
-            let direction = vec2(angle.cos(), angle.sin());
-            let ray = [
-                center + direction * radius,
-                center + direction * (radius + level * rect.height() * 0.27),
-            ];
-            let colour =
-                swept(colours, at).gamma_multiply(strength * (0.12 + level * 0.48) * energy.sqrt());
-            painter.line_segment(ray, egui::Stroke::new(5.0, colour.gamma_multiply(0.12)));
-            painter.line_segment(ray, egui::Stroke::new(1.4, colour));
-        }
-    }
-}
-
-/// Elliptical neon tracks with travelling satellites and fading comet tails.
-fn orbit(
-    painter: &egui::Painter,
-    rect: Rect,
-    levels: &[f32],
-    colours: &[Color32],
-    strength: f32,
-    time: f32,
-) {
-    let energy = mean_level(levels);
-    for ring in 0..5 {
-        let at = ring as f32 / 4.0;
-        let band = level_at(levels, at);
-        let radius = vec2(
-            rect.width() * (0.12 + at * 0.34),
-            rect.height() * (0.10 + at * 0.28),
-        ) * (0.8 + band * 0.2);
-        let colour = swept(colours, at);
-        let point =
-            |angle: f32| rect.center() + vec2(angle.cos() * radius.x, angle.sin() * radius.y);
-        let track = (0..=64)
-            .map(|index| point(index as f32 / 64.0 * std::f32::consts::TAU))
-            .collect();
-        painter.add(egui::Shape::line(
-            track,
-            egui::Stroke::new(1.0, colour.gamma_multiply(0.16 * energy * strength)),
-        ));
-        let angle = time * (0.5 + at * 0.6) + at * 4.0;
-        for trail in 0..14 {
-            let fade = 1.0 - trail as f32 / 14.0;
-            let head = point(angle - trail as f32 * 0.07);
-            painter.circle_filled(
-                head,
-                (1.2 + band * 2.3) * fade,
-                colour.gamma_multiply(0.65 * fade * energy * strength),
-            );
-        }
-    }
-}
-
-/// Deterministic particles, each driven by a frequency band. No random state
-/// or growing particle list is kept between frames.
-fn embers(
-    painter: &egui::Painter,
-    rect: Rect,
-    levels: &[f32],
-    colours: &[Color32],
-    strength: f32,
-    time: f32,
-) {
-    let energy = mean_level(levels);
-    for index in 0..64 {
-        let seed = index as f32;
-        let at = (seed * 0.618_034).fract();
-        let level = level_at(levels, at);
-        let rise = (seed * 0.381_966 + time * (0.025 + at * 0.04)).fract();
-        let drift = (time * 0.35 + seed * 2.4).sin() * rect.width() * 0.012 * level;
-        let head = pos2(
-            rect.left() + at * rect.width() + drift,
-            rect.bottom() - rise * rect.height(),
-        );
-        let fade = (std::f32::consts::PI * rise).sin() * energy.sqrt();
-        let colour = swept(colours, at).gamma_multiply(strength * fade * (0.2 + level * 0.6));
-        let radius = 0.7 + level * 2.4;
-        painter.line_segment(
-            [head + vec2(0.0, 3.0 + level * 7.0), head],
-            egui::Stroke::new(1.0, colour.gamma_multiply(0.35)),
-        );
-        painter.circle_filled(head, radius * 2.8, colour.gamma_multiply(0.1));
-        painter.circle_filled(head, radius, colour);
-    }
-}
-
-/// Concentric rings expand from a vanishing point, with bass controlling
-/// the opening and the upper bands putting ripples around each ring.
-fn tunnel(
-    painter: &egui::Painter,
-    rect: Rect,
-    levels: &[f32],
-    colours: &[Color32],
-    strength: f32,
-    time: f32,
-) {
-    let energy = mean_level(levels);
-    let bass = mean_level(&levels[..levels.len().min(8)]);
-    for ring in 0..10 {
-        let depth = (ring as f32 / 10.0 + time * 0.065).fract();
-        let radius = vec2(rect.width() * 0.53, rect.height() * 0.48)
-            * depth.powf(1.6)
-            * (0.88 + bass * 0.12);
-        let points = (0..=64)
-            .map(|index| {
-                let at = index as f32 / 64.0;
-                let angle = at * std::f32::consts::TAU;
-                let ripple = 1.0 + level_at(levels, at) * 0.12 * (angle * 6.0 + time).sin();
-                rect.center() + vec2(angle.cos() * radius.x, angle.sin() * radius.y) * ripple
-            })
-            .collect();
-        let fade = (std::f32::consts::PI * depth).sin();
-        neon_line(
-            painter,
-            points,
-            swept(colours, depth),
-            0.48 * strength * energy * fade,
-        );
-    }
 }
 
 /// A narrow musical peak should light a scene without needing every FFT
@@ -1650,237 +1401,6 @@ fn helix(
             colour,
             0.80 * strength * energy,
         );
-    }
-}
-
-/// Stars accelerate out of a central vanishing point, stretching into
-/// short light trails as their frequency band gets louder.
-fn starfield(
-    painter: &egui::Painter,
-    rect: Rect,
-    levels: &[f32],
-    colours: &[Color32],
-    strength: f32,
-    time: f32,
-) {
-    let energy = scene_energy(levels);
-    // Stratify depth independently of direction. Using the same golden
-    // fraction for both bunches the outer stars on one side of the bar.
-    for star in 0..96 {
-        let seed = star as f32;
-        let at = (seed * 0.618_034).fract();
-        let band = scene_band(levels, at, energy);
-        let depth = ((star / 16) as f32 / 6.0 + time * (0.12 + band * 0.09)).fract();
-        let angle = (star % 16) as f32 / 16.0 * std::f32::consts::TAU + (seed * 1.3).sin() * 0.08;
-        let direction = vec2(
-            angle.cos() * rect.width() * 0.48,
-            angle.sin() * rect.height() * 0.43,
-        );
-        let head = rect.center() + direction * depth.powi(2);
-        let tail = rect.center() + direction * (depth - 0.045 - band * 0.13).max(0.0).powi(2);
-        let fade = depth * (1.0 - depth).sqrt() * 2.6 * energy;
-        let colour = swept(colours, at).gamma_multiply(strength * fade * (0.65 + band * 0.35));
-        painter.line_segment(
-            [tail, head],
-            egui::Stroke::new(4.5, colour.gamma_multiply(0.14)),
-        );
-        painter.line_segment([tail, head], egui::Stroke::new(1.3 + band * 1.5, colour));
-        let radius = 1.0 + band * depth * 2.1;
-        painter.circle_filled(head, radius * 2.5, colour.gamma_multiply(0.12));
-        painter.circle_filled(head, radius, colour);
-    }
-}
-
-/// A smooth low-resolution interference field, built as one coloured mesh.
-/// Audio bends the field and changes its light, rather than just its speed.
-fn plasma(
-    painter: &egui::Painter,
-    rect: Rect,
-    levels: &[f32],
-    colours: &[Color32],
-    strength: f32,
-    time: f32,
-) {
-    const COLUMNS: usize = 48;
-    const ROWS: usize = 8;
-    let energy = scene_energy(levels);
-    let bass = mean_level(&levels[..levels.len().min(8)]);
-    let mut mesh = egui::Mesh::default();
-    for row in 0..=ROWS {
-        for column in 0..=COLUMNS {
-            let x = column as f32 / COLUMNS as f32;
-            let y = row as f32 / ROWS as f32;
-            let band = level_at(levels, x);
-            let radius = ((x - 0.5).powi(2) * 5.0 + (y - 0.5).powi(2)).sqrt();
-            let field = ((x * 12.0 + time * 0.45 + band * 3.0).sin()
-                + (y * 5.0 - time * 0.6 + bass * 2.0).sin()
-                + (radius * 15.0 - time * 0.8).cos())
-                / 3.0;
-            let light = field * 0.5 + 0.5;
-            let ridge = (1.0 - (light - 0.5).abs() * 12.0).max(0.0);
-            let colour = swept(colours, (x * 0.45 + light * 0.55).clamp(0.0, 1.0)).gamma_multiply(
-                (strength * energy * (0.07 + light.powi(2) * 0.40 + ridge * 0.18)).min(0.55),
-            );
-            mesh.colored_vertex(
-                pos2(
-                    rect.left() + x * rect.width(),
-                    rect.top() + y * rect.height(),
-                ),
-                colour,
-            );
-            if row > 0 && column > 0 {
-                let current = (row * (COLUMNS + 1) + column) as u32;
-                let above = current - (COLUMNS + 1) as u32;
-                mesh.add_triangle(above - 1, above, current);
-                mesh.add_triangle(above - 1, current, current - 1);
-            }
-        }
-    }
-    painter.add(egui::Shape::mesh(mesh));
-}
-
-/// Four separate pools of concentric ripples, with small bright droplets.
-/// Different bands drive each pool so percussion scatters across the bar.
-fn ripples(
-    painter: &egui::Painter,
-    rect: Rect,
-    levels: &[f32],
-    colours: &[Color32],
-    strength: f32,
-    time: f32,
-) {
-    let energy = scene_energy(levels);
-    for pool in 0..4 {
-        let at = pool as f32 / 3.0;
-        let band = scene_band(levels, at, energy);
-        let center = pos2(
-            rect.left() + rect.width() * (0.18 + at * 0.64),
-            rect.center().y + (pool as f32 * 2.1).sin() * rect.height() * 0.12,
-        );
-        for ring in 0..5 {
-            let depth = (ring as f32 / 5.0 + time * 0.18 + at * 0.31).fract();
-            let radius =
-                vec2(rect.width() * 0.155, rect.height() * 0.23) * depth * (0.7 + band * 0.3);
-            // A just-born ring is a droplet, not a zero-length stroked path.
-            if radius.y < 0.5 {
-                continue;
-            }
-            let points = (0..=40)
-                .map(|index| {
-                    let angle = index as f32 / 40.0 * std::f32::consts::TAU;
-                    center + vec2(angle.cos() * radius.x, angle.sin() * radius.y)
-                })
-                .collect();
-            let fade = (1.0 - depth).sqrt() * (0.25 + depth * 0.75);
-            scene_neon_line(
-                painter,
-                points,
-                swept(colours, (at + depth * 0.3).min(1.0)),
-                1.25 * strength * energy * fade,
-            );
-        }
-        painter.circle_filled(
-            center,
-            1.5 + band * 2.5,
-            swept(colours, at).gamma_multiply(0.9 * strength * energy),
-        );
-    }
-}
-
-/// Three moving laser projectors paint crossing fans of narrow beams.
-/// Each beam has its own spectral strength and a translucent light cone.
-fn lasers(
-    painter: &egui::Painter,
-    rect: Rect,
-    levels: &[f32],
-    colours: &[Color32],
-    strength: f32,
-    time: f32,
-) {
-    let energy = scene_energy(levels);
-    let mut mesh = egui::Mesh::default();
-    for projector in 0..3 {
-        let source = pos2(
-            rect.left() + rect.width() * (0.08 + projector as f32 * 0.42),
-            rect.bottom() - rect.height() * 0.06,
-        );
-        for beam in 0..12 {
-            let at = beam as f32 / 11.0;
-            let band = scene_band(levels, (at + projector as f32 * 0.19).fract(), energy);
-            let sweep = (time * 0.4 + projector as f32 + at * 2.0).sin();
-            let x = (at * 0.9 + 0.05 + sweep * 0.04).clamp(0.02, 0.98);
-            let target = pos2(
-                rect.left() + rect.width() * x,
-                rect.top() + rect.height() * (0.04 + 0.12 * sweep.abs()),
-            );
-            let end = source.lerp(target, (0.72 + energy * 0.28) * (0.78 + band * 0.22));
-            let colour = swept(colours, at);
-            let alpha = (strength * energy * (0.55 + band * 0.45)).min(0.95);
-            let spread = (rect.width() * 0.006).min(7.0);
-            triangle(
-                &mut mesh,
-                [source, end - vec2(spread, 0.0), end + vec2(spread, 0.0)],
-                [
-                    colour.gamma_multiply(alpha * 0.05),
-                    colour.gamma_multiply(alpha * 0.18),
-                    Color32::TRANSPARENT,
-                ],
-            );
-            painter.line_segment(
-                [source, end],
-                egui::Stroke::new(5.5, colour.gamma_multiply(alpha * 0.15)),
-            );
-            painter.line_segment(
-                [source, end],
-                egui::Stroke::new(1.8 + band, colour.gamma_multiply(alpha)),
-            );
-        }
-    }
-    painter.add(egui::Shape::mesh(mesh));
-}
-
-/// Small, staggered bursts explode into sparks with curved falling trails.
-/// No particle simulation state is retained; every spark has a fixed seed.
-fn fireworks(
-    painter: &egui::Painter,
-    rect: Rect,
-    levels: &[f32],
-    colours: &[Color32],
-    strength: f32,
-    time: f32,
-) {
-    let energy = scene_energy(levels);
-    for burst in 0..6 {
-        let at = (burst as f32 + 0.5) / 6.0;
-        let band = scene_band(levels, at, energy);
-        let age = (time * 0.23 + burst as f32 * 0.163).fract();
-        let center = pos2(
-            rect.left() + rect.width() * (0.12 + burst as f32 * 0.152),
-            rect.center().y + (burst as f32 * 2.4).sin() * rect.height() * 0.06,
-        );
-        let radius = vec2(
-            (rect.width() * 0.08).min(rect.height() * 1.4),
-            rect.height() * 0.31,
-        ) * (0.7 + band * 0.3);
-        let point = |angle: f32, age: f32| {
-            center
-                + vec2(angle.cos() * radius.x, angle.sin() * radius.y) * age.sqrt()
-                + vec2(0.0, age.powi(2) * rect.height() * 0.08)
-        };
-        let fade = (1.0 - age).sqrt() * energy;
-        let colour = swept(colours, at);
-        for spark in 0..18 {
-            let angle = spark as f32 / 18.0 * std::f32::consts::TAU + burst as f32;
-            let head = point(angle, age);
-            let tail = point(angle, (age - 0.14).max(0.0));
-            let light = colour.gamma_multiply(strength * fade * (0.6 + band * 0.4));
-            painter.line_segment(
-                [tail, head],
-                egui::Stroke::new(1.8, light.gamma_multiply(0.85)),
-            );
-            painter.circle_filled(head, 3.8 + band * 2.0, light.gamma_multiply(0.12));
-            painter.circle_filled(head, 1.2 + band * 1.8, light);
-        }
     }
 }
 
@@ -2323,17 +1843,20 @@ fn transport(app: &mut App, ui: &mut egui::Ui, now: Option<&NowPlaying>, region:
         0.0
     };
     if pulse > 0.01 && !crate::motion::reduced(ui.ctx()) {
-        // A ring that springs out from the play button on each beat.
-        let ring = 20.0 + 14.0 * (1.0 - pulse);
-        ui.painter().circle_filled(
-            disc.center(),
-            ring + 6.0,
-            palette.accent.gamma_multiply(0.12 * pulse),
-        );
+        // A soft halo that breathes out from the play button on each beat.
+        let amount = pulse * app.settings.beat_pulse_strength.amount();
+        let ring = 19.0 + 8.0 * (1.0 - pulse);
+        for (extra, alpha) in [(8.0, 0.05), (4.0, 0.1), (0.0, 0.16)] {
+            ui.painter().circle_filled(
+                disc.center(),
+                ring + extra,
+                palette.accent.gamma_multiply(alpha * amount),
+            );
+        }
         ui.painter().circle_stroke(
             disc.center(),
             ring,
-            egui::Stroke::new(1.5 + 3.5 * pulse, palette.accent.gamma_multiply(pulse)),
+            egui::Stroke::new(1.5, palette.accent.gamma_multiply(0.7 * amount)),
         );
     }
     if loading || app.any_play_pending() {
@@ -2967,31 +2490,7 @@ mod visualizer_scene_tests {
 
     #[test]
     fn animated_scenes_react_to_audio_and_stay_finite_at_both_window_sizes() {
-        for mode in [
-            PlayerBarVis::Aurora,
-            PlayerBarVis::Radial,
-            PlayerBarVis::Orbit,
-            PlayerBarVis::Embers,
-            PlayerBarVis::Tunnel,
-            PlayerBarVis::Waterfall,
-            PlayerBarVis::Prism,
-            PlayerBarVis::Helix,
-            PlayerBarVis::Starfield,
-            PlayerBarVis::Plasma,
-            PlayerBarVis::Ripples,
-            PlayerBarVis::Lasers,
-            PlayerBarVis::Fireworks,
-            PlayerBarVis::Synthwave,
-            PlayerBarVis::Terrain,
-            PlayerBarVis::Kaleidoscope,
-            PlayerBarVis::Lava,
-            PlayerBarVis::Galaxy,
-            PlayerBarVis::Matrix,
-            PlayerBarVis::Spectrogram,
-            PlayerBarVis::Orb,
-            PlayerBarVis::Rose,
-            PlayerBarVis::Bubbles,
-        ] {
+        for mode in NEW_SCENES {
             for width in [360.0, 1440.0] {
                 for dark in [false, true] {
                     assert!(
@@ -3021,25 +2520,24 @@ mod visualizer_scene_tests {
         }
     }
 
-    const NEW_SCENES: [PlayerBarVis; 18] = [
+    const NEW_SCENES: [PlayerBarVis; 17] = [
         PlayerBarVis::Waterfall,
         PlayerBarVis::Prism,
         PlayerBarVis::Helix,
-        PlayerBarVis::Starfield,
-        PlayerBarVis::Plasma,
-        PlayerBarVis::Ripples,
-        PlayerBarVis::Lasers,
-        PlayerBarVis::Fireworks,
         PlayerBarVis::Synthwave,
         PlayerBarVis::Terrain,
-        PlayerBarVis::Kaleidoscope,
         PlayerBarVis::Lava,
         PlayerBarVis::Galaxy,
         PlayerBarVis::Matrix,
         PlayerBarVis::Spectrogram,
         PlayerBarVis::Orb,
-        PlayerBarVis::Rose,
         PlayerBarVis::Bubbles,
+        PlayerBarVis::Skyline,
+        PlayerBarVis::Ocean,
+        PlayerBarVis::Led,
+        PlayerBarVis::Fireflies,
+        PlayerBarVis::Heartbeat,
+        PlayerBarVis::Circuit,
     ];
 
     #[test]

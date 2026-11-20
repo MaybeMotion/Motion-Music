@@ -171,6 +171,40 @@ fn filtered_row_sized(
     }
 }
 
+/// `filtered_row` whose control is a row of choices as soft buttons, the
+/// current one lit. Answers whether a different choice was picked.
+fn choice_row<T: Copy + PartialEq>(
+    ui: &mut egui::Ui,
+    palette: &Palette,
+    needle: &str,
+    section: &str,
+    row: &RowText<'_>,
+    choices: &[(T, std::borrow::Cow<'static, str>)],
+    value: &mut T,
+) -> bool {
+    let gap = 6.0;
+    let width = choices
+        .iter()
+        .map(|(_, label)| theme::soft_button_width(ui, label))
+        .sum::<f32>()
+        + gap * choices.len().saturating_sub(1) as f32;
+    let mut changed = false;
+    filtered_row_sized(ui, palette, needle, section, row, width, |ui| {
+        // Laid right to left, so the last choice goes first.
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = gap;
+            for (choice, label) in choices.iter().rev() {
+                let current = *value == *choice;
+                if theme::soft_button(ui, palette, None, label, current).clicked() && !current {
+                    *value = *choice;
+                    changed = true;
+                }
+            }
+        });
+    });
+    changed
+}
+
 /// Fills a settings slider's rail up to the handle with the accent. The
 /// rail keeps the theme's colours and rounding: egui carries that fill past
 /// the handle's centre by the widgets' corner radius, so a pill radius here
@@ -1235,7 +1269,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 if cfg!(windows) {
                     "Audio-reactive effects for Motion Music playback, or audio from Spotify and other apps on the default Windows output. No microphone or audio recording."
                 } else {
-                    "Audio-reactive spectrum, waveforms, plasma, laser fans, starfields, ripples and more during local playback."
+                    "Audio-reactive spectrum, waveforms, ocean waves, a city skyline, fireflies and more during local playback."
                 },
             ),
         ),
@@ -1277,7 +1311,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             living_gradients.clone(),
             gettext(
                 locale,
-                "Let a gradient theme's colours drift slowly while music plays. They hold still while paused.",
+                "Let a gradient theme's colours sway gently while music plays, keeping the same colours. They hold still while paused.",
             ),
         ),
         RowText::new(
@@ -1285,6 +1319,31 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             gettext(
                 locale,
                 "Make a dark theme from the playing song's cover, save it in your themes folder and use it now. Ctrl+Shift+T does the same.",
+            ),
+        ),
+        RowText::new(
+            gettext(locale, "Beat pulse strength"),
+            gettext(
+                locale,
+                "How brightly the beat pulse glows. Subtle is a soft glow; Strong is as bright as before.",
+            ),
+        ),
+        RowText::new(
+            gettext(locale, "Gradient drift speed"),
+            gettext(locale, "How quickly living gradients sway between their colours."),
+        ),
+        RowText::new(
+            gettext(locale, "Click effect"),
+            gettext(
+                locale,
+                "What a click on Home, Search, My Wrapped, a playlist, a card or a song shows. Off turns it off.",
+            ),
+        ),
+        RowText::new(
+            gettext(locale, "Box shape"),
+            gettext(
+                locale,
+                "The corners of cards, covers and highlighted rows. Rounded is the usual look.",
             ),
         ),
     ];
@@ -1620,6 +1679,61 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     }
                 },
             );
+            {
+                use crate::settings::{BoxShape, ClickEffect, GradientDrift, PulseStrength};
+                let pulse: Vec<_> = PulseStrength::ALL
+                    .into_iter()
+                    .map(|choice| (choice, choice.label(locale)))
+                    .collect();
+                changed |= choice_row(
+                    ui,
+                    &palette,
+                    &needle,
+                    &appearance,
+                    &appearance_rows[18],
+                    &pulse,
+                    &mut app.settings.beat_pulse_strength,
+                );
+                let drift: Vec<_> = GradientDrift::ALL
+                    .into_iter()
+                    .map(|choice| (choice, choice.label(locale)))
+                    .collect();
+                changed |= choice_row(
+                    ui,
+                    &palette,
+                    &needle,
+                    &appearance,
+                    &appearance_rows[19],
+                    &drift,
+                    &mut app.settings.gradient_drift,
+                );
+                let effects: Vec<_> = ClickEffect::ALL
+                    .into_iter()
+                    .map(|choice| (choice, choice.label(locale)))
+                    .collect();
+                changed |= choice_row(
+                    ui,
+                    &palette,
+                    &needle,
+                    &appearance,
+                    &appearance_rows[20],
+                    &effects,
+                    &mut app.settings.click_effect,
+                );
+                let shapes: Vec<_> = BoxShape::ALL
+                    .into_iter()
+                    .map(|choice| (choice, choice.label(locale)))
+                    .collect();
+                changed |= choice_row(
+                    ui,
+                    &palette,
+                    &needle,
+                    &appearance,
+                    &appearance_rows[21],
+                    &shapes,
+                    &mut app.settings.box_shape,
+                );
+            }
             {
                 let make = gettext(locale, "Make theme");
                 let width = theme::soft_button_width(ui, &make);

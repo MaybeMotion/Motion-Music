@@ -89,62 +89,61 @@ pub enum PlayerBarVis {
     Off,
     Spectrum,
     Waveform,
-    Aurora,
-    Radial,
-    Orbit,
-    Embers,
     Mirror,
-    Tunnel,
     Waterfall,
     Prism,
     Helix,
-    Starfield,
-    Plasma,
-    Ripples,
-    Lasers,
-    Fireworks,
     Synthwave,
     Terrain,
-    Kaleidoscope,
     Lava,
+    #[serde(alias = "starfield", alias = "tunnel")]
     Galaxy,
     Matrix,
     Spectrogram,
+    // Effects removed in v17 load as the nearest one still offered.
+    #[serde(
+        alias = "orbit",
+        alias = "radial",
+        alias = "kaleidoscope",
+        alias = "rose"
+    )]
     Orb,
-    Rose,
     Bubbles,
+    Skyline,
+    #[serde(alias = "aurora", alias = "plasma", alias = "ripples")]
+    Ocean,
+    #[serde(alias = "lasers")]
+    Led,
+    #[serde(alias = "embers", alias = "fireworks")]
+    Fireflies,
+    Heartbeat,
+    Circuit,
 }
 
 impl PlayerBarVis {
     /// All modes in the same order as the settings picker and click cycle.
-    pub const ALL: [Self; 27] = [
+    pub const ALL: [Self; 21] = [
         Self::Off,
         Self::Spectrum,
         Self::Waveform,
-        Self::Aurora,
-        Self::Radial,
-        Self::Orbit,
-        Self::Embers,
         Self::Mirror,
-        Self::Tunnel,
         Self::Waterfall,
         Self::Prism,
         Self::Helix,
-        Self::Starfield,
-        Self::Plasma,
-        Self::Ripples,
-        Self::Lasers,
-        Self::Fireworks,
         Self::Synthwave,
         Self::Terrain,
-        Self::Kaleidoscope,
         Self::Lava,
         Self::Galaxy,
         Self::Matrix,
         Self::Spectrogram,
         Self::Orb,
-        Self::Rose,
         Self::Bubbles,
+        Self::Skyline,
+        Self::Ocean,
+        Self::Led,
+        Self::Fireflies,
+        Self::Heartbeat,
+        Self::Circuit,
     ];
 
     pub fn label(self, locale: crate::i18n::Locale) -> std::borrow::Cow<'static, str> {
@@ -153,63 +152,169 @@ impl PlayerBarVis {
             Self::Off => gettext(locale, "Off"),
             Self::Spectrum => gettext(locale, "Spectrum"),
             Self::Waveform => gettext(locale, "Waveform"),
-            Self::Aurora => gettext(locale, "Aurora ribbons"),
-            Self::Radial => gettext(locale, "Radial spectrum"),
-            Self::Orbit => gettext(locale, "Neon orbit"),
-            Self::Embers => gettext(locale, "Ember field"),
             Self::Mirror => gettext(locale, "Mirror wave"),
-            Self::Tunnel => gettext(locale, "Hyperspace tunnel"),
             Self::Waterfall => gettext(locale, "Neon waterfall"),
             Self::Prism => gettext(locale, "Crystal prism"),
             Self::Helix => gettext(locale, "DNA helix"),
-            Self::Starfield => gettext(locale, "Warp starfield"),
-            Self::Plasma => gettext(locale, "Plasma field"),
-            Self::Ripples => gettext(locale, "Ripple pool"),
-            Self::Lasers => gettext(locale, "Laser fan"),
-            Self::Fireworks => gettext(locale, "Fireworks"),
             Self::Synthwave => gettext(locale, "Synthwave sunset"),
             Self::Terrain => gettext(locale, "Sound terrain"),
-            Self::Kaleidoscope => gettext(locale, "Kaleidoscope"),
             Self::Lava => gettext(locale, "Lava lamp"),
             Self::Galaxy => gettext(locale, "Galaxy"),
             Self::Matrix => gettext(locale, "Matrix rain"),
             Self::Spectrogram => gettext(locale, "Spectrogram"),
             Self::Orb => gettext(locale, "Neon orb"),
-            Self::Rose => gettext(locale, "Rose curves"),
             Self::Bubbles => gettext(locale, "Bubbles"),
+            Self::Skyline => gettext(locale, "City skyline"),
+            Self::Ocean => gettext(locale, "Ocean waves"),
+            Self::Led => gettext(locale, "Retro LED meter"),
+            Self::Fireflies => gettext(locale, "Fireflies"),
+            Self::Heartbeat => gettext(locale, "Heart monitor"),
+            Self::Circuit => gettext(locale, "Circuit board"),
         }
     }
 
     /// The next mode when empty player bar space is clicked.
     pub fn next(self) -> Self {
+        let place = Self::ALL.iter().position(|mode| *mode == self).unwrap_or(0);
+        Self::ALL[(place + 1) % Self::ALL.len()]
+    }
+}
+
+/// How strongly the beat pulse shows.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PulseStrength {
+    /// A soft glow along the top of the player bar.
+    #[default]
+    Subtle,
+    Medium,
+    /// As bright as v16's pulse.
+    Strong,
+}
+
+impl PulseStrength {
+    pub const ALL: [Self; 3] = [Self::Subtle, Self::Medium, Self::Strong];
+
+    pub fn label(self, locale: crate::i18n::Locale) -> std::borrow::Cow<'static, str> {
+        use crate::i18n::gettext;
         match self {
-            Self::Off => Self::Spectrum,
-            Self::Spectrum => Self::Waveform,
-            Self::Waveform => Self::Aurora,
-            Self::Aurora => Self::Radial,
-            Self::Radial => Self::Orbit,
-            Self::Orbit => Self::Embers,
-            Self::Embers => Self::Mirror,
-            Self::Mirror => Self::Tunnel,
-            Self::Tunnel => Self::Waterfall,
-            Self::Waterfall => Self::Prism,
-            Self::Prism => Self::Helix,
-            Self::Helix => Self::Starfield,
-            Self::Starfield => Self::Plasma,
-            Self::Plasma => Self::Ripples,
-            Self::Ripples => Self::Lasers,
-            Self::Lasers => Self::Fireworks,
-            Self::Fireworks => Self::Synthwave,
-            Self::Synthwave => Self::Terrain,
-            Self::Terrain => Self::Kaleidoscope,
-            Self::Kaleidoscope => Self::Lava,
-            Self::Lava => Self::Galaxy,
-            Self::Galaxy => Self::Matrix,
-            Self::Matrix => Self::Spectrogram,
-            Self::Spectrogram => Self::Orb,
-            Self::Orb => Self::Rose,
-            Self::Rose => Self::Bubbles,
-            Self::Bubbles => Self::Off,
+            Self::Subtle => gettext(locale, "Subtle"),
+            Self::Medium => gettext(locale, "Medium"),
+            Self::Strong => gettext(locale, "Strong"),
+        }
+    }
+
+    /// How bright the pulse is drawn, from 0 to 1.
+    pub fn amount(self) -> f32 {
+        match self {
+            Self::Subtle => 0.3,
+            Self::Medium => 0.6,
+            Self::Strong => 1.0,
+        }
+    }
+}
+
+/// How fast a living gradient drifts.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GradientDrift {
+    #[default]
+    Slow,
+    Medium,
+    Fast,
+}
+
+impl GradientDrift {
+    pub const ALL: [Self; 3] = [Self::Slow, Self::Medium, Self::Fast];
+
+    pub fn label(self, locale: crate::i18n::Locale) -> std::borrow::Cow<'static, str> {
+        use crate::i18n::gettext;
+        match self {
+            Self::Slow => gettext(locale, "Slow"),
+            Self::Medium => gettext(locale, "Medium"),
+            Self::Fast => gettext(locale, "Fast"),
+        }
+    }
+
+    /// One full drift's share each second.
+    pub fn speed(self) -> f32 {
+        match self {
+            Self::Slow => 1.0 / 60.0,
+            Self::Medium => 1.0 / 30.0,
+            Self::Fast => 1.0 / 15.0,
+        }
+    }
+}
+
+/// What a click on a page link, playlist, card or song shows.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ClickEffect {
+    Off,
+    /// A soft ring of light spreading out from the pointer.
+    #[default]
+    Ripple,
+    /// The clicked item glows and fades.
+    Glow,
+    /// An outline springs out from the item and fades.
+    Pop,
+    /// A few sparks float out from the pointer.
+    Sparkle,
+}
+
+impl ClickEffect {
+    pub const ALL: [Self; 5] = [
+        Self::Off,
+        Self::Ripple,
+        Self::Glow,
+        Self::Pop,
+        Self::Sparkle,
+    ];
+
+    pub fn label(self, locale: crate::i18n::Locale) -> std::borrow::Cow<'static, str> {
+        use crate::i18n::gettext;
+        match self {
+            Self::Off => gettext(locale, "Off"),
+            Self::Ripple => gettext(locale, "Ripple"),
+            Self::Glow => gettext(locale, "Glow"),
+            Self::Pop => gettext(locale, "Pop"),
+            Self::Sparkle => gettext(locale, "Sparkle"),
+        }
+    }
+}
+
+/// The corners of cards, covers and highlighted rows.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BoxShape {
+    /// The corners Motion Music has always had.
+    #[default]
+    Rounded,
+    Square,
+    Soft,
+    Bubbly,
+}
+
+impl BoxShape {
+    pub const ALL: [Self; 4] = [Self::Rounded, Self::Square, Self::Soft, Self::Bubbly];
+
+    pub fn label(self, locale: crate::i18n::Locale) -> std::borrow::Cow<'static, str> {
+        use crate::i18n::gettext;
+        match self {
+            Self::Rounded => gettext(locale, "Rounded"),
+            Self::Square => gettext(locale, "Square"),
+            Self::Soft => gettext(locale, "Soft"),
+            Self::Bubbly => gettext(locale, "Bubbly"),
+        }
+    }
+
+    /// A corner drawn `base` points round in the usual shape, in this one.
+    pub fn radius(self, base: f32) -> f32 {
+        match self {
+            Self::Rounded => base,
+            Self::Square => 0.0,
+            Self::Soft => base * 2.0,
+            Self::Bubbly => base * 3.5,
         }
     }
 }
@@ -486,8 +591,16 @@ pub struct Settings {
     pub recent_themes: Vec<String>,
     /// Flash the play button and the top of the player bar on the beat.
     pub beat_pulse: bool,
+    /// How brightly the beat pulse shows.
+    pub beat_pulse_strength: PulseStrength,
     /// Let a gradient theme's colours drift slowly while music plays.
     pub living_gradients: bool,
+    /// How fast a living gradient drifts.
+    pub gradient_drift: GradientDrift,
+    /// What a click on a link, playlist, card or song shows.
+    pub click_effect: ClickEffect,
+    /// The corners of cards, covers and highlighted rows.
+    pub box_shape: BoxShape,
     /// Page reveal styles left out of the shuffle, by their saved name.
     /// Empty uses every style, as before this setting existed.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -690,7 +803,11 @@ impl Default for Settings {
             recent_themes: Vec::new(),
             page_reveals_off: Vec::new(),
             beat_pulse: false,
+            beat_pulse_strength: PulseStrength::Subtle,
             living_gradients: false,
+            gradient_drift: GradientDrift::Slow,
+            click_effect: ClickEffect::Ripple,
+            box_shape: BoxShape::Rounded,
             visualizer_fps: crate::milkdrop::DEFAULT_FPS,
             discord_presence: false,
             discord_application_id: crate::discord_activity::DEFAULT_APPLICATION_ID.to_owned(),
@@ -1885,7 +2002,9 @@ mod tests {
 
     #[test]
     fn favourites_recents_and_motion_choices_default_empty_and_round_trip() {
-        use super::{RECENT_THEMES, VisColours};
+        use super::{
+            BoxShape, ClickEffect, GradientDrift, PulseStrength, RECENT_THEMES, VisColours,
+        };
         use crate::theme::MotionTheme;
         let mut settings: Settings = serde_json::from_str("{}").unwrap();
         assert!(settings.favourite_themes.is_empty());
@@ -1893,6 +2012,21 @@ mod tests {
         assert!(settings.page_reveals_off.is_empty());
         assert!(!settings.beat_pulse, "the beat pulse starts off");
         assert!(!settings.living_gradients, "gradients start still");
+        assert_eq!(settings.beat_pulse_strength, PulseStrength::Subtle);
+        assert_eq!(settings.gradient_drift, GradientDrift::Slow);
+        assert_eq!(settings.click_effect, ClickEffect::Ripple);
+        assert_eq!(settings.box_shape, BoxShape::Rounded);
+        assert_eq!(BoxShape::Rounded.radius(6.0), 6.0, "the usual corners");
+        assert_eq!(BoxShape::Square.radius(6.0), 0.0);
+        assert!(PulseStrength::Subtle.amount() < PulseStrength::Strong.amount());
+        let chosen: Settings = serde_json::from_str(
+            r#"{"beat_pulse_strength":"strong","gradient_drift":"fast","click_effect":"sparkle","box_shape":"bubbly"}"#,
+        )
+        .unwrap();
+        assert_eq!(chosen.beat_pulse_strength, PulseStrength::Strong);
+        assert_eq!(chosen.gradient_drift, GradientDrift::Fast);
+        assert_eq!(chosen.click_effect, ClickEffect::Sparkle);
+        assert_eq!(chosen.box_shape, BoxShape::Bubbly);
         assert_eq!(settings.visualizer_colours, VisColours::Auto);
         // Untouched, the new lists add nothing to an existing file.
         let json = serde_json::to_value(&settings).unwrap();
@@ -1957,32 +2091,46 @@ mod tests {
             "off",
             "spectrum",
             "waveform",
-            "aurora",
-            "radial",
-            "orbit",
-            "embers",
             "mirror",
-            "tunnel",
             "waterfall",
             "prism",
             "helix",
-            "starfield",
-            "plasma",
-            "ripples",
-            "lasers",
-            "fireworks",
             "synthwave",
             "terrain",
-            "kaleidoscope",
             "lava",
             "galaxy",
             "matrix",
             "spectrogram",
             "orb",
-            "rose",
             "bubbles",
+            "skyline",
+            "ocean",
+            "led",
+            "fireflies",
+            "heartbeat",
+            "circuit",
         ];
-        assert_eq!(PlayerBarVis::ALL.len(), 27);
+        assert_eq!(PlayerBarVis::ALL.len(), 21);
+        // Effects taken out in v17 load as a close one still offered, so an
+        // older settings file stays readable.
+        for (removed, now) in [
+            ("aurora", PlayerBarVis::Ocean),
+            ("radial", PlayerBarVis::Orb),
+            ("orbit", PlayerBarVis::Orb),
+            ("embers", PlayerBarVis::Fireflies),
+            ("tunnel", PlayerBarVis::Galaxy),
+            ("starfield", PlayerBarVis::Galaxy),
+            ("plasma", PlayerBarVis::Ocean),
+            ("ripples", PlayerBarVis::Ocean),
+            ("lasers", PlayerBarVis::Led),
+            ("fireworks", PlayerBarVis::Fireflies),
+            ("kaleidoscope", PlayerBarVis::Orb),
+            ("rose", PlayerBarVis::Orb),
+        ] {
+            let old: Settings =
+                serde_json::from_str(&format!(r#"{{"player_bar_vis":"{removed}"}}"#)).unwrap();
+            assert_eq!(old.player_bar_vis, now, "{removed}");
+        }
         assert_eq!(PlayerBarVis::ALL.len(), stored_names.len());
         for (mode, stored) in PlayerBarVis::ALL.into_iter().zip(stored_names) {
             let settings = Settings {

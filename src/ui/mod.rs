@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 pub mod artist;
+pub(crate) mod click_fx;
 pub mod collection;
 pub(crate) mod devices;
 mod dialogs;
@@ -69,6 +70,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         );
     }
     living_gradient(app, ctx);
+    click_fx::configure(ctx, app.settings.click_effect, app.settings.box_shape);
     player_bar::show(app, ui);
     if app.lyrics_fullscreen.is_some() {
         lyrics::fullscreen(app, ui);
@@ -93,18 +95,16 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     update::show(app, ctx);
     widgets::drag_ghost(ctx, &app.palette, app.locale);
     toasts(app, ctx, theme::PLAYER_BAR_HEIGHT + 16.0);
+    click_fx::paint(ctx, app.palette.accent);
     player_bar::stage(app, ctx);
     caption_buttons(ui, &app.palette, app.locale);
     fastframe_titlebar::resize(ui);
     motion::finish(ctx);
 }
 
-/// How far a living gradient drifts each second: one full sweep takes about
-/// twenty seconds, slow enough to stay calm and quick enough to see.
-const LIVING_DRIFT: f32 = 0.045;
-
-/// Moves a gradient theme's colours along while music plays, and holds them
-/// where they are while it is paused, so nothing jumps when it starts again.
+/// Sways a gradient theme's colours gently while music plays, at the speed
+/// chosen in Settings, and holds them where they are while it is paused, so
+/// nothing jumps when it starts again.
 fn living_gradient(app: &App, ctx: &Context) {
     let id = Id::new("living-gradient-drift");
     if !app.settings.living_gradients || app.background_gradient().is_none() {
@@ -115,7 +115,7 @@ fn living_gradient(app: &App, ctx: &Context) {
     let playing = app.now_playing().is_some_and(|now| now.playing);
     if playing && !crate::motion::reduced(ctx) {
         let step = ctx.input(|input| input.stable_dt).clamp(0.0, 0.25);
-        phase = (phase + step * LIVING_DRIFT).rem_euclid(1.0);
+        phase = (phase + step * app.settings.gradient_drift.speed()).rem_euclid(1.0);
         // A gentle pace is enough for so slow a drift.
         ctx.request_repaint_after(std::time::Duration::from_millis(66));
     }

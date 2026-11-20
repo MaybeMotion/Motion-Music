@@ -4471,14 +4471,9 @@ impl App {
     }
 
     /// What the page, sidebar and player bar are painted with: the theme's
-    /// own gradient, or with living gradients on, one made from a solid
-    /// theme's accent so it has colours to drift too.
+    /// own gradient. Solid themes stay solid, living gradients or not.
     pub fn background_gradient(&self) -> Option<[egui::Color32; 3]> {
-        self.theme_gradient().or_else(|| {
-            self.settings
-                .living_gradients
-                .then(|| theme::living_stops(&self.palette))
-        })
+        self.theme_gradient()
     }
 
     /// The selected built-in material, including Follow system's paired
@@ -14160,7 +14155,7 @@ mod tests {
         crate::demo::populate(&mut app);
         app.settings.player_bar_vis = PlayerBarVis::Off;
         assert!(!app.desktop_visualizer_wanted());
-        app.settings.player_bar_vis = PlayerBarVis::Aurora;
+        app.settings.player_bar_vis = PlayerBarVis::Ocean;
         assert_eq!(app.desktop_visualizer_wanted(), cfg!(windows));
         app.budget = crate::power::Budget::Saver;
         assert_eq!(app.desktop_visualizer_wanted(), cfg!(windows));

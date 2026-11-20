@@ -349,13 +349,17 @@ main fields are:
 | `system_theme_cache` | absent | Last accepted Omarchy palette for Follow system; retained across restarts |
 | `theme_pair` | absent | The themes Follow system uses in light and dark mode: `{"light": {"filename": "Catppuccin Latte.json", "palette": {...}}, "dark": {...}}`. Each `palette` is the last accepted copy of that file's colours. A missing side, or the whole field, is Spotifast's own Light or Dark; it is written only once you choose one |
 | `accent_from_art` | `true` | Tint pages with album art, and colour the player bar visualizer with the cover's colours |
-| `player_bar_vis` | `off` | Player-bar effect: `off`, `spectrum`, `waveform`, `aurora`, `radial`, `orbit`, `embers`, `mirror`, `tunnel`, `waterfall`, `prism`, `helix`, `starfield`, `plasma`, `ripples`, `lasers`, `fireworks`, `synthwave`, `terrain`, `kaleidoscope`, `lava`, `galaxy`, `matrix`, `spectrogram`, `orb`, `rose`, or `bubbles`. On Windows, a visible effect can also follow the default Windows audio output while Motion Music's local player is idle |
+| `player_bar_vis` | `off` | Player-bar effect: `off`, `spectrum`, `waveform`, `mirror`, `waterfall`, `prism`, `helix`, `synthwave`, `terrain`, `lava`, `galaxy`, `matrix`, `spectrogram`, `orb`, `bubbles`, `skyline`, `ocean`, `led`, `fireflies`, `heartbeat` or `circuit`. Names of effects removed in v17 still load, as the nearest effect: `aurora`, `plasma` and `ripples` as `ocean`; `radial`, `orbit`, `kaleidoscope` and `rose` as `orb`; `embers` and `fireworks` as `fireflies`; `tunnel` and `starfield` as `galaxy`; `lasers` as `led`. On Windows, a visible effect can also follow the default Windows audio output while Motion Music's local player is idle |
 | `player_bar_vis_click` | `true` | Allow clicks on empty player bar space to cycle visualizer modes |
 | `visualizer_colours` | `auto` | Player bar visualizer colours: `auto` follows the playing cover while `accent_from_art` is on; `theme` always uses the theme, including a gradient theme's three colours |
 | `favourite_themes` | absent | Motion themes starred in the gallery, by built-in name such as `motion-theme:crimson`, in the order they were starred. Written only once one is starred; names this version does not carry are kept and not shown |
 | `recent_themes` | absent | The twelve Motion themes applied most recently, newest first |
-| `beat_pulse` | `false` | Flash the play button and the top of the player bar on the beat |
-| `living_gradients` | `false` | Let a gradient theme's colours drift slowly while music plays |
+| `beat_pulse` | `false` | Glow softly at the top of the player bar and around the play button on the beat |
+| `beat_pulse_strength` | `subtle` | How brightly the beat pulse shows: `subtle`, `medium` or `strong` |
+| `living_gradients` | `false` | Let a gradient theme sway gently between its own colours while music plays |
+| `gradient_drift` | `slow` | How fast living gradients sway: `slow`, `medium` or `fast` |
+| `click_effect` | `ripple` | What a click on a page link, playlist, card or song shows: `off`, `ripple`, `glow`, `pop` or `sparkle` |
+| `box_shape` | `rounded` | Corners of cards, covers and highlighted rows: `rounded`, `square`, `soft` or `bubbly` |
 | `page_reveals_off` | absent | Page transition styles left out of the shuffle: any of `circle-out`, `circle-in`, `corner-circle`, `diagonal`, `curtain`, `swipe-left`, `swipe-right`, `swipe-up`, `swipe-down`, `diamond`, `blinds`, `cascade`, `zipper`, `letterbox`, `chevron`, `clock`, `wave-left`, `wave-right`, `wave-up`, `wave-down`. Absent uses all twenty; listing all of them changes pages at once |
 | `visualizer_fps` | `60` | Frame rate of the player bar and mini player visualizers; `0` is uncapped. Half that out of focus, at most 30 while the system saves energy, none while the window is hidden. MilkDrop uses `milkdrop_fps` |
 | `library_sort` | `{}` | Per-section Library order overrides, since 0.8.0: `library`, `recently_played`, `name`, `recently_added`, `local`, or `spotify`, where supported |

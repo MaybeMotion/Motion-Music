@@ -47,8 +47,10 @@ Load your own JSON palettes through **Open themes folder**, choose separate cust
 
 ## Fun extras
 
-- **Beat pulse** (Settings > Appearance): the play button and the top of the player bar flash softly on the beat, found in the bass of the same audio the visualisers use.
-- **Living gradients** (Settings > Appearance): the theme's colours drift across the page, sidebar and player bar while music plays, about once every twenty seconds, and hold still while it is paused. Solid themes get a gentle gradient of their accent colour so they drift too.
+- **Beat pulse** (Settings > Appearance): a soft glow eases in at the top of the player bar and around the play button on each beat, found in the bass of the same audio the visualisers use. **Beat pulse strength** chooses Subtle (the default), Medium or Strong.
+- **Living gradients** (Settings > Appearance): a gradient theme sways gently between its own colours while music plays, and holds still while it is paused. It keeps exactly the colours it has with the setting off. **Gradient drift speed** chooses Slow (once a minute), Medium or Fast. Solid themes stay solid.
+- **Click effect** (Settings > Appearance): clicking Home, Search, My Wrapped, a playlist, a card or a song shows a soft **Ripple** (the default), **Glow**, **Pop** or **Sparkle**. Choose **Off** to turn it off.
+- **Box shape** (Settings > Appearance): the corners of cards, covers and highlighted rows. **Rounded** is the usual look; **Square**, **Soft** and **Bubbly** change it everywhere at once.
 - **Theme from this cover** (Settings > Appearance, or **Ctrl+Shift+T**): makes a dark theme from the playing song's cover, saves it in your themes folder as "Cover - album name" and uses it at once.
 - **My Wrapped** (in the sidebar under Search): minutes listened, plays, songs, artists and your longest daily streak; badges such as Night owl, Superfan and On a streak; a chart of when you listen and a twelve-week listening calendar; a throwback to your song of the day a week ago; your most played songs, albums and artists from this computer's last 2,000 plays; and Spotify's own top artists, a genre mix and top songs. **Save as image** puts the summary in Pictures\Motion Music, ready to share. Nothing is sent anywhere.
 - **Sleep timer** (the clock button in the player bar): fades the music out over its last 45 seconds and pauses it after 5 to 90 minutes, then puts the volume back.
@@ -81,19 +83,10 @@ Open **Settings > Appearance > Player bar visualizer** and choose:
 | --- | --- |
 | Spectrum | Glowing frequency bars with peak caps |
 | Waveform | A neon audio trace |
-| Aurora ribbons | Flowing layers of luminous ribbons |
-| Radial spectrum | Concentric frequency halos |
-| Neon orbit | Comet trails around reactive ellipses |
-| Ember field | Rising particles driven by frequency bands |
 | Mirror wave | A mirrored waveform ribbon |
-| Hyperspace tunnel | Expanding rings with a hyperspace feel |
 | Neon waterfall | Cascading frequency tiles with glowing trails |
 | Crystal prism | A skyline of luminous crystal facets |
 | DNA helix | Twisting strands with glowing crossbars |
-| Warp starfield | Stars and light trails rushing from a vanishing point |
-| Plasma field | Flowing, colourful interference patterns |
-| Ripple pool | Concentric ripples and bright droplets |
-| Laser fan | Crossing fans of spectral light beams |
 | Fireworks | Bursts of sparks with falling trails |
 | Synthwave sunset | A striped retro sun over spectrum mountains and a neon grid rushing towards you |
 | Sound terrain | The last second of music as glowing ridges receding into the distance |
@@ -105,6 +98,12 @@ Open **Settings > Appearance > Player bar visualizer** and choose:
 | Neon orb | A spinning wireframe globe inside a ring of light, swelling with the bass |
 | Rose curves | Three layered flowers whose petals reach out with the spectrum |
 | Bubbles | Bubbles rising and swelling with their part of the spectrum |
+| City skyline | A city at night whose buildings rise with the spectrum and whose windows light up and twinkle as it gets louder |
+| Ocean waves | Four layers of rolling waves with foam on every crest, each swelling with the music beneath it |
+| Retro LED meter | A hi-fi meter of LED segments lighting up from the bottom |
+| Fireflies | Fireflies drifting in the dark, blinking softly and glowing with their part of the spectrum |
+| Heart monitor | A glowing heartbeat trace sweeping across a grid, its spikes leaping with the bass |
+| Circuit board | Pulses of light racing along circuit traces, with pads glowing beneath the music |
 
 Press **Ctrl+Shift+S**, or the expand button in the player bar, for the **visualiser stage**: the chosen effect fills the whole window in full colour, with the playing song along the bottom. Click or press **Esc** to close it. With the player-bar visualiser off, the stage opens on the galaxy.
 

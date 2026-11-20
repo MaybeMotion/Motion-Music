@@ -248,6 +248,9 @@ fn finish_entry_interaction(
     custom_order: bool,
     drop_allowed: bool,
 ) {
+    if !cover_took_click {
+        super::click_fx::note(ui, response, 6.0);
+    }
     if response.hovered()
         && let Some(image) = &entry.image
     {
@@ -967,7 +970,7 @@ fn nav_row(
         if emphasis > 0.0 {
             ui.painter().rect_filled(
                 rect,
-                CornerRadius::same(8),
+                super::click_fx::corner(ui, 8.0),
                 palette.surface_hover.gamma_multiply(0.35 * emphasis),
             );
         }
@@ -986,6 +989,7 @@ fn nav_row(
         egui::WidgetInfo::selected(egui::WidgetType::Button, ui.is_enabled(), active, label)
     });
     theme::focus_ring(ui, &response);
+    super::click_fx::note(ui, &response, 8.0);
     response
 }
 
@@ -1491,8 +1495,11 @@ fn contents(app: &mut App, ui: &mut egui::Ui, grid_art: Option<Rect>) {
                 let mut cover_took_click = false;
                 if ui.is_rect_visible(rect) {
                     if active {
-                        ui.painter()
-                            .rect_filled(rect, CornerRadius::same(6), palette.surface);
+                        ui.painter().rect_filled(
+                            rect,
+                            super::click_fx::corner(ui, 6.0),
+                            palette.surface,
+                        );
                     }
                     let hover = theme::motion::hover(
                         ui,
@@ -1502,19 +1509,19 @@ fn contents(app: &mut App, ui: &mut egui::Ui, grid_art: Option<Rect>) {
                     if !active && hover > 0.0 {
                         ui.painter().rect_filled(
                             rect,
-                            CornerRadius::same(6),
+                            super::click_fx::corner(ui, 6.0),
                             palette.surface_hover.gamma_multiply(0.6 * hover),
                         );
                     }
                     if drop_hover {
                         ui.painter().rect_filled(
                             rect,
-                            CornerRadius::same(6),
+                            super::click_fx::corner(ui, 6.0),
                             palette.accent.gamma_multiply(0.18),
                         );
                         ui.painter().rect_stroke(
                             rect,
-                            CornerRadius::same(6),
+                            super::click_fx::corner(ui, 6.0),
                             egui::Stroke::new(1.5, palette.accent),
                             egui::StrokeKind::Inside,
                         );
@@ -1602,14 +1609,18 @@ fn contents(app: &mut App, ui: &mut egui::Ui, grid_art: Option<Rect>) {
                             Vec2::splat(ROW_ART),
                         );
                         if entry.liked {
-                            liked_cover(ui, cover_rect, 6.0);
+                            liked_cover(ui, cover_rect, super::click_fx::radius(ui, 6.0));
                         } else {
                             super::widgets::paint_cover(
                                 ui,
                                 &palette,
                                 entry.image.as_deref(),
                                 cover_rect,
-                                if entry.round { 22.0 } else { 6.0 },
+                                if entry.round {
+                                    22.0
+                                } else {
+                                    super::click_fx::radius(ui, 6.0)
+                                },
                                 if entry.round { Icon::User } else { Icon::Music },
                                 Some(app.backend.art()),
                             );
@@ -1669,7 +1680,7 @@ fn contents(app: &mut App, ui: &mut egui::Ui, grid_art: Option<Rect>) {
                     if dragging_song && !droppable {
                         ui.painter().rect_filled(
                             rect,
-                            CornerRadius::same(6),
+                            super::click_fx::corner(ui, 6.0),
                             palette.panel.gamma_multiply(0.5),
                         );
                     }
@@ -1849,8 +1860,11 @@ fn library_grid(
                     let mut cover_took_click = false;
                     if ui.is_rect_visible(rect) {
                         if active {
-                            ui.painter()
-                                .rect_filled(rect, CornerRadius::same(6), palette.surface);
+                            ui.painter().rect_filled(
+                                rect,
+                                super::click_fx::corner(ui, 6.0),
+                                palette.surface,
+                            );
                         }
                         let hover = theme::motion::hover(
                             ui,
@@ -1860,16 +1874,16 @@ fn library_grid(
                         if !active && hover > 0.0 {
                             ui.painter().rect_filled(
                                 rect,
-                                CornerRadius::same(6),
+                                super::click_fx::corner(ui, 6.0),
                                 palette.surface_hover.gamma_multiply(0.6 * hover),
                             );
                         }
                         if entry.liked {
-                            liked_cover(ui, cover_rect, 6.0);
+                            liked_cover(ui, cover_rect, super::click_fx::radius(ui, 6.0));
                         } else if entry.folder.is_some() {
                             ui.painter().rect_filled(
                                 cover_rect,
-                                CornerRadius::same(6),
+                                super::click_fx::corner(ui, 6.0),
                                 palette.surface,
                             );
                             Icon::Library
@@ -1942,7 +1956,7 @@ fn library_grid(
                         if dragging_song && !droppable {
                             ui.painter().rect_filled(
                                 rect,
-                                CornerRadius::same(6),
+                                super::click_fx::corner(ui, 6.0),
                                 palette.panel.gamma_multiply(0.5),
                             );
                         } else if dragging_song
@@ -1951,7 +1965,7 @@ fn library_grid(
                         {
                             ui.painter().rect_stroke(
                                 cover_rect,
-                                CornerRadius::same(6),
+                                super::click_fx::corner(ui, 6.0),
                                 egui::Stroke::new(2.0, palette.accent),
                                 egui::StrokeKind::Inside,
                             );

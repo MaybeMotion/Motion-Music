@@ -22,6 +22,18 @@ pub fn paint_gradient(ui: &egui::Ui, rect: Rect, stops: [Color32; 3], radius: u8
     if !rect.is_finite() || !rect.is_positive() {
         return;
     }
+    paint_gradient_window(
+        ui,
+        rect,
+        stops,
+        radius,
+        Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+    );
+}
+
+/// Paints the part `window` (in 0 to 1 texture coordinates) of the gradient
+/// over `rect`.
+fn paint_gradient_window(ui: &egui::Ui, rect: Rect, stops: [Color32; 3], radius: u8, window: Rect) {
     let id = egui::Id::new(("motion-gradient", stops));
     let texture = ui
         .data(|data| data.get_temp::<egui::TextureHandle>(id))
@@ -46,6 +58,7 @@ pub fn paint_gradient(ui: &egui::Ui, rect: Rect, stops: [Color32; 3], radius: u8
             texture
         });
     egui::Image::new(&texture)
+        .uv(window)
         .corner_radius(egui::CornerRadius::same(radius))
         .paint_at(ui, rect);
 }
@@ -67,17 +80,22 @@ pub fn set_living_phase(ctx: &egui::Context, phase: Option<f32>) {
     });
 }
 
-/// A seamless, repeating band of the three colours: first, second, third,
-/// second, first again, along both diagonals, so it can slide endlessly.
-fn looping_colour_at(stops: [Color32; 3], x: f32, y: f32) -> Color32 {
-    let along = (x + y).rem_euclid(1.0);
-    let wave = 1.0 - (2.0 * along - 1.0).abs();
-    // Equal x and y walk colour_at's sweep from its first stop to its last.
-    colour_at(stops, wave, wave)
+/// How far the living gradient's window sways from the centre of the still
+/// gradient, as a share of it. Small, so it keeps the theme's own colours
+/// and only drifts gently between them.
+const SWAY: f32 = 0.12;
+
+/// The part of the still gradient shown at `phase` (one unit is one full
+/// sway): a window a little smaller than the whole, circling slowly.
+fn living_window(phase: f32) -> Rect {
+    let angle = phase * std::f32::consts::TAU;
+    let start = egui::pos2(SWAY * (1.0 + angle.cos()), SWAY * (1.0 + angle.sin()));
+    Rect::from_min_size(start, egui::vec2(1.0 - 2.0 * SWAY, 1.0 - 2.0 * SWAY))
 }
 
-/// The theme's own gradient: still, or drifting while the living gradient is
-/// on. Only the texture's window moves; one texture serves every frame.
+/// The theme's own gradient: still, or swaying gently while the living
+/// gradient is on. It is the same gradient either way; only the part of it
+/// shown moves, so the colours never get stronger or turn into bands.
 pub fn paint_theme_gradient(ui: &egui::Ui, rect: Rect, stops: [Color32; 3], radius: u8) {
     let Some(phase) = ui.data(|data| data.get_temp::<f32>(living_id())) else {
         return paint_gradient(ui, rect, stops, radius);
@@ -85,37 +103,8 @@ pub fn paint_theme_gradient(ui: &egui::Ui, rect: Rect, stops: [Color32; 3], radi
     if !rect.is_finite() || !rect.is_positive() {
         return;
     }
-    let id = egui::Id::new(("motion-gradient-loop", stops));
-    let texture = ui
-        .data(|data| data.get_temp::<egui::TextureHandle>(id))
-        .unwrap_or_else(|| {
-            let pixels = (0..SIZE)
-                .flat_map(|y| {
-                    (0..SIZE).map(move |x| {
-                        looping_colour_at(stops, x as f32 / SIZE as f32, y as f32 / SIZE as f32)
-                    })
-                })
-                .collect();
-            let texture = ui.ctx().load_texture(
-                "Motion living gradient",
-                egui::ColorImage::new([SIZE, SIZE], pixels),
-                egui::TextureOptions {
-                    wrap_mode: egui::TextureWrapMode::Repeat,
-                    ..egui::TextureOptions::LINEAR
-                },
-            );
-            ui.data_mut(|data| data.insert_temp(id, texture.clone()));
-            texture
-        });
-    // Half a tile across the window shows one sweep through the colours;
-    // the window slides diagonally as the phase grows.
-    let start = egui::pos2(phase, phase * 0.4);
-    egui::Image::new(&texture)
-        .uv(Rect::from_min_size(start, egui::vec2(0.5, 0.5)))
-        .corner_radius(egui::CornerRadius::same(radius))
-        .paint_at(ui, rect);
+    paint_gradient_window(ui, rect, stops, radius, living_window(phase));
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -138,25 +127,18 @@ mod tests {
     }
 
     #[test]
-    fn the_living_gradient_loops_seamlessly_through_all_three_colours() {
-        let stops = [
-            Color32::from_rgb(200, 30, 60),
-            Color32::from_rgb(40, 120, 220),
-            Color32::from_rgb(250, 200, 40),
-        ];
-        // The pattern repeats across the tile's edges in both directions.
-        for at in [0.0, 0.13, 0.5, 0.87] {
-            assert_eq!(
-                looping_colour_at(stops, at, 0.0),
-                looping_colour_at(stops, at, 1.0)
-            );
-            assert_eq!(
-                looping_colour_at(stops, 0.0, at),
-                looping_colour_at(stops, 1.0, at)
-            );
+    fn the_living_gradient_sways_gently_inside_the_still_one() {
+        // Every window stays inside the still gradient, keeps most of it in
+        // view, and moves smoothly round and back to where it started.
+        for step in 0..=100 {
+            let window = living_window(step as f32 / 100.0);
+            assert!(window.min.x >= 0.0 && window.min.y >= 0.0, "{window:?}");
+            assert!(window.max.x <= 1.0 + 1e-6 && window.max.y <= 1.0 + 1e-6);
+            assert!(window.width() >= 0.75 && window.height() >= 0.75);
+            let next = living_window((step + 1) as f32 / 100.0);
+            assert!(window.min.distance(next.min) < 0.01, "no jumps");
         }
-        assert_eq!(looping_colour_at(stops, 0.0, 0.0), stops[0]);
-        assert_eq!(looping_colour_at(stops, 0.25, 0.25), stops[2]);
+        assert!(living_window(0.0).min.distance(living_window(1.0).min) < 1e-5);
         let ctx = egui::Context::default();
         set_living_phase(&ctx, Some(3.25));
         assert_eq!(

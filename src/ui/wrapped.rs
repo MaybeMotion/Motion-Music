@@ -404,8 +404,9 @@ fn stat_card(app: &App, ui: &mut Ui, width: f32, number: &str, label: &str, inde
     if !ui.is_rect_visible(rect) {
         return;
     }
+    let corner = super::click_fx::corner(ui, 14.0);
     let painter = ui.painter();
-    painter.rect_filled(rect, 14, palette.surface);
+    painter.rect_filled(rect, corner, palette.surface);
     // A diagonal wash of the accent, turned a little further for each card.
     let mut hue = egui::ecolor::Hsva::from(palette.accent);
     hue.h = (hue.h + index as f32 * 0.07).fract();
@@ -512,7 +513,8 @@ fn ranked_row(
                         palette.secondary
                     },
                 );
-                widgets::cover(ui, &palette, image, 44.0, 6.0, Icon::Music);
+                let art = super::click_fx::radius(ui, 6.0);
+                widgets::cover(ui, &palette, image, 44.0, art, Icon::Music);
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 2.0;
                     theme::text(ui, title, theme::semibold(15.0), palette.text);
@@ -534,8 +536,12 @@ fn ranked_row(
         Sense::click(),
     );
     if response.hovered() {
-        ui.painter()
-            .rect_filled(response.rect, 8, palette.surface_hover.gamma_multiply(0.5));
+        ui.painter().rect_filled(
+            response.rect,
+            super::click_fx::corner(ui, 8.0),
+            palette.surface_hover.gamma_multiply(0.5),
+        );
     }
+    super::click_fx::note(ui, &response, 8.0);
     response.clicked()
 }

@@ -24,8 +24,11 @@ const REFRACTORY: f64 = 0.25;
 /// by the clock, not by frames: at a high refresh rate a per-frame average
 /// caught up with each kick before it could stand out.
 const AVERAGE_TIME: f64 = 0.35;
-/// How long a pulse takes to fade to about a third of its height.
-const FADE: f64 = 0.2;
+/// How long a pulse takes to swell to its height, so it eases in rather
+/// than snapping on.
+const ATTACK: f64 = 0.06;
+/// How long a pulse then takes to fade to about a third of its height.
+const FADE: f64 = 0.3;
 
 #[derive(Debug, Default, Clone)]
 pub struct BeatPulse {
@@ -68,11 +71,18 @@ impl BeatPulse {
         beat
     }
 
-    /// The pulse's height at `now`: 1 at a beat, fading towards 0.
+    /// The pulse's height at `now`: easing up to 1 just after a beat, then
+    /// fading smoothly towards 0.
     pub fn pulse(&self, now: f64) -> f32 {
         match self.last_beat {
-            Some(last) if now >= last && now - last < FADE * 5.0 => {
-                (-(now - last) / FADE).exp() as f32
+            Some(last) if now >= last && now - last < ATTACK + FADE * 5.0 => {
+                let since = now - last;
+                if since < ATTACK {
+                    let rise = since / ATTACK;
+                    (rise * rise * (3.0 - 2.0 * rise)) as f32
+                } else {
+                    (-(since - ATTACK) / FADE).exp() as f32
+                }
             }
             _ => 0.0,
         }
@@ -123,9 +133,12 @@ mod tests {
             pulse.step(&quiet, frame as f64 / 60.0);
         }
         assert!(pulse.step(&kick, 0.6), "a loud kick is a beat");
-        assert_eq!(pulse.pulse(0.6), 1.0);
-        assert!(pulse.pulse(0.7) < 0.7 && pulse.pulse(0.7) > 0.4);
-        assert!(pulse.pulse(1.0) < 0.15);
+        // It eases in rather than flashing on.
+        assert_eq!(pulse.pulse(0.6), 0.0);
+        assert!(pulse.pulse(0.63) > 0.3 && pulse.pulse(0.63) < 0.7);
+        assert!((pulse.pulse(0.6 + ATTACK) - 1.0).abs() < 1e-6);
+        assert!(pulse.pulse(0.8) < 0.7 && pulse.pulse(0.8) > 0.4);
+        assert!(pulse.pulse(1.3) < 0.15);
         assert_eq!(pulse.pulse(5.0), 0.0, "it settles completely");
         assert!(!pulse.step(&kick, 0.65), "one kick is one beat");
     }

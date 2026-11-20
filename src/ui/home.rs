@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use egui::{CornerRadius, Rect, Sense, Vec2, pos2, vec2};
+use egui::{Rect, Sense, Vec2, pos2, vec2};
 
 use crate::api::models::{Album, Episode, PlayableItem, Playlist, Show, pick_image};
 use crate::app::App;
@@ -222,17 +222,18 @@ fn quick_access(app: &mut App, ui: &mut egui::Ui) {
                     } else {
                         palette.surface
                     };
-                    ui.painter().rect_filled(rect, CornerRadius::same(6), fill);
+                    ui.painter()
+                        .rect_filled(rect, super::click_fx::corner(ui, 6.0), fill);
                     let cover = Rect::from_min_size(rect.min, Vec2::splat(TILE_HEIGHT));
                     if *liked {
-                        super::sidebar::liked_cover(ui, cover, 6.0);
+                        super::sidebar::liked_cover(ui, cover, super::click_fx::radius(ui, 6.0));
                     } else {
                         widgets::paint_cover(
                             ui,
                             &palette,
                             image.as_deref(),
                             cover,
-                            6.0,
+                            super::click_fx::radius(ui, 6.0),
                             Icon::Music,
                             Some(app.backend.art()),
                         );
@@ -295,6 +296,7 @@ fn quick_access(app: &mut App, ui: &mut egui::Ui) {
                         }
                     }
                 }
+                super::click_fx::note(ui, &response, 6.0);
                 if response.clicked() {
                     app.actions.push(Action::Open(page.clone()));
                 }

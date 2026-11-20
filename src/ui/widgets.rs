@@ -1591,18 +1591,20 @@ fn track_row_contents(
     // Keyboard navigation identifies its row immediately; a pointer's wash
     // eases without moving the row, its cover, or its drag threshold.
     let hover = if response.has_focus() { 1.0 } else { hover };
+    super::click_fx::note(ui, &response, 6.0);
+    let row_corner = super::click_fx::corner(ui, 6.0);
     if row.picked {
         // Keep the existing translucent selection, using a neutral palette
         // color so selecting a song does not mark it as playing.
         ui.painter().rect_filled(
             rect,
-            CornerRadius::same(6),
+            row_corner,
             palette.secondary.gamma_multiply(0.20 + 0.10 * hover),
         );
     } else if hover > 0.0 {
         ui.painter().rect_filled(
             rect,
-            CornerRadius::same(6),
+            row_corner,
             palette
                 .surface_hover
                 .gamma_multiply(hover * if palette.dark { 0.7 } else { 1.0 }),
@@ -1662,7 +1664,7 @@ fn track_row_contents(
             &palette,
             app.item_image(row.item, app.art_px(size)).as_deref(),
             cover_rect,
-            4.0,
+            super::click_fx::radius(ui, 4.0),
             if row.item.is_track() {
                 Icon::Music
             } else {
@@ -1673,12 +1675,9 @@ fn track_row_contents(
         // Without a number column the cover carries the play control:
         // hover shows it, a click uses it, and what plays shows there.
         if cols.number == 0.0 {
+            let cover_corner = super::click_fx::corner(ui, 4.0);
             let scrim = |alpha: u8| {
-                painter.rect_filled(
-                    cover_rect,
-                    CornerRadius::same(4),
-                    Color32::from_black_alpha(alpha),
-                );
+                painter.rect_filled(cover_rect, cover_corner, Color32::from_black_alpha(alpha));
             };
             if pending {
                 scrim(140);
@@ -2681,14 +2680,18 @@ pub fn card(
         if hover > 0.0 {
             ui.painter().rect_filled(
                 rect,
-                CornerRadius::same(theme::RADIUS),
+                super::click_fx::corner(ui, f32::from(theme::RADIUS)),
                 palette
                     .surface_hover
                     .gamma_multiply(hover * if palette.dark { 0.8 } else { 1.0 }),
             );
         }
         let image_rect = Rect::from_min_size(rect.min + vec2(PAD, PAD), Vec2::splat(image_size));
-        let radius = if circular { image_size / 2.0 } else { 6.0 };
+        let radius = if circular {
+            image_size / 2.0
+        } else {
+            super::click_fx::radius(ui, 6.0)
+        };
         paint_shadow(ui, &palette, image_rect, radius);
         paint_cover(
             ui,
@@ -2762,6 +2765,9 @@ pub fn card(
     }
     crate::autoscroll::row(ui, &response);
     theme::focus_ring(ui, &response);
+    if !play {
+        super::click_fx::note(ui, &response, f32::from(theme::RADIUS));
+    }
     CardResponse {
         clicked: response.clicked() && !play,
         response,
