@@ -411,14 +411,19 @@ fn stat_card(app: &App, ui: &mut Ui, width: f32, number: &str, label: &str, inde
     let mut hue = egui::ecolor::Hsva::from(palette.accent);
     hue.h = (hue.h + index as f32 * 0.07).fract();
     let wash = Color32::from(hue);
-    let mut mesh = egui::Mesh::default();
-    mesh.colored_vertex(rect.left_top(), wash.gamma_multiply(0.35));
-    mesh.colored_vertex(rect.right_top(), wash.gamma_multiply(0.12));
-    mesh.colored_vertex(rect.right_bottom(), Color32::TRANSPARENT);
-    mesh.colored_vertex(rect.left_bottom(), wash.gamma_multiply(0.12));
-    mesh.add_triangle(0, 1, 2);
-    mesh.add_triangle(0, 2, 3);
-    painter.add(egui::Shape::mesh(mesh));
+    // Drawn within the card's own corners, whatever the box shape.
+    let strength = |point: egui::Pos2| {
+        let x = (point.x - rect.left()) / rect.width();
+        let y = (point.y - rect.top()) / rect.height();
+        // 0.35 at the top left, 0.12 at the other top and left corners, and
+        // nothing at the bottom right.
+        let top = 0.35 + (0.12 - 0.35) * x;
+        let bottom = 0.12 * (1.0 - x);
+        top + (bottom - top) * y
+    };
+    painter.add(egui::Shape::mesh(rounded_mesh(rect, corner, |point| {
+        wash.gamma_multiply(strength(point))
+    })));
     painter.text(
         rect.left_top() + vec2(16.0, 14.0),
         egui::Align2::LEFT_TOP,
@@ -437,6 +442,40 @@ fn stat_card(app: &App, ui: &mut Ui, width: f32, number: &str, label: &str, inde
         galley,
         palette.secondary,
     );
+}
+
+/// A filled `rect` with `corner`s, each point coloured by `colour_at`.
+fn rounded_mesh(
+    rect: Rect,
+    corner: CornerRadius,
+    colour_at: impl Fn(egui::Pos2) -> Color32,
+) -> egui::Mesh {
+    use std::f32::consts::FRAC_PI_2;
+    let most = rect.width().min(rect.height()) / 2.0;
+    let round = |value: u8| f32::from(value).min(most);
+    // Clockwise from the top left: each corner's centre, radius and the
+    // angle its arc starts at.
+    let corners = [
+        (rect.left_top(), round(corner.nw), vec2(1.0, 1.0), 2.0),
+        (rect.right_top(), round(corner.ne), vec2(-1.0, 1.0), 3.0),
+        (rect.right_bottom(), round(corner.se), vec2(-1.0, -1.0), 0.0),
+        (rect.left_bottom(), round(corner.sw), vec2(1.0, -1.0), 1.0),
+    ];
+    let mut mesh = egui::Mesh::default();
+    mesh.colored_vertex(rect.center(), colour_at(rect.center()));
+    for (point, radius, inward, quarter) in corners {
+        let centre = point + inward * radius;
+        for step in 0..=8 {
+            let angle = (quarter + step as f32 / 8.0) * FRAC_PI_2;
+            let edge = centre + vec2(angle.cos(), angle.sin()) * radius;
+            mesh.colored_vertex(edge, colour_at(edge));
+        }
+    }
+    let rim = mesh.vertices.len() as u32 - 1;
+    for index in 1..=rim {
+        mesh.add_triangle(0, index, if index == rim { 1 } else { index + 1 });
+    }
+    mesh
 }
 
 /// Twenty-four bars, one for each hour, the busiest lit in the accent.

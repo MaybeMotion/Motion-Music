@@ -225,15 +225,23 @@ fn quick_access(app: &mut App, ui: &mut egui::Ui) {
                     ui.painter()
                         .rect_filled(rect, super::click_fx::corner(ui, 6.0), fill);
                     let cover = Rect::from_min_size(rect.min, Vec2::splat(TILE_HEIGHT));
+                    // In Pill the cover is a circle sitting in the tile's
+                    // round end; otherwise it takes the tile's own corners.
+                    let cover_radius =
+                        if super::click_fx::shape(ui.ctx()) == crate::settings::BoxShape::Pill {
+                            TILE_HEIGHT / 2.0
+                        } else {
+                            super::click_fx::radius(ui, 6.0)
+                        };
                     if *liked {
-                        super::sidebar::liked_cover(ui, cover, super::click_fx::radius(ui, 6.0));
+                        super::sidebar::liked_cover(ui, cover, cover_radius);
                     } else {
                         widgets::paint_cover(
                             ui,
                             &palette,
                             image.as_deref(),
                             cover,
-                            super::click_fx::radius(ui, 6.0),
+                            cover_radius,
                             Icon::Music,
                             Some(app.backend.art()),
                         );

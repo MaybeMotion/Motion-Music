@@ -2255,7 +2255,7 @@ pub fn liked_cover(ui: &egui::Ui, rect: Rect, radius: f32) {
             texture
         });
     egui::Image::new(&texture)
-        .corner_radius(CornerRadius::same(radius.min(127.0) as u8))
+        .corner_radius(super::click_fx::cover_corner(ui, rect, radius))
         .paint_at(ui, rect);
     let size = rect.width() * 0.45;
     let icon_rect = Rect::from_center_size(rect.center(), Vec2::splat(size));

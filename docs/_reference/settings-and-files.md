@@ -358,8 +358,9 @@ main fields are:
 | `beat_pulse_strength` | `subtle` | How brightly the beat pulse shows: `subtle`, `medium` or `strong` |
 | `living_gradients` | `false` | Let a gradient theme sway gently between its own colours while music plays |
 | `gradient_drift` | `slow` | How fast living gradients sway: `slow`, `medium` or `fast` |
-| `click_effect` | `ripple` | What a click on a page link, playlist, card or song shows: `off`, `ripple`, `glow`, `pop` or `sparkle` |
-| `box_shape` | `rounded` | Corners of cards, covers and highlighted rows: `rounded`, `square`, `soft` or `bubbly` |
+| `click_effect` | `ripple` | What a click on a page link, playlist, card or song shows: `off`, `ripple`, `glow`, `pop`, `sparkle`, `rings`, `bloom`, `confetti` or `wave` |
+| `box_shape` | `rounded` | Corners of cards, covers and highlighted rows: `rounded`, `square`, `soft`, `bubbly`, `pill` or `leaf` |
+| `visualiser_shuffle` | `off` | Change the player bar visualizer by itself: `off`, `song` (each song) or `minute` (every minute) |
 | `page_reveals_off` | absent | Page transition styles left out of the shuffle: any of `circle-out`, `circle-in`, `corner-circle`, `diagonal`, `curtain`, `swipe-left`, `swipe-right`, `swipe-up`, `swipe-down`, `diamond`, `blinds`, `cascade`, `zipper`, `letterbox`, `chevron`, `clock`, `wave-left`, `wave-right`, `wave-up`, `wave-down`. Absent uses all twenty; listing all of them changes pages at once |
 | `visualizer_fps` | `60` | Frame rate of the player bar and mini player visualizers; `0` is uncapped. Half that out of focus, at most 30 while the system saves energy, none while the window is hidden. MilkDrop uses `milkdrop_fps` |
 | `library_sort` | `{}` | Per-section Library order overrides, since 0.8.0: `library`, `recently_played`, `name`, `recently_added`, `local`, or `spotify`, where supported |

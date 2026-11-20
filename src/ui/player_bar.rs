@@ -103,7 +103,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     ui.painter(),
                     behind,
                     rect.top(),
-                    palette.accent,
+                    &visualiser_palette(app, None),
                     pulse * app.settings.beat_pulse_strength.amount(),
                 );
             }
@@ -142,32 +142,50 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 }
 
 /// A soft glow falling from the top edge of the bar, `amount` (0 to 1) of
-/// its full brightness. It fades out smoothly down the bar, so even at full
+/// its full brightness, swept across `colours` from left to right as the
+/// visualisers are. It fades out smoothly down the bar, so even at full
 /// strength there is no hard edge to flash.
-fn paint_pulse_glow(painter: &egui::Painter, behind: Rect, top: f32, accent: Color32, amount: f32) {
+fn paint_pulse_glow(
+    painter: &egui::Painter,
+    behind: Rect,
+    top: f32,
+    colours: &[Color32],
+    amount: f32,
+) {
     let mut glow = egui::Mesh::default();
-    // Three bands, each fainter, so the light thins out gradually.
+    // Bands, each fainter, so the light thins out gradually down the bar,
+    // and enough columns for the colours to blend smoothly across it.
     let stops = [(0.0, 0.55), (8.0, 0.3), (20.0, 0.1), (34.0, 0.0)];
-    for pair in stops.windows(2) {
-        let ((from, high), (to, low)) = (pair[0], pair[1]);
-        shaded(
-            &mut glow,
-            Rect::from_min_max(
-                pos2(behind.left(), top + from),
-                pos2(behind.right(), top + to),
-            ),
-            accent.gamma_multiply(high * amount),
-            accent.gamma_multiply(low * amount),
+    let columns = (colours.len().max(1) * 6) as u32;
+    let width = behind.width() / columns as f32;
+    for column in 0..columns {
+        let (from_at, to_at) = (
+            column as f32 / columns as f32,
+            (column + 1) as f32 / columns as f32,
         );
+        let (left, right) = (
+            behind.left() + column as f32 * width,
+            behind.left() + (column + 1) as f32 * width,
+        );
+        for pair in stops.windows(2) {
+            let ((from, high), (to, low)) = (pair[0], pair[1]);
+            let index = glow.vertices.len() as u32;
+            let (c0, c1) = (swept(colours, from_at), swept(colours, to_at));
+            glow.colored_vertex(pos2(left, top + from), c0.gamma_multiply(high * amount));
+            glow.colored_vertex(pos2(right, top + from), c1.gamma_multiply(high * amount));
+            glow.colored_vertex(pos2(right, top + to), c1.gamma_multiply(low * amount));
+            glow.colored_vertex(pos2(left, top + to), c0.gamma_multiply(low * amount));
+            glow.add_triangle(index, index + 1, index + 2);
+            glow.add_triangle(index, index + 2, index + 3);
+        }
     }
     painter.add(egui::Shape::mesh(glow));
     // At Strong the whole bar warms a touch with each beat as well.
     let wash = ((amount - 0.6) / 0.4).clamp(0.0, 1.0) * 0.06 * amount;
     if wash > 0.0 {
-        painter.rect_filled(behind, 0, accent.gamma_multiply(wash));
+        painter.rect_filled(behind, 0, swept(colours, 0.5).gamma_multiply(wash));
     }
 }
-
 /// Reads this frame's audio for beats when the beat pulse is on, and keeps
 /// frames coming while there is sound. Answers the pulse's height now.
 fn beat_pulse(app: &mut App, ui: &egui::Ui, now: Option<&NowPlaying>) -> f32 {
@@ -234,16 +252,148 @@ fn visualizer(
     stage: bool,
 ) -> bool {
     use crate::settings::PlayerBarVis;
-    use crate::vis;
-    let mode = match app.settings.player_bar_vis {
+    let clock = ui.input(|input| input.time);
+    shuffle_visualiser(app, now, clock);
+    let wanted = match app
+        .vis_motion
+        .shuffled
+        .unwrap_or(app.settings.player_bar_vis)
+    {
         // The stage always shows something; with the bar's visualizer off
         // it opens on the galaxy.
         PlayerBarVis::Off if stage => PlayerBarVis::Galaxy,
         mode => mode,
     };
+    let (mode, opacity) = app
+        .vis_motion
+        .crossfade(wanted, clock, crate::motion::reduced(ui.ctx()));
+    let fading = opacity < 1.0;
     if mode == PlayerBarVis::Off {
-        return false;
+        return fading;
     }
+    let moving = visualizer_mode(app, ui, rect, now, stage, mode, opacity);
+    moving || fading
+}
+
+/// How long one visualiser takes to give way to the next: it fades out over
+/// the first half and the next fades in over the second.
+const VIS_CROSSFADE: f64 = 0.7;
+/// How long Every minute leaves each visualiser.
+const VIS_SHUFFLE_SECONDS: f64 = 60.0;
+
+/// Which visualiser is showing, the one it is fading from, and the one
+/// visualiser shuffle picked.
+#[derive(Clone, Debug, Default)]
+pub struct VisMotion {
+    shown: Option<crate::settings::PlayerBarVis>,
+    fade: Option<(crate::settings::PlayerBarVis, f64)>,
+    /// The visualiser shuffle chose, shown instead of the saved choice.
+    pub shuffled: Option<crate::settings::PlayerBarVis>,
+    /// The song it was chosen for, or when, so the next comes on time.
+    shuffled_for: Option<String>,
+    shuffled_at: f64,
+    /// The saved choice last seen, so a new choice shows at once.
+    chosen: Option<crate::settings::PlayerBarVis>,
+}
+
+impl VisMotion {
+    /// The visualiser to draw at `now` while `wanted` is chosen, and how
+    /// strongly: a change fades the old one out and the new one in.
+    fn crossfade(
+        &mut self,
+        wanted: crate::settings::PlayerBarVis,
+        now: f64,
+        reduced: bool,
+    ) -> (crate::settings::PlayerBarVis, f32) {
+        let shown = *self.shown.get_or_insert(wanted);
+        if shown != wanted {
+            self.shown = Some(wanted);
+            // A change in the middle of a fade continues from what is
+            // visible rather than jumping back.
+            let from = match self.fade {
+                Some((from, start)) if (now - start) / VIS_CROSSFADE < 0.5 => from,
+                _ => shown,
+            };
+            self.fade = (!reduced).then_some((from, now));
+        }
+        let Some((from, start)) = self.fade else {
+            return (wanted, 1.0);
+        };
+        let progress = ((now - start) / VIS_CROSSFADE).max(0.0) as f32;
+        if progress >= 1.0 {
+            self.fade = None;
+            (wanted, 1.0)
+        } else if progress < 0.5 {
+            (from, smooth(1.0 - progress * 2.0))
+        } else {
+            (wanted, smooth(progress * 2.0 - 1.0))
+        }
+    }
+}
+
+/// Eases from 0 to 1 gently at both ends.
+fn smooth(amount: f32) -> f32 {
+    let amount = amount.clamp(0.0, 1.0);
+    amount * amount * (3.0 - 2.0 * amount)
+}
+
+/// Picks another visualiser when shuffle says it is time: for each new song,
+/// or every minute. Only while a visualiser is on, and never Off.
+fn shuffle_visualiser(app: &mut App, now: Option<&NowPlaying>, clock: f64) {
+    use crate::settings::{PlayerBarVis, VisShuffle};
+    let on = app.settings.player_bar_vis != PlayerBarVis::Off || app.visualiser_stage;
+    let motion = &mut app.vis_motion;
+    // A visualiser chosen in Settings shows straight away, until shuffle
+    // next moves on.
+    if motion.chosen.replace(app.settings.player_bar_vis) != Some(app.settings.player_bar_vis) {
+        motion.shuffled = None;
+        motion.shuffled_at = clock;
+    }
+    if app.settings.visualiser_shuffle == VisShuffle::Off || !on {
+        motion.shuffled = None;
+        motion.shuffled_for = None;
+        return;
+    }
+    let due = match app.settings.visualiser_shuffle {
+        VisShuffle::Off => false,
+        VisShuffle::Song => {
+            let song = now.map(|now| now.uri.clone());
+            let changed = song.is_some() && song != motion.shuffled_for;
+            if changed {
+                motion.shuffled_for = song;
+            }
+            changed
+        }
+        VisShuffle::Minute => {
+            clock - motion.shuffled_at >= VIS_SHUFFLE_SECONDS || clock < motion.shuffled_at
+        }
+    };
+    if !due {
+        return;
+    }
+    let showing = motion.shuffled.unwrap_or(app.settings.player_bar_vis);
+    let choices: Vec<_> = PlayerBarVis::ALL
+        .into_iter()
+        .filter(|mode| *mode != PlayerBarVis::Off && *mode != showing)
+        .collect();
+    let pick = ((clock * 7919.0).sin() * 43_758.547).fract().abs();
+    motion.shuffled = Some(choices[(pick * choices.len() as f64) as usize % choices.len()]);
+    motion.shuffled_at = clock;
+}
+
+/// Draws visualiser `mode` at `opacity` (0 to 1). Returns whether it is
+/// moving.
+fn visualizer_mode(
+    app: &mut App,
+    ui: &egui::Ui,
+    rect: Rect,
+    now: Option<&NowPlaying>,
+    stage: bool,
+    mode: crate::settings::PlayerBarVis,
+    opacity: f32,
+) -> bool {
+    use crate::settings::PlayerBarVis;
+    use crate::vis;
     let count = match mode {
         PlayerBarVis::Waveform | PlayerBarVis::Mirror => {
             (rect.width() / 8.0).clamp(75.0, 320.0) as usize * vis::SCOPE_STEP
@@ -253,24 +403,9 @@ fn visualizer(
     let samples = app.visualizer_samples(now, count);
     let sounding = samples.is_some();
     let dark = ui.visuals().dark_mode;
-    let gradient_colours = app
-        .theme_gradient()
-        .map(|stops| stops.map(|colour| [colour.r(), colour.g(), colour.b()]));
-    // Theme colours keep a gradient theme's own three colours, or the
-    // accent, whatever is playing; pages may still follow the cover.
-    let art_colours = match app.settings.visualizer_colours {
-        crate::settings::VisColours::Auto => app.now_playing_palette(),
-        crate::settings::VisColours::Theme => None,
-    };
-    let source_colours =
-        art_colours.or_else(|| gradient_colours.as_ref().map(|colours| colours.as_slice()));
     // On the stage nothing is read over the scene, so colours stay at full
     // brightness and every effect is drawn more strongly.
-    let colours = if stage {
-        stage_colours(source_colours, app.palette.accent)
-    } else {
-        vis_colours(source_colours, app.palette.accent, dark)
-    };
+    let colours = visualiser_palette(app, if stage { None } else { Some(dark) });
     let strength = if stage {
         STAGE_STRENGTH
     } else if dark {
@@ -278,7 +413,8 @@ fn visualizer(
     } else {
         LIGHT_STRENGTH
     };
-    let painter = ui.painter().with_clip_rect(rect);
+    let mut painter = ui.painter().with_clip_rect(rect);
+    painter.multiply_opacity(opacity);
     // Audio still reacts when reduced motion is requested, but decorative
     // travel and rotation stay still.
     let time = if crate::motion::reduced(ui.ctx()) {
@@ -320,6 +456,29 @@ fn visualizer(
             }
             sounding || !app.player_bar_analyser.settled() || !app.player_bar_glide.settled()
         }
+    }
+}
+
+/// The colours the visualisers are drawn in, from the bass to the treble:
+/// the playing cover's, or the theme's, as Visualizer colours chooses. With
+/// `behind_text` (whether the theme is dark) they are kept dim enough to read
+/// words over; without, they are at full brightness, as on the stage and in
+/// the beat pulse's soft glow.
+pub(crate) fn visualiser_palette(app: &App, behind_text: Option<bool>) -> Vec<Color32> {
+    let gradient_colours = app
+        .theme_gradient()
+        .map(|stops| stops.map(|colour| [colour.r(), colour.g(), colour.b()]));
+    // Theme colours keep a gradient theme's own three colours, or the
+    // accent, whatever is playing; pages may still follow the cover.
+    let art_colours = match app.settings.visualizer_colours {
+        crate::settings::VisColours::Auto => app.now_playing_palette(),
+        crate::settings::VisColours::Theme => None,
+    };
+    let source_colours =
+        art_colours.or_else(|| gradient_colours.as_ref().map(|colours| colours.as_slice()));
+    match behind_text {
+        Some(dark) => vis_colours(source_colours, app.palette.accent, dark),
+        None => stage_colours(source_colours, app.palette.accent),
     }
 }
 
@@ -380,7 +539,35 @@ pub fn stage(app: &mut App, ctx: &egui::Context) {
             if app.settings.beat_pulse && !crate::motion::reduced(ui.ctx()) {
                 let pulse = app.beat.pulse(ui.input(|input| input.time))
                     * app.settings.beat_pulse_strength.amount();
-                painter.rect_filled(rect, 0, app.palette.accent.gamma_multiply(0.05 * pulse));
+                if pulse > 0.01 {
+                    // The visualiser's own colours, rising softly from the
+                    // foot of the stage.
+                    let colours = visualiser_palette(app, None);
+                    let foot = rect.height() * 0.45;
+                    let mut glow = egui::Mesh::default();
+                    let columns = colours.len().max(1) * 6;
+                    for column in 0..columns {
+                        let (a, b) = (
+                            column as f32 / columns as f32,
+                            (column + 1) as f32 / columns as f32,
+                        );
+                        let index = glow.vertices.len() as u32;
+                        let x = |at: f32| rect.left() + at * rect.width();
+                        glow.colored_vertex(pos2(x(a), rect.bottom() - foot), Color32::TRANSPARENT);
+                        glow.colored_vertex(pos2(x(b), rect.bottom() - foot), Color32::TRANSPARENT);
+                        glow.colored_vertex(
+                            pos2(x(b), rect.bottom()),
+                            swept(&colours, b).gamma_multiply(0.22 * pulse),
+                        );
+                        glow.colored_vertex(
+                            pos2(x(a), rect.bottom()),
+                            swept(&colours, a).gamma_multiply(0.22 * pulse),
+                        );
+                        glow.add_triangle(index, index + 1, index + 2);
+                        glow.add_triangle(index, index + 2, index + 3);
+                    }
+                    painter.add(egui::Shape::mesh(glow));
+                }
             }
             if let Some(stops) = app.background_gradient() {
                 let stops = stops.map(|stop| stop.gamma_multiply(0.18));
@@ -1843,20 +2030,25 @@ fn transport(app: &mut App, ui: &mut egui::Ui, now: Option<&NowPlaying>, region:
         0.0
     };
     if pulse > 0.01 && !crate::motion::reduced(ui.ctx()) {
-        // A soft halo that breathes out from the play button on each beat.
+        // A soft halo that breathes out from the play button on each beat,
+        // in the visualiser's colour where the button sits along the bar,
+        // so it matches the glow above it.
         let amount = pulse * app.settings.beat_pulse_strength.amount();
+        let window = ui.ctx().content_rect();
+        let along = ((disc.center().x - window.left()) / window.width().max(1.0)).clamp(0.0, 1.0);
+        let colour = swept(&visualiser_palette(app, None), along);
         let ring = 19.0 + 8.0 * (1.0 - pulse);
         for (extra, alpha) in [(8.0, 0.05), (4.0, 0.1), (0.0, 0.16)] {
             ui.painter().circle_filled(
                 disc.center(),
                 ring + extra,
-                palette.accent.gamma_multiply(alpha * amount),
+                colour.gamma_multiply(alpha * amount),
             );
         }
         ui.painter().circle_stroke(
             disc.center(),
             ring,
-            egui::Stroke::new(1.5, palette.accent.gamma_multiply(0.7 * amount)),
+            egui::Stroke::new(1.5, colour.gamma_multiply(0.7 * amount)),
         );
     }
     if loading || app.any_play_pending() {
@@ -2664,6 +2856,31 @@ mod visualizer_scene_tests {
             first,
             geometry(PlayerBarVis::Mirror, &[0.1; 7], 0.0, 640.0, true)
         );
+    }
+
+    #[test]
+    fn a_new_visualiser_fades_in_after_the_old_one_fades_out() {
+        let mut motion = VisMotion::default();
+        let (ocean, galaxy) = (PlayerBarVis::Ocean, PlayerBarVis::Galaxy);
+        assert_eq!(motion.crossfade(ocean, 10.0, false), (ocean, 1.0));
+        // The old one fades out over the first half...
+        let (mode, early) = motion.crossfade(galaxy, 10.0, false);
+        assert_eq!((mode, early), (ocean, 1.0));
+        let (mode, fading) = motion.crossfade(galaxy, 10.0 + VIS_CROSSFADE * 0.25, false);
+        assert_eq!(mode, ocean);
+        assert!(fading > 0.0 && fading < 1.0);
+        // ...and the new one fades in over the second.
+        let (mode, rising) = motion.crossfade(galaxy, 10.0 + VIS_CROSSFADE * 0.75, false);
+        assert_eq!(mode, galaxy);
+        assert!(rising > 0.0 && rising < 1.0);
+        assert_eq!(
+            motion.crossfade(galaxy, 10.0 + VIS_CROSSFADE, false),
+            (galaxy, 1.0)
+        );
+        // Reduced motion changes at once.
+        assert_eq!(motion.crossfade(ocean, 20.0, true), (ocean, 1.0));
+        assert_eq!(smooth(0.0), 0.0);
+        assert_eq!(smooth(1.0), 1.0);
     }
 
     #[test]

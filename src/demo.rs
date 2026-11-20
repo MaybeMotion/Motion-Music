@@ -5683,12 +5683,15 @@ mod tests {
 
         // #when the waveform is chosen
         app.settings.player_bar_vis = PlayerBarVis::Waveform;
+        // These check each visualiser alone, not the crossfade between them.
+        app.vis_motion = Default::default();
         let output = draw(&mut app);
         assert!(waveform(&output), "the waveform is drawn");
         assert!(!spectrum(&output));
 
         // #when it is turned off
         app.settings.player_bar_vis = PlayerBarVis::Off;
+        app.vis_motion = Default::default();
         let output = draw(&mut app);
         assert!(!drawn(&output));
         assert!(!wants_frames(&output), "nothing to animate");
@@ -5782,11 +5785,14 @@ mod tests {
             app.desktop_audio.set_enabled(false);
             app.desktop_audio.set_enabled(true);
             app.settings.player_bar_vis = PlayerBarVis::Off;
+            // Each scene alone, not the crossfade into it.
+            app.vis_motion = Default::default();
             app.player_bar_analyser = crate::vis::WideAnalyser::default();
             app.player_bar_glide = crate::vis::Glide::default();
             desktop_audio_bar_frame(&ctx, &mut app, time);
             let (quiet, _) = desktop_audio_bar_frame(&ctx, &mut app, time);
             app.settings.player_bar_vis = mode;
+            app.vis_motion = Default::default();
             let (unavailable, _) = desktop_audio_bar_frame(&ctx, &mut app, time);
             assert_eq!(quiet, unavailable, "{mode:?} invents audio before capture");
 

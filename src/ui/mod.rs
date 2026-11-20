@@ -95,7 +95,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     update::show(app, ctx);
     widgets::drag_ghost(ctx, &app.palette, app.locale);
     toasts(app, ctx, theme::PLAYER_BAR_HEIGHT + 16.0);
-    click_fx::paint(ctx, app.palette.accent);
+    click_fx::paint(ctx, &player_bar::visualiser_palette(app, None));
     player_bar::stage(app, ctx);
     caption_buttons(ui, &app.palette, app.locale);
     fastframe_titlebar::resize(ui);

@@ -260,15 +260,27 @@ pub enum ClickEffect {
     Pop,
     /// A few sparks float out from the pointer.
     Sparkle,
+    /// Rings of light ripple outwards from the pointer, one after another.
+    Rings,
+    /// A soft glow blooms from the pointer like a flower opening.
+    Bloom,
+    /// A little burst of confetti.
+    Confetti,
+    /// A wave of light washes across the item, like the sea on a beach.
+    Wave,
 }
 
 impl ClickEffect {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 9] = [
         Self::Off,
         Self::Ripple,
         Self::Glow,
         Self::Pop,
         Self::Sparkle,
+        Self::Rings,
+        Self::Bloom,
+        Self::Confetti,
+        Self::Wave,
     ];
 
     pub fn label(self, locale: crate::i18n::Locale) -> std::borrow::Cow<'static, str> {
@@ -279,6 +291,10 @@ impl ClickEffect {
             Self::Glow => gettext(locale, "Glow"),
             Self::Pop => gettext(locale, "Pop"),
             Self::Sparkle => gettext(locale, "Sparkle"),
+            Self::Rings => gettext(locale, "Rings"),
+            Self::Bloom => gettext(locale, "Bloom"),
+            Self::Confetti => gettext(locale, "Confetti"),
+            Self::Wave => gettext(locale, "Wave"),
         }
     }
 }
@@ -293,10 +309,22 @@ pub enum BoxShape {
     Square,
     Soft,
     Bubbly,
+    /// As round as each box allows: rows become pills and small covers
+    /// circles.
+    Pill,
+    /// Two opposite corners round and two nearly square, like a leaf.
+    Leaf,
 }
 
 impl BoxShape {
-    pub const ALL: [Self; 4] = [Self::Rounded, Self::Square, Self::Soft, Self::Bubbly];
+    pub const ALL: [Self; 6] = [
+        Self::Rounded,
+        Self::Square,
+        Self::Soft,
+        Self::Bubbly,
+        Self::Pill,
+        Self::Leaf,
+    ];
 
     pub fn label(self, locale: crate::i18n::Locale) -> std::borrow::Cow<'static, str> {
         use crate::i18n::gettext;
@@ -305,20 +333,60 @@ impl BoxShape {
             Self::Square => gettext(locale, "Square"),
             Self::Soft => gettext(locale, "Soft"),
             Self::Bubbly => gettext(locale, "Bubbly"),
+            Self::Pill => gettext(locale, "Pill"),
+            Self::Leaf => gettext(locale, "Leaf"),
         }
     }
 
-    /// A corner drawn `base` points round in the usual shape, in this one.
+    /// The size of a corner drawn `base` points round in the usual shape,
+    /// in this one. Leaf's round corners are this size.
     pub fn radius(self, base: f32) -> f32 {
         match self {
             Self::Rounded => base,
             Self::Square => 0.0,
             Self::Soft => base * 2.0,
             Self::Bubbly => base * 3.5,
+            // egui keeps every corner to half the box's shorter side.
+            Self::Pill => 127.0,
+            Self::Leaf => base * 2.5,
+        }
+    }
+
+    /// The four corners, top left, top right, bottom left and bottom right,
+    /// of a box whose corners are `radius` (from [`Self::radius`]) round.
+    pub fn corners(self, radius: f32) -> [f32; 4] {
+        match self {
+            Self::Leaf => [radius, radius * 0.15, radius * 0.15, radius],
+            _ => [radius; 4],
         }
     }
 }
 
+/// When the player bar visualizer changes to another by itself.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VisShuffle {
+    /// It stays on the one chosen.
+    #[default]
+    Off,
+    /// A different one for every song.
+    Song,
+    /// A different one every minute.
+    Minute,
+}
+
+impl VisShuffle {
+    pub const ALL: [Self; 3] = [Self::Off, Self::Song, Self::Minute];
+
+    pub fn label(self, locale: crate::i18n::Locale) -> std::borrow::Cow<'static, str> {
+        use crate::i18n::gettext;
+        match self {
+            Self::Off => gettext(locale, "Off"),
+            Self::Song => gettext(locale, "Each song"),
+            Self::Minute => gettext(locale, "Every minute"),
+        }
+    }
+}
 /// Where the player bar visualizer takes its colours from.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -601,6 +669,8 @@ pub struct Settings {
     pub click_effect: ClickEffect,
     /// The corners of cards, covers and highlighted rows.
     pub box_shape: BoxShape,
+    /// When the player bar visualizer changes to another by itself.
+    pub visualiser_shuffle: VisShuffle,
     /// Page reveal styles left out of the shuffle, by their saved name.
     /// Empty uses every style, as before this setting existed.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -808,6 +878,7 @@ impl Default for Settings {
             gradient_drift: GradientDrift::Slow,
             click_effect: ClickEffect::Ripple,
             box_shape: BoxShape::Rounded,
+            visualiser_shuffle: VisShuffle::Off,
             visualizer_fps: crate::milkdrop::DEFAULT_FPS,
             discord_presence: false,
             discord_application_id: crate::discord_activity::DEFAULT_APPLICATION_ID.to_owned(),
@@ -2004,6 +2075,7 @@ mod tests {
     fn favourites_recents_and_motion_choices_default_empty_and_round_trip() {
         use super::{
             BoxShape, ClickEffect, GradientDrift, PulseStrength, RECENT_THEMES, VisColours,
+            VisShuffle,
         };
         use crate::theme::MotionTheme;
         let mut settings: Settings = serde_json::from_str("{}").unwrap();
@@ -2027,6 +2099,34 @@ mod tests {
         assert_eq!(chosen.gradient_drift, GradientDrift::Fast);
         assert_eq!(chosen.click_effect, ClickEffect::Sparkle);
         assert_eq!(chosen.box_shape, BoxShape::Bubbly);
+        assert_eq!(settings.visualiser_shuffle, VisShuffle::Off);
+        let more: Settings = serde_json::from_str(
+            r#"{"click_effect":"confetti","box_shape":"leaf","visualiser_shuffle":"song"}"#,
+        )
+        .unwrap();
+        assert_eq!(more.click_effect, ClickEffect::Confetti);
+        assert_eq!(more.box_shape, BoxShape::Leaf);
+        assert_eq!(more.visualiser_shuffle, VisShuffle::Song);
+        let json = serde_json::to_value(&more).unwrap();
+        assert_eq!(json["visualiser_shuffle"], "song");
+        assert_eq!(json["box_shape"], "leaf");
+        // Each choice has its own name in the picker.
+        for (index, effect) in ClickEffect::ALL.into_iter().enumerate() {
+            assert!(
+                ClickEffect::ALL[..index]
+                    .iter()
+                    .all(|earlier| earlier.label(crate::i18n::Locale::English)
+                        != effect.label(crate::i18n::Locale::English))
+            );
+        }
+        for (index, shape) in BoxShape::ALL.into_iter().enumerate() {
+            assert!(
+                BoxShape::ALL[..index]
+                    .iter()
+                    .all(|earlier| earlier.label(crate::i18n::Locale::English)
+                        != shape.label(crate::i18n::Locale::English))
+            );
+        }
         assert_eq!(settings.visualizer_colours, VisColours::Auto);
         // Untouched, the new lists add nothing to an existing file.
         let json = serde_json::to_value(&settings).unwrap();

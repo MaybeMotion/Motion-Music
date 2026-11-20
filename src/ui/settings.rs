@@ -183,12 +183,48 @@ fn choice_row<T: Copy + PartialEq>(
     value: &mut T,
 ) -> bool {
     let gap = 6.0;
+    let mut changed = false;
+    // Longer lists are a menu: a row of buttons would crowd out the words.
+    if choices.len() > 4 {
+        let width = 170.0;
+        filtered_row_sized(ui, palette, needle, section, row, width, |ui| {
+            let selected = choices
+                .iter()
+                .find(|(choice, _)| choice == value)
+                .map(|(_, label)| label.clone())
+                .unwrap_or_default();
+            let response = egui::ComboBox::from_id_salt(("appearance-choice", row.title.as_ref()))
+                .selected_text(selected.as_ref())
+                .width(width.min(ui.available_width()))
+                .show_ui(ui, |ui| {
+                    for (choice, label) in choices {
+                        if ui
+                            .selectable_label(*value == *choice, label.as_ref())
+                            .clicked()
+                            && *value != *choice
+                        {
+                            *value = *choice;
+                            changed = true;
+                        }
+                    }
+                });
+            response.response.widget_info(|| {
+                let mut info = egui::WidgetInfo::labeled(
+                    egui::WidgetType::ComboBox,
+                    ui.is_enabled(),
+                    row.title.as_ref(),
+                );
+                info.current_text_value = Some(selected.to_string());
+                info
+            });
+        });
+        return changed;
+    }
     let width = choices
         .iter()
         .map(|(_, label)| theme::soft_button_width(ui, label))
         .sum::<f32>()
         + gap * choices.len().saturating_sub(1) as f32;
-    let mut changed = false;
     filtered_row_sized(ui, palette, needle, section, row, width, |ui| {
         // Laid right to left, so the last choice goes first.
         ui.horizontal(|ui| {
@@ -1304,7 +1340,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             beat_pulse.clone(),
             gettext(
                 locale,
-                "Flash the play button and the top of the player bar on the beat, from the same audio the visualizers use.",
+                "Glow softly at the top of the player bar and around the play button on the beat, in the visualizer's colours, from the same audio the visualizers use.",
             ),
         ),
         RowText::new(
@@ -1344,6 +1380,13 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             gettext(
                 locale,
                 "The corners of cards, covers and highlighted rows. Rounded is the usual look.",
+            ),
+        ),
+        RowText::new(
+            gettext(locale, "Visualizer shuffle"),
+            gettext(
+                locale,
+                "Change to a different visualizer for each song or every minute, fading softly from one to the next.",
             ),
         ),
     ];
@@ -1732,6 +1775,19 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     &appearance_rows[21],
                     &shapes,
                     &mut app.settings.box_shape,
+                );
+                let shuffles: Vec<_> = crate::settings::VisShuffle::ALL
+                    .into_iter()
+                    .map(|choice| (choice, choice.label(locale)))
+                    .collect();
+                changed |= choice_row(
+                    ui,
+                    &palette,
+                    &needle,
+                    &appearance,
+                    &appearance_rows[22],
+                    &shuffles,
+                    &mut app.settings.visualiser_shuffle,
                 );
             }
             {

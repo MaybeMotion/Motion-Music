@@ -78,7 +78,7 @@ pub(super) fn paint_cover_with_thumbnail(
     if !ui.is_rect_visible(rect) {
         return;
     }
-    let corner = CornerRadius::same(radius.min(127.0) as u8);
+    let corner = super::click_fx::cover_corner(ui, rect, radius);
     let at = |url| CoverAt { url, rect, corner };
     // A copy at this size, or while it is made, the nearest copy of the
     // same artwork already on the GPU.
@@ -107,11 +107,8 @@ pub(super) fn paint_cover_with_thumbnail(
         } else {
             palette.surface_active
         };
-        if radius >= rect.width() / 2.0 - 0.5 {
-            painter.circle_filled(rect.center(), rect.width() / 2.0, fill);
-        } else {
-            painter.rect_filled(rect, corner, fill);
-        }
+        // A corner as wide as half the cover makes it round.
+        painter.rect_filled(rect, corner, fill);
         let icon_size = (rect.width() * 0.42).clamp(12.0, 64.0);
         theme::paint_icon(ui, fallback, rect, icon_size, palette.dim);
     }
@@ -2692,7 +2689,9 @@ pub fn card(
         } else {
             super::click_fx::radius(ui, 6.0)
         };
-        paint_shadow(ui, &palette, image_rect, radius);
+        // The shadow follows the cover's own corners in every box shape.
+        let shown = super::click_fx::cover_corner(ui, image_rect, radius);
+        paint_shadow(ui, &palette, image_rect, shown.average());
         paint_cover(
             ui,
             &palette,

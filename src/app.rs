@@ -808,6 +808,9 @@ pub struct App {
     pub player_bar_analyser: crate::vis::WideAnalyser,
     /// The analyser's bands, glided for the scenes.
     pub player_bar_glide: crate::vis::Glide,
+    /// Which visualiser is showing, the one it is crossfading from, and the
+    /// one visualiser shuffle has picked.
+    pub vis_motion: crate::ui::player_bar::VisMotion,
     /// Whether the full-window visualiser stage is open.
     pub visualiser_stage: bool,
     /// When the music will fade out and pause, if a sleep timer is set.
@@ -1353,6 +1356,7 @@ impl App {
             winamp: crate::winamp::WinampState::new(session.winamp_pos, tap, eq),
             player_bar_analyser: crate::vis::WideAnalyser::default(),
             player_bar_glide: crate::vis::Glide::default(),
+            vis_motion: Default::default(),
             visualiser_stage: false,
             sleep_timer: None,
             beat: crate::beat::BeatPulse::default(),
@@ -12511,7 +12515,14 @@ impl App {
                 ctx.request_repaint();
             }
             Action::CyclePlayerBarVis => {
-                self.settings.player_bar_vis = self.settings.player_bar_vis.next();
+                // From the one showing, which shuffle may have picked; the
+                // choice is then the listener's own until shuffle moves on.
+                let showing = self
+                    .vis_motion
+                    .shuffled
+                    .unwrap_or(self.settings.player_bar_vis);
+                self.settings.player_bar_vis = showing.next();
+                self.vis_motion.shuffled = None;
                 self.settings_dirty = true;
             }
             Action::CycleVisualiser => {
