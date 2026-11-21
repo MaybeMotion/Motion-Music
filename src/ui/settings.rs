@@ -1998,26 +1998,19 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 
     let extras = gettext(locale, "Extras");
     let speaker_fade = gettext(locale, "Fade between speakers");
-    let song_card = gettext(locale, "Song change card");
     let moving_art = gettext(locale, "Moving album art");
     let karaoke = gettext(locale, "Karaoke lyrics");
     let weekly_recap = gettext(locale, "Weekly recap");
     let global_shortcuts = gettext(locale, "Global shortcuts");
     let startup_animation = gettext(locale, "Startup animation");
     let sleep_timer = gettext(locale, "Sleep timer");
+    let sleep_timer_button = gettext(locale, "Sleep timer on the player bar");
     let extras_rows = [
         RowText::new(
             speaker_fade.clone(),
             gettext(
                 locale,
                 "The visualizers and beat pulse fade out and back in when the music moves to another speaker.",
-            ),
-        ),
-        RowText::new(
-            song_card.clone(),
-            gettext(
-                locale,
-                "A card with the cover slides in for a moment when the song changes.",
             ),
         ),
         RowText::new(
@@ -2053,42 +2046,50 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             startup_animation.clone(),
             gettext(
                 locale,
-                "A short logo reveal in your theme's colours when Motion Music opens.",
+                "A quick logo reveal in your theme's colours when Motion Music opens, under a second. It plays once per launch, not when you switch to or from the mini player.",
+            ),
+        ),
+        RowText::new(
+            gettext(locale, "Startup animation style"),
+            gettext(
+                locale,
+                "Bloom, Iris, Spin, Curtain or Glow, or Random for a different one each launch.",
             ),
         ),
         RowText::new(
             sleep_timer.clone(),
             gettext(
                 locale,
-                "Fade the music out over the last minute, then pause it. Also on the player bar's clock button.",
+                "Fade the music out over the last minute, then pause it. Also in the tray menu.",
             ),
         ),
         RowText::new(
             gettext(locale, "Sleep timer length"),
             gettext(locale, "How long the sleep timer runs when it is turned on here."),
         ),
+        RowText::new(
+            sleep_timer_button.clone(),
+            gettext(
+                locale,
+                "Show the sleep timer's clock button on the player bar. The timer still works from here and the tray when it is hidden.",
+            ),
+        ),
     ];
     if section_matches(&needle, &extras, &extras_rows) {
         any_visible = true;
         section(ui, &palette, &extras, |ui| {
-            let switches: [(&RowText<'_>, &std::borrow::Cow<'_, str>, &mut bool); 6] = [
+            let switches: [(&RowText<'_>, &std::borrow::Cow<'_, str>, &mut bool); 4] = [
                 (
                     &extras_rows[0],
                     &speaker_fade,
                     &mut app.settings.speaker_fade,
                 ),
-                (&extras_rows[1], &song_card, &mut app.settings.song_card),
-                (&extras_rows[2], &moving_art, &mut app.settings.moving_art),
-                (&extras_rows[3], &karaoke, &mut app.settings.karaoke_lyrics),
+                (&extras_rows[1], &moving_art, &mut app.settings.moving_art),
+                (&extras_rows[2], &karaoke, &mut app.settings.karaoke_lyrics),
                 (
-                    &extras_rows[4],
+                    &extras_rows[3],
                     &weekly_recap,
                     &mut app.settings.weekly_recap,
-                ),
-                (
-                    &extras_rows[6],
-                    &startup_animation,
-                    &mut app.settings.startup_animation,
                 ),
             ];
             for (row, label, value) in switches {
@@ -2099,7 +2100,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 });
             }
             if cfg!(windows) {
-                filtered_row(ui, &palette, &needle, &extras, &extras_rows[5], |ui| {
+                filtered_row(ui, &palette, &needle, &extras, &extras_rows[4], |ui| {
                     if widgets::switch(
                         ui,
                         &palette,
@@ -2112,6 +2113,33 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     }
                 });
             }
+            filtered_row(ui, &palette, &needle, &extras, &extras_rows[5], |ui| {
+                if widgets::switch(
+                    ui,
+                    &palette,
+                    &startup_animation,
+                    &mut app.settings.startup_animation,
+                )
+                .changed()
+                {
+                    changed = true;
+                }
+            });
+            let styles: Vec<_> = crate::settings::StartupStyle::ALL
+                .into_iter()
+                .map(|choice| (choice, choice.label(locale)))
+                .collect();
+            ui.add_enabled_ui(app.settings.startup_animation, |ui| {
+                changed |= choice_row(
+                    ui,
+                    &palette,
+                    &needle,
+                    &extras,
+                    &extras_rows[6],
+                    &styles,
+                    &mut app.settings.startup_style,
+                );
+            });
             filtered_row(ui, &palette, &needle, &extras, &extras_rows[7], |ui| {
                 let mut on = app.sleep_timer.is_some();
                 if widgets::switch(ui, &palette, &sleep_timer, &mut on).changed() {
@@ -2149,6 +2177,18 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     )));
                 }
             }
+            filtered_row(ui, &palette, &needle, &extras, &extras_rows[9], |ui| {
+                if widgets::switch(
+                    ui,
+                    &palette,
+                    &sleep_timer_button,
+                    &mut app.settings.sleep_timer_button,
+                )
+                .changed()
+                {
+                    changed = true;
+                }
+            });
         });
     }
 

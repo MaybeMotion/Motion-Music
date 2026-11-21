@@ -1,16 +1,291 @@
 //! Little touches drawn over the window: the cover drifting and breathing,
-//! a card when the song changes, the logo reveal when the app opens, and
-//! the weekly recap. Each has its own switch in Settings > Extras, and
-//! none moves while the system asks for less motion.
+//! the logo reveal when the app opens, and the weekly recap. Each has its
+//! own switch in Settings > Extras, and none moves while the system asks
+//! for less motion.
 
-use std::f32::consts::TAU;
+use std::f32::consts::{PI, TAU};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use egui::{Align2, Color32, Context, Id, LayerId, Order, Rect, Vec2, pos2, vec2};
 
 use crate::app::App;
 use crate::i18n::gettext;
 use crate::model::{Action, Page};
-use crate::theme::{self, Icon};
+use crate::settings::StartupStyle;
+use crate::theme;
+
+/// How long the logo reveal lasts, so a quick launch stays quick, and how
+/// much of it is the window fading in.
+const STARTUP_SECONDS: f64 = 0.9;
+const STARTUP_FADE: f64 = 0.35;
+
+/// The reveal plays once per launch. Switching between the main window and
+/// the mini player makes a new window, but it is the same launch.
+static STARTUP_SHOWN: AtomicBool = AtomicBool::new(false);
+
+/// Whether the logo reveal is still to finish.
+pub(crate) fn starting() -> bool {
+    !STARTUP_SHOWN.load(Ordering::Relaxed)
+}
+
+/// The style a launch shows: the one chosen, or for Random one picked
+/// afresh each launch.
+fn launch_style(chosen: StartupStyle) -> StartupStyle {
+    if chosen != StartupStyle::Random {
+        return chosen;
+    }
+    static PICKED: std::sync::OnceLock<StartupStyle> = std::sync::OnceLock::new();
+    *PICKED.get_or_init(|| {
+        let styles = StartupStyle::PLAYED;
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.subsec_nanos() as usize);
+        styles[seed % styles.len()]
+    })
+}
+
+/// The logo reveal when the app opens, in the chosen style, then the window
+/// fading in from behind it. Under a second, once per launch.
+pub(crate) fn startup(app: &App, ctx: &Context) {
+    if !starting() {
+        return;
+    }
+    if !app.settings.startup_animation || !app.flair || crate::motion::reduced(ctx) {
+        STARTUP_SHOWN.store(true, Ordering::Relaxed);
+        return;
+    }
+    let time = ctx.input(|input| input.time);
+    let start = ctx
+        .data_mut(|data| *data.get_temp_mut_or_insert_with(Id::new("startup-reveal-at"), || time));
+    let age = time - start;
+    if age >= STARTUP_SECONDS {
+        STARTUP_SHOWN.store(true, Ordering::Relaxed);
+        return;
+    }
+    ctx.request_repaint();
+    let reveal = Reveal {
+        // 0 to 1 through the whole reveal, and how much of the window is
+        // still covered: all of it until the fade, then less and less.
+        progress: (age / STARTUP_SECONDS) as f32,
+        cover: smooth(((STARTUP_SECONDS - age) / STARTUP_FADE) as f32),
+        window: ctx.content_rect(),
+        colours: super::player_bar::visualiser_palette(app, None),
+        background: app.palette.window,
+        text: app.palette.text,
+        painter: ctx.layer_painter(LayerId::new(Order::Tooltip, Id::new("startup-reveal"))),
+        logo: logo_texture(ctx).id(),
+    };
+    match launch_style(app.settings.startup_style) {
+        StartupStyle::Bloom | StartupStyle::Random => reveal.bloom(),
+        StartupStyle::Iris => reveal.iris(),
+        StartupStyle::Spin => reveal.spin(),
+        StartupStyle::Curtain => reveal.curtain(),
+        StartupStyle::Glow => reveal.glow(),
+    }
+}
+
+/// One frame of the logo reveal.
+struct Reveal {
+    progress: f32,
+    cover: f32,
+    window: Rect,
+    colours: Vec<Color32>,
+    background: Color32,
+    text: Color32,
+    painter: egui::Painter,
+    logo: egui::TextureId,
+}
+
+impl Reveal {
+    const LOGO: f32 = 104.0;
+
+    fn centre(&self) -> egui::Pos2 {
+        self.window.center() - vec2(0.0, 16.0)
+    }
+
+    fn colour(&self, at: f32) -> Color32 {
+        super::player_bar::swept(&self.colours, at)
+    }
+
+    /// The whole window in the theme's background, fading at the end.
+    fn backdrop(&self) {
+        self.painter
+            .rect_filled(self.window, 0.0, self.background.gamma_multiply(self.cover));
+    }
+
+    /// The logo at `scale`, turned by `angle`, `shown` (0 to 1) visible.
+    fn logo(&self, scale: f32, angle: f32, shown: f32) {
+        let half = Self::LOGO * scale / 2.0;
+        let centre = self.centre();
+        let tint = Color32::WHITE.gamma_multiply(shown * self.cover);
+        let mut mesh = egui::Mesh::with_texture(self.logo);
+        let corners = [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)];
+        for (x, y) in corners {
+            let (sin, cos) = angle.sin_cos();
+            let point = vec2(x * cos - y * sin, x * sin + y * cos) * half;
+            mesh.vertices.push(egui::epaint::Vertex {
+                pos: centre + point,
+                uv: pos2((x + 1.0) / 2.0, (y + 1.0) / 2.0),
+                color: tint,
+            });
+        }
+        mesh.add_triangle(0, 1, 2);
+        mesh.add_triangle(0, 2, 3);
+        self.painter.add(egui::Shape::mesh(mesh));
+    }
+
+    /// A soft halo of the theme's middle colour behind the logo.
+    fn halo(&self, scale: f32, strength: f32) {
+        let glow = self.colour(0.5);
+        for (spread, alpha) in [(1.6, 0.06), (1.3, 0.1), (1.12, 0.16)] {
+            self.painter.circle_filled(
+                self.centre(),
+                Self::LOGO * scale / 2.0 * spread,
+                glow.gamma_multiply(alpha * strength * self.cover),
+            );
+        }
+    }
+
+    /// The name, rising softly into place under the logo.
+    fn name(&self, shown: f32) {
+        let shown = shown * self.cover;
+        self.painter.text(
+            self.centre() + vec2(0.0, Self::LOGO / 2.0 + 28.0 + (1.0 - shown) * 6.0),
+            Align2::CENTER_CENTER,
+            "Motion Music",
+            theme::bold(24.0),
+            self.text.gamma_multiply(shown),
+        );
+    }
+
+    /// The logo grows in with a little overshoot as rings of the theme's
+    /// colours spread out from it.
+    fn bloom(&self) {
+        self.backdrop();
+        for ring in 0..3 {
+            let progress = ((self.progress - ring as f32 * 0.12) / 0.75).clamp(0.0, 1.0);
+            if progress <= 0.0 {
+                continue;
+            }
+            let radius = 48.0 + progress * self.window.size().min_elem() * 0.34;
+            let colour = self
+                .colour(ring as f32 / 2.0)
+                .gamma_multiply((1.0 - progress) * 0.55 * self.cover);
+            self.painter.circle_stroke(
+                self.centre(),
+                radius,
+                egui::Stroke::new(3.0 - ring as f32, colour),
+            );
+        }
+        let grow = smooth(self.progress / 0.45);
+        let scale = (0.7 + 0.3 * grow) * (1.0 + 0.08 * (grow * PI).sin());
+        self.halo(scale, grow);
+        self.logo(scale, 0.0, grow);
+        self.name(smooth((self.progress - 0.25) / 0.3));
+    }
+
+    /// A circle opens from the middle, its rim lit in the theme's colours,
+    /// showing the app through it while the logo shrinks away.
+    fn iris(&self) {
+        let open = smooth((self.progress - 0.3) / 0.7);
+        let far = self.window.size().length() / 2.0;
+        let radius = open * far;
+        let centre = self.centre();
+        // Everything outside the opening, drawn as a ring.
+        let steps = 72;
+        let mut ring = egui::Mesh::default();
+        for step in 0..=steps {
+            let angle = step as f32 / steps as f32 * TAU;
+            let direction = vec2(angle.cos(), angle.sin());
+            ring.colored_vertex(centre + direction * radius, self.background);
+            ring.colored_vertex(centre + direction * (far + 4.0), self.background);
+        }
+        for step in 0..steps {
+            let at = step * 2;
+            ring.add_triangle(at, at + 1, at + 3);
+            ring.add_triangle(at, at + 3, at + 2);
+        }
+        self.painter.add(egui::Shape::mesh(ring));
+        if radius > 1.0 {
+            for (index, width) in [6.0, 3.0].into_iter().enumerate() {
+                let colour = self
+                    .colour(index as f32)
+                    .gamma_multiply(0.6 * (1.0 - open * 0.6));
+                self.painter
+                    .circle_stroke(centre, radius, egui::Stroke::new(width, colour));
+            }
+        }
+        let shown = smooth(self.progress / 0.25) * (1.0 - open);
+        self.halo(1.0, shown);
+        self.logo(1.0 - 0.4 * open, 0.0, shown);
+        self.name(shown);
+    }
+
+    /// The logo spins into place, a full turn slowing to a stop.
+    fn spin(&self) {
+        self.backdrop();
+        let turn = smooth(self.progress / 0.6);
+        let angle = (1.0 - turn) * -TAU;
+        let scale = 0.5 + 0.5 * turn;
+        // A comet of the theme's colours trails the turn.
+        for trail in 0..6 {
+            let behind = trail as f32 * 0.35;
+            let point = self.centre()
+                + vec2((angle + behind).cos(), (angle + behind).sin()) * Self::LOGO * 0.62;
+            self.painter.circle_filled(
+                point,
+                5.0 - trail as f32 * 0.7,
+                self.colour(trail as f32 / 5.0)
+                    .gamma_multiply((1.0 - turn) * (1.0 - trail as f32 / 6.0) * self.cover),
+            );
+        }
+        self.halo(scale, turn);
+        self.logo(scale, angle, smooth(self.progress / 0.2));
+        self.name(smooth((self.progress - 0.35) / 0.25));
+    }
+
+    /// The logo shows on a curtain that parts down the middle, sliding off
+    /// either side.
+    fn curtain(&self) {
+        let part = smooth((self.progress - 0.35) / 0.65);
+        let width = self.window.width() / 2.0;
+        let slide = part * (width + 8.0);
+        let left = Rect::from_min_size(
+            self.window.min - vec2(slide, 0.0),
+            vec2(width, self.window.height()),
+        );
+        let right = left.translate(vec2(width + 2.0 * slide, 0.0));
+        for (half, at) in [(left, 0.0), (right, 1.0)] {
+            self.painter.rect_filled(half, 0.0, self.background);
+            // The parting edge lit in the theme's colours.
+            let edge = if at == 0.0 {
+                Rect::from_min_max(pos2(half.right() - 3.0, half.top()), half.right_bottom())
+            } else {
+                Rect::from_min_max(half.left_top(), pos2(half.left() + 3.0, half.bottom()))
+            };
+            self.painter.rect_filled(
+                edge,
+                0.0,
+                self.colour(at).gamma_multiply(part.min(1.0 - part) * 1.6),
+            );
+        }
+        let shown = smooth(self.progress / 0.25) * (1.0 - part);
+        self.halo(1.0, shown);
+        self.logo(0.85 + 0.15 * smooth(self.progress / 0.35), 0.0, shown);
+        self.name(shown);
+    }
+
+    /// The quietest: the logo fades up in a soft glow of the theme's
+    /// colours and the window comes in behind it.
+    fn glow(&self) {
+        self.backdrop();
+        let shown = smooth(self.progress / 0.35);
+        let breathe = 1.0 + 0.15 * (self.progress * PI).sin();
+        self.halo(breathe * 1.15, shown);
+        self.logo(0.92 + 0.08 * shown, 0.0, shown);
+        self.name(smooth((self.progress - 0.2) / 0.3));
+    }
+}
 
 /// Eases from 0 to 1 gently at both ends.
 fn smooth(amount: f32) -> f32 {
@@ -54,227 +329,6 @@ pub(crate) fn moving_art(app: &App, ui: &egui::Ui, rect: Rect, key: &str, playin
     Rect::from_center_size(rect.center() + vec2(x, y), rect.size() * scale)
 }
 
-/// The song the card is showing, and when it started.
-#[derive(Clone)]
-struct SongCard {
-    title: String,
-    subtitle: String,
-    art: Option<String>,
-    started: f64,
-}
-
-/// How long the song card stays, sliding in and floating away.
-const CARD_SECONDS: f64 = 4.5;
-const CARD_IN: f64 = 0.45;
-const CARD_OUT: f64 = 0.7;
-
-/// A card with the new song's cover, title and artist that slides up beside
-/// the player bar's cover when the song changes, then floats away.
-pub(crate) fn song_card(app: &App, ctx: &Context) {
-    let id = Id::new("song-card");
-    let last_id = id.with("last");
-    let now = app.now_playing().filter(|now| !now.resuming);
-    let uri = now.as_ref().map(|now| now.uri.clone());
-    let time = ctx.input(|input| input.time);
-    let last: Option<Option<String>> = ctx.data(|data| data.get_temp(last_id));
-    // The song already playing as the app opens is no change of song.
-    if starting(ctx) {
-        ctx.data_mut(|data| data.insert_temp(last_id, uri));
-        return;
-    }
-    if last.as_ref() != Some(&uri) {
-        ctx.data_mut(|data| data.insert_temp(last_id, uri.clone()));
-        let wanted = app.settings.song_card
-            && app.flair
-            && !crate::motion::reduced(ctx)
-            && app.lyrics_fullscreen.is_none()
-            && last.is_some();
-        match now.as_ref().filter(|_| wanted) {
-            Some(now) => ctx.data_mut(|data| {
-                data.insert_temp(
-                    id,
-                    SongCard {
-                        title: now.title.clone(),
-                        subtitle: now.subtitle.clone(),
-                        art: now.art_small.clone().or_else(|| now.art_url.clone()),
-                        started: time,
-                    },
-                );
-            }),
-            None => ctx.data_mut(|data| data.remove::<SongCard>(id)),
-        }
-    }
-    let Some(card) = ctx.data(|data| data.get_temp::<SongCard>(id)) else {
-        return;
-    };
-    let age = time - card.started;
-    if !(0.0..CARD_SECONDS).contains(&age) {
-        ctx.data_mut(|data| data.remove::<SongCard>(id));
-        return;
-    }
-    ctx.request_repaint();
-    let entering = smooth((age / CARD_IN) as f32);
-    let leaving = smooth(((CARD_SECONDS - age) / CARD_OUT) as f32);
-    let opacity = entering.min(leaving);
-    let size = vec2(300.0, 76.0);
-    let window = ctx.content_rect();
-    let home = pos2(
-        window.left() + 16.0,
-        window.bottom() - theme::PLAYER_BAR_HEIGHT - 14.0 - size.y,
-    );
-    // Rises from the player bar, then floats on up as it fades.
-    let offset = vec2(0.0, (1.0 - entering) * 26.0 - (1.0 - leaving) * 18.0);
-    let palette = app.palette;
-    let colours = super::player_bar::visualiser_palette(app, None);
-    egui::Area::new(id.with("area"))
-        .order(Order::Foreground)
-        .fixed_pos(home + offset)
-        .interactable(false)
-        .show(ctx, |ui| {
-            ui.multiply_opacity(opacity);
-            let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
-            let corner = super::click_fx::corner(ui, 14.0);
-            let painter = ui.painter();
-            painter.add(
-                egui::epaint::Shadow {
-                    offset: [0, 10],
-                    blur: 28,
-                    spread: 0,
-                    color: Color32::from_black_alpha(if palette.dark { 130 } else { 50 }),
-                }
-                .as_shape(rect, corner),
-            );
-            painter.rect_filled(rect, corner, palette.panel);
-            // A soft wash of the visualizer's colours from the left.
-            let mut wash = egui::Mesh::default();
-            for (index, x) in [rect.left(), rect.center().x, rect.right()]
-                .into_iter()
-                .enumerate()
-            {
-                let colour = super::player_bar::swept(&colours, index as f32 / 2.0)
-                    .gamma_multiply(0.18 * (1.0 - index as f32 / 2.0));
-                wash.colored_vertex(pos2(x, rect.top() + 6.0), colour);
-                wash.colored_vertex(pos2(x, rect.bottom() - 6.0), colour);
-            }
-            for at in [0, 2] {
-                wash.add_triangle(at, at + 1, at + 3);
-                wash.add_triangle(at, at + 3, at + 2);
-            }
-            painter.add(egui::Shape::mesh(wash));
-            let cover = Rect::from_min_size(rect.min + vec2(10.0, 10.0), Vec2::splat(56.0));
-            super::widgets::paint_cover(
-                ui,
-                &palette,
-                card.art.as_deref(),
-                cover,
-                super::click_fx::radius(ui, 8.0),
-                Icon::Music,
-                Some(app.backend.art()),
-            );
-            let left = cover.right() + 12.0;
-            let width = rect.right() - left - 12.0;
-            let lines = [
-                (
-                    gettext(app.locale, "Now playing").into_owned(),
-                    theme::semibold(11.0),
-                    super::player_bar::swept(&colours, 0.2),
-                ),
-                (card.title.clone(), theme::semibold(15.0), palette.text),
-                (
-                    card.subtitle.clone(),
-                    theme::regular(12.5),
-                    palette.secondary,
-                ),
-            ];
-            let mut y = rect.top() + 12.0;
-            for (text, font, colour) in lines {
-                let mut job = egui::text::LayoutJob::simple_singleline(text, font, colour);
-                job.wrap = egui::text::TextWrapping::truncate_at_width(width);
-                let galley = ui.painter().layout_job(job);
-                let height = galley.size().y;
-                ui.painter().galley(pos2(left, y), galley, colour);
-                y += height + 2.0;
-            }
-        });
-}
-
-/// How long the logo reveal lasts, and when it starts to fade.
-const STARTUP_SECONDS: f64 = 1.9;
-const STARTUP_FADE: f64 = 0.6;
-
-/// Whether the logo reveal is still showing.
-pub(crate) fn starting(ctx: &Context) -> bool {
-    ctx.data(|data| data.get_temp::<bool>(Id::new("startup-reveal-done")))
-        .is_none_or(|done| !done)
-}
-
-/// The logo blooming in the middle of the window in the theme's colours
-/// when the app opens, then the window fading in from behind it.
-pub(crate) fn startup(app: &App, ctx: &Context) {
-    let done_id = Id::new("startup-reveal-done");
-    if ctx.data(|data| data.get_temp::<bool>(done_id)) == Some(true) {
-        return;
-    }
-    if !app.settings.startup_animation || !app.flair || crate::motion::reduced(ctx) {
-        ctx.data_mut(|data| data.insert_temp(done_id, true));
-        return;
-    }
-    let time = ctx.input(|input| input.time);
-    let start = ctx
-        .data_mut(|data| *data.get_temp_mut_or_insert_with(Id::new("startup-reveal-at"), || time));
-    let age = time - start;
-    if age >= STARTUP_SECONDS {
-        ctx.data_mut(|data| data.insert_temp(done_id, true));
-        return;
-    }
-    ctx.request_repaint();
-    let cover = smooth(((STARTUP_SECONDS - age) / STARTUP_FADE) as f32);
-    let window = ctx.content_rect();
-    let painter = ctx.layer_painter(LayerId::new(Order::Tooltip, Id::new("startup-reveal")));
-    let palette = app.palette;
-    painter.rect_filled(window, 0.0, palette.window.gamma_multiply(cover));
-    let colours = super::player_bar::visualiser_palette(app, None);
-    let centre = window.center() - vec2(0.0, 18.0);
-    // Rings of the theme's colours spreading out from the logo.
-    for ring in 0..3 {
-        let progress = ((age - ring as f64 * 0.18) / 1.3).clamp(0.0, 1.0) as f32;
-        if progress <= 0.0 {
-            continue;
-        }
-        let radius = 50.0 + progress * window.size().min_elem() * 0.32;
-        let colour = super::player_bar::swept(&colours, ring as f32 / 2.0)
-            .gamma_multiply((1.0 - progress) * 0.5 * cover);
-        painter.circle_stroke(centre, radius, egui::Stroke::new(3.0 - ring as f32, colour));
-    }
-    // The logo grows in with a soft overshoot.
-    let grow = smooth((age / 0.7) as f32);
-    let overshoot = 1.0 + 0.08 * (grow * std::f32::consts::PI).sin();
-    let diameter = 112.0 * (0.7 + 0.3 * grow) * overshoot;
-    let glow = super::player_bar::swept(&colours, 0.5);
-    for (spread, alpha) in [(1.6, 0.06), (1.3, 0.1), (1.12, 0.16)] {
-        painter.circle_filled(
-            centre,
-            diameter / 2.0 * spread,
-            glow.gamma_multiply(alpha * grow * cover),
-        );
-    }
-    let texture = logo_texture(ctx);
-    painter.image(
-        texture.id(),
-        Rect::from_center_size(centre, Vec2::splat(diameter)),
-        Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
-        Color32::WHITE.gamma_multiply(grow * cover),
-    );
-    let words = smooth(((age - 0.45) / 0.5) as f32) * cover;
-    painter.text(
-        centre + vec2(0.0, 112.0 / 2.0 + 30.0 - (1.0 - words) * 8.0),
-        Align2::CENTER_CENTER,
-        "Motion Music",
-        theme::bold(26.0),
-        palette.text.gamma_multiply(words),
-    );
-}
-
 /// The app icon once, large enough to scale down smoothly.
 fn logo_texture(ctx: &Context) -> egui::TextureHandle {
     let id = Id::new("startup-reveal-logo");
@@ -295,7 +349,7 @@ fn logo_texture(ctx: &Context) -> egui::TextureHandle {
 /// counting up, its song and artist, and a way to My Wrapped. Shown once a
 /// week, and only after a week with some music.
 pub(crate) fn weekly_recap(app: &mut App, ctx: &Context) {
-    if !app.settings.weekly_recap || !app.flair || starting(ctx) {
+    if !app.settings.weekly_recap || !app.flair || starting() {
         return;
     }
     let this_week = crate::wrapped::week_id(jiff::Zoned::now().date());
@@ -395,5 +449,26 @@ pub(crate) fn weekly_recap(app: &mut App, ctx: &Context) {
         if open_wrapped {
             app.actions.push(Action::Open(Page::Wrapped));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_chosen_style_plays_as_is_and_random_picks_one_for_the_whole_launch() {
+        for style in StartupStyle::PLAYED {
+            assert_eq!(launch_style(style), style);
+        }
+        let picked = launch_style(StartupStyle::Random);
+        assert!(StartupStyle::PLAYED.contains(&picked));
+        assert_eq!(
+            launch_style(StartupStyle::Random),
+            picked,
+            "the same all launch"
+        );
+        // Quick enough that a fast launch stays fast.
+        const { assert!(STARTUP_SECONDS <= 1.0) };
     }
 }

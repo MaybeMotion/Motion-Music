@@ -362,14 +362,15 @@ main fields are:
 | `box_shape` | `rounded` | Corners of cards, covers and highlighted rows: `rounded`, `square`, `soft`, `bubbly`, `pill` or `leaf` |
 | `visualiser_shuffle` | `off` | Change the player bar visualizer by itself: `off`, `song` (each song) or `minute` (every minute) |
 | `speaker_fade` | `true` | Fade the visualizers and beat pulse out and back in when the music moves to another speaker |
-| `song_card` | `true` | Show a card with the cover when the song changes |
 | `moving_art` | `true` | Let the playing cover drift towards the pointer and breathe with the music |
 | `karaoke_lyrics` | `true` | Fill the sung line of full screen lyrics in the visualizer's colours |
 | `weekly_recap` | `true` | Show last week's recap once each new week |
 | `weekly_recap_seen` | none | The ISO week whose recap was last shown, such as `2026-W47` |
 | `global_shortcuts` | `true` | Windows: Ctrl+Alt+Space, Right, Left, Up and Down control playback from any app |
 | `sleep_timer_minutes` | `30` | How long the sleep timer runs when it is turned on in Settings: 15, 30, 45, 60, 90 or 120 |
-| `startup_animation` | `true` | The logo reveal when the app opens |
+| `startup_animation` | `true` | The logo reveal when the app opens, once per launch |
+| `startup_style` | `bloom` | How the logo reveal looks: `bloom`, `iris`, `spin`, `curtain`, `glow` or `random` |
+| `sleep_timer_button` | `true` | Show the sleep timer's clock button on the player bar |
 | `visualiser_audio` | `player` | On Windows, while another app plays the music: `player` hears only Soloist, else the Spotify app (everything while neither runs); `everything` hears all PC audio |
 | `page_reveals_off` | absent | Page transition styles left out of the shuffle: any of `circle-out`, `circle-in`, `corner-circle`, `diagonal`, `curtain`, `swipe-left`, `swipe-right`, `swipe-up`, `swipe-down`, `diamond`, `blinds`, `cascade`, `zipper`, `letterbox`, `chevron`, `clock`, `wave-left`, `wave-right`, `wave-up`, `wave-down`. Absent uses all twenty; listing all of them changes pages at once |
 | `visualizer_fps` | `60` | Frame rate of the player bar and mini player visualizers; `0` is uncapped. Half that out of focus, at most 30 while the system saves energy, none while the window is hidden. MilkDrop uses `milkdrop_fps` |

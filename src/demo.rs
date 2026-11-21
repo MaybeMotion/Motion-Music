@@ -1122,6 +1122,15 @@ pub fn apply_flags(app: &mut App, page: Option<&str>, show: Option<&str>) {
             // The startup reveal, song card and weekly recap, which the
             // demo otherwise leaves out of its exact frames.
             "flair" => app.flair = true,
+            // The startup reveal in one style, such as startup-iris.
+            style if style.starts_with("startup-") => {
+                if let Ok(chosen) = serde_json::from_value(serde_json::Value::String(
+                    style["startup-".len()..].to_owned(),
+                )) {
+                    app.settings.startup_style = chosen;
+                    app.flair = true;
+                }
+            }
             "presaved" => {
                 for page in app.album_pages.values_mut() {
                     if let Some(data) = &mut page.prerelease {

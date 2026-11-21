@@ -387,6 +387,56 @@ impl VisShuffle {
         }
     }
 }
+/// How the logo reveal looks when the app opens.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StartupStyle {
+    /// The logo grows in as rings spread out from it.
+    #[default]
+    Bloom,
+    /// A circle opens from the middle onto the app.
+    Iris,
+    /// The logo spins into place.
+    Spin,
+    /// A curtain parts down the middle.
+    Curtain,
+    /// The logo fades up in a soft glow.
+    Glow,
+    /// A different one each launch.
+    Random,
+}
+
+impl StartupStyle {
+    pub const ALL: [Self; 6] = [
+        Self::Bloom,
+        Self::Iris,
+        Self::Spin,
+        Self::Curtain,
+        Self::Glow,
+        Self::Random,
+    ];
+    /// The styles Random picks among.
+    pub const PLAYED: [Self; 5] = [
+        Self::Bloom,
+        Self::Iris,
+        Self::Spin,
+        Self::Curtain,
+        Self::Glow,
+    ];
+
+    pub fn label(self, locale: crate::i18n::Locale) -> std::borrow::Cow<'static, str> {
+        use crate::i18n::gettext;
+        match self {
+            Self::Bloom => gettext(locale, "Bloom"),
+            Self::Iris => gettext(locale, "Iris"),
+            Self::Spin => gettext(locale, "Spin"),
+            Self::Curtain => gettext(locale, "Curtain"),
+            Self::Glow => gettext(locale, "Glow"),
+            Self::Random => gettext(locale, "Random"),
+        }
+    }
+}
+
 /// The lengths the sleep timer offers, in minutes.
 pub const SLEEP_TIMER_LENGTHS: [u32; 6] = [15, 30, 45, 60, 90, 120];
 
@@ -703,8 +753,6 @@ pub struct Settings {
     pub visualiser_audio: VisAudio,
     /// The visualizers and beat pulse fade across a change of speaker.
     pub speaker_fade: bool,
-    /// A card with the cover slides in when the song changes.
-    pub song_card: bool,
     /// The playing cover drifts with the pointer and breathes with the beat.
     pub moving_art: bool,
     /// The sung line fills with the visualizer's colours as it is sung.
@@ -720,6 +768,10 @@ pub struct Settings {
     pub sleep_timer_minutes: u32,
     /// A short logo reveal in the theme's colours when the app opens.
     pub startup_animation: bool,
+    /// How the logo reveal looks.
+    pub startup_style: StartupStyle,
+    /// The sleep timer's clock button shows on the player bar.
+    pub sleep_timer_button: bool,
     /// Page reveal styles left out of the shuffle, by their saved name.
     /// Empty uses every style, as before this setting existed.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -930,7 +982,6 @@ impl Default for Settings {
             visualiser_shuffle: VisShuffle::Off,
             visualiser_audio: VisAudio::Player,
             speaker_fade: true,
-            song_card: true,
             moving_art: true,
             karaoke_lyrics: true,
             weekly_recap: true,
@@ -938,6 +989,8 @@ impl Default for Settings {
             global_shortcuts: true,
             sleep_timer_minutes: 30,
             startup_animation: true,
+            startup_style: StartupStyle::Bloom,
+            sleep_timer_button: true,
             visualizer_fps: crate::milkdrop::DEFAULT_FPS,
             discord_presence: false,
             discord_application_id: crate::discord_activity::DEFAULT_APPLICATION_ID.to_owned(),
@@ -2133,8 +2186,8 @@ mod tests {
     #[test]
     fn favourites_recents_and_motion_choices_default_empty_and_round_trip() {
         use super::{
-            BoxShape, ClickEffect, GradientDrift, PulseStrength, RECENT_THEMES, VisAudio,
-            VisColours, VisShuffle,
+            BoxShape, ClickEffect, GradientDrift, PulseStrength, RECENT_THEMES, StartupStyle,
+            VisAudio, VisColours, VisShuffle,
         };
         use crate::theme::MotionTheme;
         let mut settings: Settings = serde_json::from_str("{}").unwrap();
@@ -2171,17 +2224,29 @@ mod tests {
         assert_eq!(json["box_shape"], "leaf");
         assert_eq!(settings.visualiser_audio, VisAudio::Player);
         // v20's extras all start on, with a 30 minute sleep timer.
-        assert!(settings.speaker_fade && settings.song_card && settings.moving_art);
+        assert!(settings.speaker_fade && settings.moving_art);
         assert!(settings.karaoke_lyrics && settings.weekly_recap);
         assert!(settings.global_shortcuts && settings.startup_animation);
+        assert!(settings.sleep_timer_button);
+        assert_eq!(settings.startup_style, StartupStyle::Bloom);
         assert_eq!(settings.sleep_timer_minutes, 30);
         assert_eq!(settings.weekly_recap_seen, None);
+        // A file from before the song card was taken out still loads.
         let quiet: Settings = serde_json::from_str(
-            r#"{"song_card":false,"sleep_timer_minutes":60,"weekly_recap_seen":"2026-W47"}"#,
+            r#"{"song_card":false,"sleep_timer_minutes":60,"weekly_recap_seen":"2026-W47","startup_style":"curtain","sleep_timer_button":false}"#,
         )
         .unwrap();
-        assert!(!quiet.song_card);
+        assert_eq!(quiet.startup_style, StartupStyle::Curtain);
+        assert!(!quiet.sleep_timer_button);
         assert_eq!(quiet.sleep_timer_minutes, 60);
+        for style in StartupStyle::ALL {
+            let saved = serde_json::to_value(style).unwrap();
+            assert_eq!(
+                serde_json::from_value::<StartupStyle>(saved).unwrap(),
+                style
+            );
+        }
+        assert!(!StartupStyle::PLAYED.contains(&StartupStyle::Random));
         assert_eq!(quiet.weekly_recap_seen.as_deref(), Some("2026-W47"));
         let everything: Settings =
             serde_json::from_str(r#"{"visualiser_audio":"everything"}"#).unwrap();

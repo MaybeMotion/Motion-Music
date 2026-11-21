@@ -1,6 +1,6 @@
 # Motion Music v20
 
-This update adds karaoke lyrics, a weekly recap, a listening clock and heatmap, a card when the song changes, album art that moves, a fade between speakers, a startup animation, global shortcuts, a fuller tray menu, eight mini player themes and a sleep timer you can switch on in Settings. My Wrapped also opens and scrolls much faster.
+This update adds karaoke lyrics, a weekly recap, a listening clock and heatmap, album art that moves, a fade between speakers, a startup animation, global shortcuts, a fuller tray menu, eight mini player themes and a sleep timer you can switch on in Settings. My Wrapped also opens and scrolls much faster.
 
 ## Open this version
 
@@ -15,14 +15,15 @@ A new section with a switch for each extra. They all start on.
 | Extra | What it does |
 | --- | --- |
 | Fade between speakers | When the music moves to another speaker, the visualisers and beat pulse fade out and back in |
-| Song change card | A card with the new song's cover, title and artist rises beside the player bar, then floats away |
 | Moving album art | The playing cover drifts towards the pointer and breathes with the music |
 | Karaoke lyrics | In full screen lyrics, the line being sung fills from the left in the visualiser's colours |
 | Weekly recap | When a new week starts, a card shows last week's listening |
 | Global shortcuts | Windows: control playback from any app (below) |
-| Startup animation | The logo blooms in your theme's colours as Motion Music opens |
+| Startup animation | A quick logo reveal in your theme's colours as Motion Music opens, under a second, once per launch |
+| Startup animation style | Bloom, Iris, Spin, Curtain, Glow, or Random for a different one each launch |
 | Sleep timer | Turns the sleep timer on or off |
 | Sleep timer length | 15, 30, 45, 60, 90 or 120 minutes |
+| Sleep timer on the player bar | Shows or hides the sleep timer's clock button on the player bar |
 
 ## Karaoke lyrics
 
@@ -65,7 +66,7 @@ The fade now lasts the whole last minute. Turn the timer on in **Settings > Extr
 
 ## Settings file
 
-New optional fields: `speaker_fade`, `song_card`, `moving_art`, `karaoke_lyrics`, `weekly_recap`, `global_shortcuts` and `startup_animation` (all `true` or `false`), `weekly_recap_seen` (a week such as `2026-W47`) and `sleep_timer_minutes` (15 to 120). `skin` also takes the mini player themes, such as `motion:neon-night`. Existing settings files load unchanged.
+New optional fields: `speaker_fade`, `moving_art`, `karaoke_lyrics`, `weekly_recap`, `global_shortcuts`, `startup_animation` and `sleep_timer_button` (all `true` or `false`), `startup_style` (`bloom`, `iris`, `spin`, `curtain`, `glow` or `random`), `weekly_recap_seen` (a week such as `2026-W47`) and `sleep_timer_minutes` (15 to 120). `skin` also takes the mini player themes, such as `motion:neon-night`. Existing settings files load unchanged.
 
 ## Licences and source
 

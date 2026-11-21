@@ -2435,6 +2435,9 @@ fn extras(app: &mut App, ui: &mut egui::Ui, now: Option<&NowPlaying>, transport_
 
 /// A moon-and-clock button for the sleep timer, when there is room for it.
 fn sleep_timer_button(app: &mut App, ui: &mut egui::Ui, transport_right: f32) {
+    if !app.settings.sleep_timer_button {
+        return;
+    }
     let palette = app.palette;
     let left = ui.min_rect().left() - ui.spacing().item_spacing.x - (18.0 + theme::ICON_BUTTON_PAD);
     if left - transport_right < TRANSPORT_GAP {
@@ -2486,6 +2489,19 @@ fn sleep_timer_button(app: &mut App, ui: &mut egui::Ui, transport_right: f32) {
                     .clicked()
             {
                 app.actions.push(Action::SetSleepTimer(None));
+            }
+            ui.separator();
+            // Settings > Extras brings it back.
+            if ui
+                .button(gettext(app.locale, "Remove from the player bar").as_ref())
+                .on_hover_text(gettext(
+                    app.locale,
+                    "Settings > Extras brings it back. The timer still works from there and the tray.",
+                ))
+                .clicked()
+            {
+                app.settings.sleep_timer_button = false;
+                app.actions.push(Action::SettingsChanged);
             }
         });
 }

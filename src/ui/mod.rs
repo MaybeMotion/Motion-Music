@@ -96,9 +96,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     update::show(app, ctx);
     widgets::drag_ghost(ctx, &app.palette, app.locale);
     toasts(app, ctx, theme::PLAYER_BAR_HEIGHT + 16.0);
-    let colours = player_bar::visualiser_palette(app, None);
-    click_fx::paint(ctx, &colours);
-    flair::song_card(app, ctx);
+    click_fx::paint(ctx, &player_bar::visualiser_palette(app, None));
     player_bar::stage(app, ctx);
     flair::weekly_recap(app, ctx);
     flair::startup(app, ctx);
