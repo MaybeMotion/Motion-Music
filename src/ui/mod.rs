@@ -70,6 +70,8 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             ),
         );
     }
+    // Under everything, so the glass panels drawn next show it through.
+    flair::glass_backdrop(app, ctx);
     living_gradient(app, ctx);
     click_fx::configure(ctx, app.settings.click_effect, app.settings.box_shape);
     player_bar::show(app, ui);
@@ -99,6 +101,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     click_fx::paint(ctx, &player_bar::visualiser_palette(app, None));
     player_bar::stage(app, ctx);
     flair::weekly_recap(app, ctx);
+    flair::cursor_trail(app, ctx);
     flair::startup(app, ctx);
     caption_buttons(ui, &app.palette, app.locale);
     fastframe_titlebar::resize(ui);

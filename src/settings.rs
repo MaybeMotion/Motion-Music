@@ -422,6 +422,151 @@ impl VisShuffle {
         }
     }
 }
+/// A setting with a few named choices: saved by its lower-case name, with
+/// every choice in order and a label for each.
+macro_rules! choices {
+    ($(#[$meta:meta])* $name:ident default $default:ident { $($(#[$doc:meta])* $variant:ident => $label:literal),+ $(,)? }) => {
+        $(#[$meta])*
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+        #[serde(rename_all = "lowercase")]
+        pub enum $name {
+            $($(#[$doc])* $variant),+
+        }
+
+        impl Default for $name {
+            fn default() -> Self {
+                Self::$default
+            }
+        }
+
+        impl $name {
+            pub const ALL: &'static [Self] = &[$(Self::$variant),+];
+
+            pub fn label(self, locale: crate::i18n::Locale) -> std::borrow::Cow<'static, str> {
+                match self {
+                    $(Self::$variant => crate::i18n::gettext(locale, $label)),+
+                }
+            }
+        }
+    };
+}
+
+choices! {
+    /// How the interface's surfaces are drawn.
+    InterfaceStyle default Solid {
+        /// The theme's colours, as always.
+        Solid => "Solid",
+        /// See-through frosted glass over a blurred backdrop, like iOS.
+        Glass => "Glass",
+    }
+}
+
+choices! {
+    /// How frosted the glass is: how much of the backdrop shows through.
+    GlassFrost default Medium {
+        Light => "Light",
+        Medium => "Medium",
+        Heavy => "Heavy",
+    }
+}
+
+impl GlassFrost {
+    /// How opaque the pages are, and the panels around them.
+    pub fn opacity(self) -> (f32, f32) {
+        match self {
+            Self::Light => (0.5, 0.6),
+            Self::Medium => (0.66, 0.74),
+            Self::Heavy => (0.8, 0.86),
+        }
+    }
+}
+
+choices! {
+    /// What shows through the glass.
+    GlassBackdrop default AlbumArt {
+        /// The playing song's cover, blurred; the theme's colours without one.
+        AlbumArt => "Album art",
+        /// Soft clouds of the theme's colours.
+        Theme => "Theme colours",
+    }
+}
+
+choices! {
+    /// How the seek bar under the player's buttons is drawn.
+    SeekStyle default Classic {
+        Classic => "Classic",
+        /// Twice as thick, with rounded ends.
+        Thick => "Thick",
+        /// A glowing line in the visualizer's colours.
+        Glow => "Glow",
+        /// The played part ripples like a wave while music plays.
+        Wave => "Wave",
+        /// A row of dots that light up as the song goes.
+        Dots => "Dots",
+    }
+}
+
+choices! {
+    /// The play button's shape.
+    PlayButtonStyle default Circle {
+        Circle => "Circle",
+        /// A rounded square.
+        Rounded => "Rounded",
+        /// An outline ring with the symbol inside.
+        Ring => "Ring",
+        /// A circle in the visualizer's colours.
+        Gradient => "Gradient",
+    }
+}
+
+choices! {
+    /// How strongly the player bar's visualizer shows.
+    VisIntensity default Full {
+        Faint => "Faint",
+        Soft => "Soft",
+        Full => "Full",
+    }
+}
+
+impl VisIntensity {
+    pub fn opacity(self) -> f32 {
+        match self {
+            Self::Faint => 0.35,
+            Self::Soft => 0.65,
+            Self::Full => 1.0,
+        }
+    }
+}
+
+choices! {
+    /// A trail that follows the pointer.
+    CursorTrail default Off {
+        Off => "Off",
+        /// Sparks in the visualizer's colours that drift and fade.
+        Sparkle => "Sparkle",
+        /// A smooth glowing tail.
+        Comet => "Comet",
+    }
+}
+
+/// The accent colours offered in Settings > Customise, besides the theme's.
+pub const ACCENTS: [[u8; 3]; 14] = [
+    [239, 68, 68],
+    [249, 115, 22],
+    [245, 158, 11],
+    [234, 179, 8],
+    [132, 204, 22],
+    [34, 197, 94],
+    [20, 184, 166],
+    [6, 182, 212],
+    [59, 130, 246],
+    [99, 102, 241],
+    [139, 92, 246],
+    [217, 70, 239],
+    [236, 72, 153],
+    [244, 244, 245],
+];
+
 /// How the logo reveal looks when the app opens.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -836,6 +981,17 @@ pub struct Settings {
     pub parallax: bool,
     /// A band of light glides across a cover as the pointer moves over it.
     pub cover_sheen: bool,
+    /// Solid colours, or frosted glass over a blurred backdrop.
+    pub interface_style: InterfaceStyle,
+    pub glass_frost: GlassFrost,
+    pub glass_backdrop: GlassBackdrop,
+    /// An accent colour of the listener's own in place of the theme's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom_accent: Option<[u8; 3]>,
+    pub seek_style: SeekStyle,
+    pub play_button: PlayButtonStyle,
+    pub vis_intensity: VisIntensity,
+    pub cursor_trail: CursorTrail,
     /// Page reveal styles left out of the shuffle, by their saved name.
     /// Empty uses every style, as before this setting existed.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -1058,6 +1214,14 @@ impl Default for Settings {
             sleep_timer_button: true,
             parallax: true,
             cover_sheen: true,
+            interface_style: InterfaceStyle::Solid,
+            glass_frost: GlassFrost::Medium,
+            glass_backdrop: GlassBackdrop::AlbumArt,
+            custom_accent: None,
+            seek_style: SeekStyle::Classic,
+            play_button: PlayButtonStyle::Circle,
+            vis_intensity: VisIntensity::Full,
+            cursor_trail: CursorTrail::Off,
             visualizer_fps: crate::milkdrop::DEFAULT_FPS,
             discord_presence: false,
             discord_application_id: crate::discord_activity::DEFAULT_APPLICATION_ID.to_owned(),
@@ -2315,6 +2479,30 @@ mod tests {
         }
         assert!(!StartupStyle::PLAYED.contains(&StartupStyle::Random));
         assert!(settings.favourite_visualisers.is_empty());
+        // Customise starts exactly as the app looked before it.
+        assert_eq!(settings.interface_style, super::InterfaceStyle::Solid);
+        assert_eq!(settings.custom_accent, None);
+        assert_eq!(settings.seek_style, super::SeekStyle::Classic);
+        assert_eq!(settings.play_button, super::PlayButtonStyle::Circle);
+        assert_eq!(settings.vis_intensity, super::VisIntensity::Full);
+        assert_eq!(settings.cursor_trail, super::CursorTrail::Off);
+        let custom: Settings = serde_json::from_str(
+            r#"{"interface_style":"glass","glass_frost":"heavy","glass_backdrop":"albumart","custom_accent":[236,72,153],"seek_style":"wave","play_button":"ring","vis_intensity":"soft","cursor_trail":"comet"}"#,
+        )
+        .unwrap();
+        assert_eq!(custom.interface_style, super::InterfaceStyle::Glass);
+        assert_eq!(custom.glass_frost, super::GlassFrost::Heavy);
+        assert_eq!(custom.glass_backdrop, super::GlassBackdrop::AlbumArt);
+        assert_eq!(custom.custom_accent, Some([236, 72, 153]));
+        assert_eq!(custom.seek_style, super::SeekStyle::Wave);
+        assert_eq!(custom.play_button, super::PlayButtonStyle::Ring);
+        assert_eq!(custom.cursor_trail, super::CursorTrail::Comet);
+        assert_eq!(
+            serde_json::from_value::<Settings>(serde_json::to_value(&custom).unwrap())
+                .unwrap()
+                .seek_style,
+            super::SeekStyle::Wave
+        );
         let hearts: Settings =
             serde_json::from_str(r#"{"favourite_visualisers":["galaxy","orb"]}"#).unwrap();
         assert_eq!(

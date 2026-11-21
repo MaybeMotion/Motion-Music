@@ -374,6 +374,14 @@ main fields are:
 | `sleep_timer_button` | `true` | Show the sleep timer's clock button on the player bar |
 | `parallax` | `true` | A blurred cover behind album and playlist headers and colour clouds behind Home, moving at their own depths |
 | `cover_sheen` | `true` | A band of light across a cover under the pointer |
+| `interface_style` | `solid` | `glass` makes panels frosted and see-through over a blurred backdrop |
+| `glass_frost` | `medium` | `light`, `medium` or `heavy`: how much of the backdrop shows through |
+| `glass_backdrop` | `albumart` | `albumart` (the playing cover, blurred) or `theme` (clouds of the theme's colours) |
+| `custom_accent` | none | An accent colour as red, green and blue, such as `[236, 72, 153]`, over any theme |
+| `play_button` | `circle` | `circle`, `rounded`, `ring` or `gradient` |
+| `seek_style` | `classic` | `classic`, `thick`, `glow`, `wave` or `dots` |
+| `vis_intensity` | `full` | `faint`, `soft` or `full`: how strongly the player bar's visualizer shows |
+| `cursor_trail` | `off` | `off`, `sparkle` or `comet` |
 | `visualiser_audio` | `player` | On Windows, while another app plays the music: `player` hears only Soloist, else the Spotify app (everything while neither runs); `everything` hears all PC audio |
 | `page_reveals_off` | absent | Page transition styles left out of the shuffle: any of `circle-out`, `circle-in`, `corner-circle`, `diagonal`, `curtain`, `swipe-left`, `swipe-right`, `swipe-up`, `swipe-down`, `diamond`, `blinds`, `cascade`, `zipper`, `letterbox`, `chevron`, `clock`, `wave-left`, `wave-right`, `wave-up`, `wave-down`. Absent uses all twenty; listing all of them changes pages at once |
 | `visualizer_fps` | `60` | Frame rate of the player bar and mini player visualizers; `0` is uncapped. Half that out of focus, at most 30 while the system saves energy, none while the window is hidden. MilkDrop uses `milkdrop_fps` |

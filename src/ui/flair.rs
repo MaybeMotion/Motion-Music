@@ -508,6 +508,139 @@ fn cloud(painter: &egui::Painter, centre: egui::Pos2, radius: f32, colour: Color
     painter.add(egui::Shape::mesh(mesh));
 }
 
+/// What shows through the glass interface: the playing cover, blurred and
+/// filling the window, or soft clouds of the theme's colours. Painted first,
+/// under every panel.
+pub(crate) fn glass_backdrop(app: &mut App, ctx: &Context) {
+    use crate::settings::{GlassBackdrop, InterfaceStyle};
+    if app.settings.interface_style != InterfaceStyle::Glass {
+        return;
+    }
+    let window = ctx.content_rect();
+    let painter = ctx.layer_painter(LayerId::background());
+    let solid = app.solid_palette;
+    painter.rect_filled(window, 0.0, solid.window);
+    let art = (app.settings.glass_backdrop == GlassBackdrop::AlbumArt)
+        .then(|| app.now_playing())
+        .flatten()
+        .and_then(|now| now.art_small.or(now.art_url));
+    let texture = art.as_deref().and_then(|art| {
+        app.lyrics_backdrop
+            .texture(ctx, app.backend.art(), Some(art))
+    });
+    match texture {
+        Some(texture) => {
+            painter.image(
+                texture.id(),
+                window,
+                super::lyrics::cover_uv(window.size(), texture.size_vec2()),
+                // Darker under a dark theme and lighter under a light one,
+                // so words stay easy to read through the glass.
+                if solid.dark {
+                    Color32::from_gray(150)
+                } else {
+                    Color32::from_gray(255)
+                },
+            );
+        }
+        None => {
+            let colours = app
+                .theme_gradient()
+                .map(|stops| stops.to_vec())
+                .unwrap_or_else(|| super::player_bar::visualiser_palette(app, None));
+            let reach = window.width().max(window.height());
+            for (index, (x, y, size)) in [(0.1, 0.15, 0.7), (0.85, 0.3, 0.6), (0.4, 0.95, 0.75)]
+                .into_iter()
+                .enumerate()
+            {
+                cloud(
+                    &painter,
+                    window.min + vec2(x * window.width(), y * window.height()),
+                    size * reach,
+                    super::player_bar::swept(&colours, index as f32 / 2.0)
+                        .gamma_multiply(if solid.dark { 0.55 } else { 0.45 }),
+                );
+            }
+        }
+    }
+}
+
+/// Where the pointer has been lately, for the cursor trail.
+#[derive(Clone, Default)]
+struct Trail(Vec<(egui::Pos2, f64)>);
+
+/// How long a point of the trail lasts.
+const TRAIL_SECONDS: f64 = 0.45;
+
+/// Sparks or a comet's tail following the pointer, in the visualizer's
+/// colours. It only draws while the pointer moves and its tail fades.
+pub(crate) fn cursor_trail(app: &App, ctx: &Context) {
+    use crate::settings::CursorTrail;
+    let id = Id::new("cursor-trail");
+    if app.settings.cursor_trail == CursorTrail::Off || crate::motion::reduced(ctx) {
+        ctx.data_mut(|data| data.remove::<Trail>(id));
+        return;
+    }
+    let time = ctx.input(|input| input.time);
+    let mut trail = ctx
+        .data(|data| data.get_temp::<Trail>(id))
+        .unwrap_or_default();
+    if let Some(pointer) = ctx.input(|input| input.pointer.hover_pos())
+        && trail
+            .0
+            .last()
+            .is_none_or(|(last, _)| last.distance(pointer) > 3.0)
+    {
+        trail.0.push((pointer, time));
+    }
+    trail.0.retain(|(_, at)| time - at < TRAIL_SECONDS);
+    if trail.0.is_empty() {
+        ctx.data_mut(|data| data.remove::<Trail>(id));
+        return;
+    }
+    ctx.request_repaint();
+    let colours = super::player_bar::visualiser_palette(app, None);
+    let painter = ctx.layer_painter(LayerId::new(Order::Tooltip, id));
+    let count = trail.0.len();
+    match app.settings.cursor_trail {
+        CursorTrail::Sparkle => {
+            for (index, (point, at)) in trail.0.iter().enumerate() {
+                let life = 1.0 - ((time - at) / TRAIL_SECONDS) as f32;
+                // Each spark drifts off a little its own way as it fades.
+                let seed = (index as f32 * 12.9898 + *at as f32 * 78.233).sin() * 43_758.547;
+                let angle = seed.fract() * TAU;
+                let drift = vec2(angle.cos(), angle.sin() - 0.6) * (1.0 - life) * 14.0;
+                let colour = super::player_bar::swept(&colours, index as f32 / count.max(2) as f32);
+                painter.circle_filled(
+                    *point + drift,
+                    1.0 + 2.5 * life,
+                    colour.gamma_multiply(life),
+                );
+                painter.circle_filled(
+                    *point + drift,
+                    4.0 + 4.0 * life,
+                    colour.gamma_multiply(0.15 * life),
+                );
+            }
+        }
+        CursorTrail::Comet | CursorTrail::Off => {
+            for (index, pair) in trail.0.windows(2).enumerate() {
+                let life = 1.0 - ((time - pair[0].1) / TRAIL_SECONDS) as f32;
+                let colour = super::player_bar::swept(&colours, index as f32 / count.max(2) as f32);
+                painter.line_segment(
+                    [pair[0].0, pair[1].0],
+                    egui::Stroke::new(1.0 + 6.0 * life, colour.gamma_multiply(0.18 * life)),
+                );
+                painter.line_segment(
+                    [pair[0].0, pair[1].0],
+                    egui::Stroke::new(1.0 + 2.0 * life, colour.gamma_multiply(0.8 * life)),
+                );
+            }
+        }
+    }
+    ctx.data_mut(|data| data.insert_temp(id, trail));
+}
+
 /// Soft clouds of the visualizer's colours behind Home, at three depths:
 /// the nearer ones move further with the pointer and with scrolling, so
 /// the page has depth. Painted before the page's own content.

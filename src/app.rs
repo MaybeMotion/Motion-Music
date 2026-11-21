@@ -372,6 +372,9 @@ pub struct App {
     global_keys_tried: bool,
     /// Only a real app registers global shortcuts, like its tray.
     global_keys_allowed: bool,
+    /// The palette before glass made it see-through, for what must stay
+    /// opaque: the backdrop under the glass and the play button's symbol.
+    pub solid_palette: Palette,
     /// The startup reveal, song card and weekly recap may show. Off in
     /// tests and the demo (unless it asks), which draw exact frames.
     pub flair: bool,
@@ -1156,6 +1159,7 @@ impl App {
             global_keys_tried: false,
             global_keys_allowed: options.tray,
             flair: options.tray,
+            solid_palette: Palette::dark(),
             power,
             follows_reachability: cfg!(target_os = "macos"),
             reachable: true,
@@ -4538,6 +4542,10 @@ impl App {
     /// What the page, sidebar and player bar are painted with: the theme's
     /// own gradient. Solid themes stay solid, living gradients or not.
     pub fn background_gradient(&self) -> Option<[egui::Color32; 3]> {
+        // Glass shows its own backdrop through every panel instead.
+        if self.settings.interface_style == crate::settings::InterfaceStyle::Glass {
+            return None;
+        }
         self.theme_gradient()
     }
 
@@ -4624,6 +4632,15 @@ impl App {
                 Palette::light()
             }
         });
+        // The listener's own accent, then glass, over whatever theme.
+        let palette = theme::with_accent(palette, self.settings.custom_accent);
+        self.solid_palette = palette;
+        let palette = match self.settings.interface_style {
+            crate::settings::InterfaceStyle::Glass => {
+                theme::glass(palette, self.settings.glass_frost.opacity())
+            }
+            crate::settings::InterfaceStyle::Solid => palette,
+        };
         if self.applied_dark != Some(dark) || self.palette != palette {
             // The first colours need no reveal, and the mini player's window
             // is drawn by its skin.

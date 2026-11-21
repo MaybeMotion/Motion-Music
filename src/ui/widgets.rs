@@ -3042,6 +3042,47 @@ pub fn thin_slider(
     width: f32,
     wheel_step: Option<f32>,
 ) -> SliderEvent {
+    styled_slider(
+        ui,
+        palette,
+        id,
+        label,
+        value,
+        width,
+        wheel_step,
+        crate::settings::SeekStyle::Classic,
+        &[],
+    )
+}
+
+/// The seek bar: a [`thin_slider`] drawn in the style chosen in Settings,
+/// some of them in `colours` (the visualizer's).
+#[allow(clippy::too_many_arguments)]
+pub fn seek_slider(
+    ui: &mut Ui,
+    palette: &Palette,
+    id: egui::Id,
+    label: &str,
+    value: f32,
+    width: f32,
+    style: crate::settings::SeekStyle,
+    colours: &[Color32],
+) -> SliderEvent {
+    styled_slider(ui, palette, id, label, value, width, None, style, colours)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn styled_slider(
+    ui: &mut Ui,
+    palette: &Palette,
+    id: egui::Id,
+    label: &str,
+    value: f32,
+    width: f32,
+    wheel_step: Option<f32>,
+    style: crate::settings::SeekStyle,
+    colours: &[Color32],
+) -> SliderEvent {
     let (_, rect) = ui.allocate_space(vec2(width, 16.0));
     let response = ui.interact(rect, id, Sense::click_and_drag());
     let dragging_value = ui.data(|data| data.get_temp::<f32>(id));
@@ -3134,13 +3175,14 @@ pub fn thin_slider(
             || response.has_focus()
             || response.dragged()
             || dragging_value.is_some();
-        let bar = Rect::from_center_size(rect.center(), vec2(rect.width(), 4.0));
+        use crate::settings::SeekStyle;
+        let thickness = if style == SeekStyle::Thick { 8.0 } else { 4.0 };
+        let bar = Rect::from_center_size(rect.center(), vec2(rect.width(), thickness));
         let track_color = if palette.dark {
             Color32::from_white_alpha(50)
         } else {
             Color32::from_black_alpha(40)
         };
-        ui.painter().rect_filled(bar, 2.0, track_color);
         let filled = Rect::from_min_max(
             bar.min,
             pos2(bar.left() + bar.width() * shown.clamp(0.0, 1.0), bar.max.y),
@@ -3152,7 +3194,83 @@ pub fn thin_slider(
             hover
         };
         let fill = theme::motion::blend(palette.text, palette.accent, hover);
-        ui.painter().rect_filled(filled, 2.0, fill);
+        let swept = |at: f32| {
+            if colours.is_empty() {
+                fill
+            } else {
+                super::player_bar::swept(colours, at)
+            }
+        };
+        let painter = ui.painter();
+        match style {
+            SeekStyle::Classic | SeekStyle::Thick => {
+                painter.rect_filled(bar, thickness / 2.0, track_color);
+                painter.rect_filled(filled, thickness / 2.0, fill);
+            }
+            SeekStyle::Glow => {
+                painter.rect_filled(bar, 2.0, track_color);
+                // The played part in the visualizer's colours, with a soft
+                // glow around it.
+                let mut mesh = egui::Mesh::default();
+                let steps = 16;
+                for step in 0..=steps {
+                    let at = step as f32 / steps as f32;
+                    let x = filled.left() + filled.width() * at;
+                    let colour = swept(at * shown.max(0.001));
+                    for (y, alpha) in [
+                        (bar.top() - 4.0, 0.0),
+                        (bar.top(), 1.0),
+                        (bar.bottom(), 1.0),
+                        (bar.bottom() + 4.0, 0.0),
+                    ] {
+                        let glow = if alpha > 0.0 {
+                            colour
+                        } else {
+                            colour.gamma_multiply(0.0)
+                        };
+                        mesh.colored_vertex(pos2(x, y), glow);
+                    }
+                }
+                for step in 0..steps {
+                    let at = (step * 4) as u32;
+                    for row in 0..3 {
+                        let a = at + row;
+                        mesh.add_triangle(a, a + 1, a + 5);
+                        mesh.add_triangle(a, a + 5, a + 4);
+                    }
+                }
+                painter.add(egui::Shape::mesh(mesh));
+            }
+            SeekStyle::Wave => {
+                painter.rect_filled(bar, 2.0, track_color);
+                // The played part ripples: a wave that moves on frames the
+                // player bar draws anyway.
+                let time = ui.input(|input| input.time) as f32;
+                let points: Vec<egui::Pos2> = (0..=((filled.width() / 2.0) as usize).max(1))
+                    .map(|step| {
+                        let x = filled.left() + step as f32 * 2.0;
+                        let x = x.min(filled.right());
+                        let y = bar.center().y + (x * 0.45 - time * 5.0).sin() * 3.0;
+                        pos2(x, y)
+                    })
+                    .collect();
+                painter.add(egui::Shape::line(points, egui::Stroke::new(2.5, fill)));
+            }
+            SeekStyle::Dots => {
+                let spacing = 7.0;
+                let count = (bar.width() / spacing).floor().max(1.0) as usize;
+                let lit = (count as f32 * shown.clamp(0.0, 1.0)).round() as usize;
+                for dot in 0..count {
+                    let centre = pos2(bar.left() + (dot as f32 + 0.5) * spacing, bar.center().y);
+                    let colour = if dot < lit {
+                        swept(dot as f32 / count as f32)
+                    } else {
+                        track_color
+                    };
+                    painter.circle_filled(centre, if dot + 1 == lit { 2.6 } else { 1.8 }, colour);
+                }
+            }
+        }
         if hover > 0.0 {
             ui.painter().circle_filled(
                 pos2(filled.right(), bar.center().y),

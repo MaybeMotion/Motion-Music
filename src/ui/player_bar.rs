@@ -270,7 +270,14 @@ fn visualizer(
     let reduced = crate::motion::reduced(ui.ctx());
     let (mode, opacity) = app.vis_motion.crossfade(wanted, clock, reduced);
     let handover = speaker_fade(app, now, clock, reduced);
-    let opacity = opacity * handover;
+    // Settings > Customise can soften the bar's visualizer; the stage, which
+    // is all visualizer, stays full.
+    let intensity = if stage {
+        1.0
+    } else {
+        app.settings.vis_intensity.opacity()
+    };
+    let opacity = opacity * handover * intensity;
     let fading = opacity < 1.0;
     if mode == PlayerBarVis::Off {
         return fading;
@@ -2117,13 +2124,21 @@ fn transport(app: &mut App, ui: &mut egui::Ui, now: Option<&NowPlaying>, region:
             palette.text
         };
         let mut cell = centered(ui, disc);
-        if theme::circle_button(
+        let colours = visualiser_palette(app, None);
+        if theme::play_button(
             &mut cell,
+            app.settings.play_button,
             icon,
             36.0,
             palette.text,
             hover,
-            palette.window,
+            // Opaque even when glass makes the window see-through.
+            if app.settings.interface_style == crate::settings::InterfaceStyle::Glass {
+                app.solid_palette.window
+            } else {
+                palette.window
+            },
+            &colours,
             &if playing {
                 gettext(app.locale, "Pause")
             } else {
@@ -2217,14 +2232,16 @@ fn transport(app: &mut App, ui: &mut egui::Ui, now: Option<&NowPlaying>, region:
     } else {
         0.0
     };
-    match thin_slider(
+    let seek_colours = visualiser_palette(app, None);
+    match super::widgets::seek_slider(
         &mut slider_ui,
         &palette,
         egui::Id::new("seek-slider"),
         &gettext(app.locale, "Playback position (%)"),
         fraction,
         slider_width,
-        None,
+        app.settings.seek_style,
+        &seek_colours,
     ) {
         SliderEvent::Dragging(value) => app.seek_preview = Some(value),
         SliderEvent::Committed(value) => {

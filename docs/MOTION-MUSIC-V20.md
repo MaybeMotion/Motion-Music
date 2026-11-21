@@ -27,6 +27,19 @@ A new section with a switch for each extra. They all start on.
 | Parallax | A blurred cover behind album and playlist headers scrolls at half speed, and soft clouds of colour behind Home follow the pointer |
 | Cover sheen | A band of light glides across a cover as the pointer moves over it |
 
+## Settings > Customise
+
+| Setting | Choices |
+| --- | --- |
+| Interface style | Solid, or **Glass**: frosted, see-through panels over a blurred backdrop, like iOS |
+| Glass frost | Light, Medium or Heavy: how much of the backdrop shows through |
+| Glass backdrop | The playing song's cover, blurred, or soft clouds of your theme's colours |
+| Accent colour | The theme's own, or any of fourteen colours, over any theme |
+| Play button | Circle, Rounded, Ring or Gradient |
+| Seek bar | Classic, Thick, Glow, Wave or Dots |
+| Visualizer intensity | Faint, Soft or Full |
+| Cursor trail | Off, Sparkle or Comet |
+
 ## Favourite visualisers
 
 In **Settings > Appearance > Player bar visualizer**, each visualiser has a heart. Hearted ones come first in the list. With two or more favourites, clicking the player bar and visualizer shuffle move between your favourites alone.
@@ -72,7 +85,7 @@ The fade now lasts the whole last minute. Turn the timer on in **Settings > Extr
 
 ## Settings file
 
-New optional fields: `speaker_fade`, `moving_art`, `karaoke_lyrics`, `weekly_recap`, `global_shortcuts`, `startup_animation`, `sleep_timer_button`, `parallax` and `cover_sheen` (all `true` or `false`), `startup_style` (`bloom`, `iris`, `spin`, `curtain`, `glow`, `sweep`, `pulse`, `zoom`, `mosaic` or `random`), `favourite_visualisers` (a list such as `["galaxy", "orb"]`), `weekly_recap_seen` (a week such as `2026-W47`) and `sleep_timer_minutes` (15 to 120). `skin` also takes the mini player themes, such as `motion:neon-night`. Existing settings files load unchanged.
+New optional fields: `speaker_fade`, `moving_art`, `karaoke_lyrics`, `weekly_recap`, `global_shortcuts`, `startup_animation`, `sleep_timer_button`, `parallax` and `cover_sheen` (all `true` or `false`), `startup_style` (`bloom`, `iris`, `spin`, `curtain`, `glow`, `sweep`, `pulse`, `zoom`, `mosaic` or `random`), `favourite_visualisers` (a list such as `["galaxy", "orb"]`), `interface_style` (`solid` or `glass`), `glass_frost` (`light`, `medium` or `heavy`), `glass_backdrop` (`albumart` or `theme`), `custom_accent` (red, green and blue such as `[236, 72, 153]`), `play_button` (`circle`, `rounded`, `ring` or `gradient`), `seek_style` (`classic`, `thick`, `glow`, `wave` or `dots`), `vis_intensity` (`faint`, `soft` or `full`) and `cursor_trail` (`off`, `sparkle` or `comet`), `weekly_recap_seen` (a week such as `2026-W47`) and `sleep_timer_minutes` (15 to 120). `skin` also takes the mini player themes, such as `motion:neon-night`. Existing settings files load unchanged.
 
 ## Licences and source
 

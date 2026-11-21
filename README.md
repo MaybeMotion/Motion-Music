@@ -58,6 +58,15 @@ Load your own JSON palettes through **Open themes folder**, choose separate cust
 - **My Wrapped** (in the sidebar under Search): **Your week in music**, last week's minutes, plays, songs, streak, song and artist; minutes listened, plays, songs, artists and your longest daily streak; badges such as Night owl, Superfan and On a streak; a round **listening clock** of your music by hour, a **heatmap** of every hour of every weekday and a twelve-week listening calendar; a throwback to your song of the day a week ago; your most played songs, albums and artists from this computer's last 2,000 plays; and Spotify's own top artists, a genre mix and top songs. **Save as image** puts the summary in Pictures\Motion Music, ready to share. Nothing is sent anywhere.
 - **Sleep timer** (the clock button in the player bar, the tray menu, or Settings > Extras): fades the music out over its last minute and pauses it, then puts the volume back. Settings > Extras turns it on and off and sets its length, 15 minutes to 2 hours.
 
+### Customise (Settings > Customise)
+
+- **Interface style**: **Glass** makes the sidebar, pages and player bar frosted and see-through, like iOS, over a blurred backdrop. **Glass frost** (Light, Medium or Heavy) sets how much shows through, and **Glass backdrop** shows the playing song's cover, blurred, or soft clouds of your theme's colours.
+- **Accent colour**: fourteen colours of your own for buttons, sliders and highlights, over any theme, or the theme's own.
+- **Play button**: Circle, Rounded, Ring, or Gradient in the visualiser's colours.
+- **Seek bar**: Classic, Thick, Glow (the visualiser's colours), Wave (it ripples) or Dots.
+- **Visualizer intensity**: Faint, Soft or Full for the player bar's visualiser.
+- **Cursor trail**: Off, Sparkle or Comet, in the visualiser's colours.
+
 ### Extras (Settings > Extras)
 
 Each has its own switch, and all start on.

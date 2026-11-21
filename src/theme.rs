@@ -421,6 +421,50 @@ pub fn install(ctx: &egui::Context) {
 
 /// Applies the palette to egui's own widgets so dialogs, menus, and text
 /// fields agree with the custom views.
+/// `palette` with the listener's own accent colour in place of its own,
+/// with a hover shade and a symbol colour that reads on it.
+pub fn with_accent(mut palette: Palette, accent: Option<[u8; 3]>) -> Palette {
+    let Some([r, g, b]) = accent else {
+        return palette;
+    };
+    let accent = Color32::from_rgb(r, g, b);
+    palette.accent = accent;
+    palette.accent_hover = if palette.dark {
+        accent.lerp_to_gamma(Color32::WHITE, 0.18)
+    } else {
+        accent.lerp_to_gamma(Color32::BLACK, 0.12)
+    };
+    let luminance = (0.2126 * f32::from(r) + 0.7152 * f32::from(g) + 0.0722 * f32::from(b)) / 255.0;
+    palette.on_accent = if luminance > 0.6 {
+        Color32::from_rgb(18, 18, 24)
+    } else {
+        Color32::WHITE
+    };
+    palette
+}
+
+/// `palette` as frosted glass: its pages and panels see-through by
+/// `opacity` (pages, panels) over the backdrop drawn behind them, with
+/// light hairline edges as glass catches the light.
+pub fn glass(mut palette: Palette, (page, panel): (f32, f32)) -> Palette {
+    let see_through = |colour: Color32, alpha: f32| {
+        let [r, g, b, a] = colour.to_srgba_unmultiplied();
+        Color32::from_rgba_unmultiplied(r, g, b, (f32::from(a) * alpha).round() as u8)
+    };
+    palette.window = see_through(palette.window, page);
+    palette.panel = see_through(palette.panel, panel);
+    palette.surface = see_through(palette.surface, 0.62);
+    palette.surface_hover = see_through(palette.surface_hover, 0.74);
+    palette.surface_active = see_through(palette.surface_active, 0.84);
+    palette.overlay = see_through(palette.overlay, 0.92);
+    palette.outline = if palette.dark {
+        Color32::from_white_alpha(34)
+    } else {
+        Color32::from_white_alpha(150)
+    };
+    palette
+}
+
 pub fn apply(ctx: &egui::Context, palette: &Palette) {
     let mut style = (*ctx.global_style()).clone();
     apply_to_style(&mut style, palette);
@@ -798,6 +842,99 @@ pub fn circle_button(
         let icon_rect =
             egui::Rect::from_center_size(rect.center() + offset, Vec2::splat(icon_size));
         icon.image(icon_color, icon_size).paint_at(ui, icon_rect);
+    }
+    focus_ring(ui, &response);
+    if tooltip.is_empty() {
+        response
+    } else {
+        response.on_hover_text(tooltip)
+    }
+}
+
+/// The player's play button in the shape chosen in Settings > Customise:
+/// a [`circle_button`], a rounded square, an outline ring, or a disc in
+/// `colours` (the visualizer's) with a white symbol.
+#[allow(clippy::too_many_arguments)]
+pub fn play_button(
+    ui: &mut egui::Ui,
+    style: crate::settings::PlayButtonStyle,
+    icon: Icon,
+    diameter: f32,
+    fill: Color32,
+    fill_hover: Color32,
+    icon_color: Color32,
+    colours: &[Color32],
+    tooltip: &str,
+) -> Response {
+    use crate::settings::PlayButtonStyle;
+    if style == PlayButtonStyle::Circle {
+        return circle_button(ui, icon, diameter, fill, fill_hover, icon_color, tooltip);
+    }
+    let (rect, response) = ui.allocate_exact_size(Vec2::splat(diameter), Sense::click());
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), tooltip)
+    });
+    if ui.is_rect_visible(rect) {
+        let highlight = motion::hover(
+            ui,
+            response.id.with("play-hover"),
+            response.hovered() || response.has_focus(),
+        );
+        let pressed = motion::hover(
+            ui,
+            response.id.with("play-press"),
+            response.is_pointer_button_down_on(),
+        );
+        let grow = 1.0 + 0.05 * highlight - 0.04 * pressed;
+        let shape = egui::Rect::from_center_size(rect.center(), Vec2::splat(diameter * grow));
+        let fill = motion::blend(fill, fill_hover, highlight);
+        let painter = ui.painter();
+        let symbol = match style {
+            PlayButtonStyle::Rounded => {
+                painter.rect_filled(shape, diameter * 0.28, fill);
+                icon_color
+            }
+            PlayButtonStyle::Ring => {
+                painter.circle_filled(
+                    shape.center(),
+                    shape.width() / 2.0,
+                    fill.gamma_multiply(0.12 * highlight),
+                );
+                painter.circle_stroke(
+                    shape.center(),
+                    shape.width() / 2.0 - 1.0,
+                    egui::Stroke::new(2.0, fill),
+                );
+                fill
+            }
+            PlayButtonStyle::Gradient | PlayButtonStyle::Circle => {
+                // A disc swept across the colours from left to right.
+                let steps = 32;
+                let mut mesh = egui::Mesh::default();
+                let middle = crate::ui::player_bar::swept(colours, 0.5);
+                mesh.colored_vertex(shape.center(), middle);
+                for step in 0..=steps {
+                    let angle = step as f32 / steps as f32 * std::f32::consts::TAU;
+                    let point = shape.center() + Vec2::angled(angle) * shape.width() / 2.0;
+                    let along = (point.x - shape.left()) / shape.width();
+                    let colour = crate::ui::player_bar::swept(colours, along);
+                    mesh.colored_vertex(
+                        point,
+                        colour.lerp_to_gamma(Color32::WHITE, 0.15 * highlight),
+                    );
+                }
+                for step in 1..=steps {
+                    mesh.add_triangle(0, step, step + 1);
+                }
+                painter.add(egui::Shape::mesh(mesh));
+                Color32::WHITE
+            }
+        };
+        let icon_size = diameter * 0.46 * (1.0 - 0.04 * pressed);
+        let offset = play_glyph_offset(icon, icon_size);
+        let icon_rect =
+            egui::Rect::from_center_size(rect.center() + offset, Vec2::splat(icon_size));
+        icon.image(symbol, icon_size).paint_at(ui, icon_rect);
     }
     focus_ring(ui, &response);
     if tooltip.is_empty() {

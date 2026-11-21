@@ -1122,6 +1122,41 @@ pub fn apply_flags(app: &mut App, page: Option<&str>, show: Option<&str>) {
             // The startup reveal, song card and weekly recap, which the
             // demo otherwise leaves out of its exact frames.
             "flair" => app.flair = true,
+            // Settings > Customise, for captures of each look.
+            "glass" => {
+                app.settings.interface_style = crate::settings::InterfaceStyle::Glass;
+            }
+            "glass-theme" => {
+                app.settings.interface_style = crate::settings::InterfaceStyle::Glass;
+                app.settings.glass_backdrop = crate::settings::GlassBackdrop::Theme;
+            }
+            "glass-light" => {
+                app.settings.interface_style = crate::settings::InterfaceStyle::Glass;
+                app.settings.glass_frost = crate::settings::GlassFrost::Light;
+            }
+            accent if accent.starts_with("accent-") => {
+                if let Some(rgb) = accent["accent-".len()..]
+                    .parse::<usize>()
+                    .ok()
+                    .and_then(|index| crate::settings::ACCENTS.get(index))
+                {
+                    app.settings.custom_accent = Some(*rgb);
+                }
+            }
+            seek if seek.starts_with("seek-") => {
+                if let Ok(style) =
+                    serde_json::from_value(serde_json::Value::String(seek[5..].to_owned()))
+                {
+                    app.settings.seek_style = style;
+                }
+            }
+            play if play.starts_with("play-") => {
+                if let Ok(style) =
+                    serde_json::from_value(serde_json::Value::String(play[5..].to_owned()))
+                {
+                    app.settings.play_button = style;
+                }
+            }
             // The startup reveal in one style, such as startup-iris.
             style if style.starts_with("startup-") => {
                 if let Ok(chosen) = serde_json::from_value(serde_json::Value::String(

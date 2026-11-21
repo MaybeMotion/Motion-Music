@@ -2035,6 +2035,204 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         });
     }
 
+    let customise = gettext(locale, "Customise");
+    let customise_rows = [
+        RowText::new(
+            gettext(locale, "Interface style"),
+            gettext(
+                locale,
+                "Glass makes the sidebar, pages and player bar frosted and see-through, like iOS, over a blurred backdrop.",
+            ),
+        ),
+        RowText::new(
+            gettext(locale, "Glass frost"),
+            gettext(
+                locale,
+                "How much of the backdrop shows through the glass. Heavy keeps words easiest to read.",
+            ),
+        ),
+        RowText::new(
+            gettext(locale, "Glass backdrop"),
+            gettext(
+                locale,
+                "What shows through the glass: the playing song's cover, blurred, or soft clouds of your theme's colours.",
+            ),
+        ),
+        RowText::new(
+            gettext(locale, "Accent colour"),
+            gettext(
+                locale,
+                "Your own accent for buttons, sliders and highlights, over any theme. Theme uses the theme's own.",
+            ),
+        ),
+        RowText::new(
+            gettext(locale, "Play button"),
+            gettext(
+                locale,
+                "The play button's shape. Gradient fills it with the visualizer's colours.",
+            ),
+        ),
+        RowText::new(
+            gettext(locale, "Seek bar"),
+            gettext(
+                locale,
+                "How the bar under the player's buttons is drawn. Glow and Dots use the visualizer's colours; Wave ripples.",
+            ),
+        ),
+        RowText::new(
+            gettext(locale, "Visualizer intensity"),
+            gettext(
+                locale,
+                "How strongly the player bar's visualizer shows behind the controls. The full window stage always shows it fully.",
+            ),
+        ),
+        RowText::new(
+            gettext(locale, "Cursor trail"),
+            gettext(
+                locale,
+                "Sparks or a comet's tail in the visualizer's colours following the pointer.",
+            ),
+        ),
+    ];
+    if section_matches(&needle, &customise, &customise_rows) {
+        any_visible = true;
+        section(ui, &palette, &customise, |ui| {
+            use crate::settings::{
+                ACCENTS, CursorTrail, GlassBackdrop, GlassFrost, InterfaceStyle, PlayButtonStyle,
+                SeekStyle, VisIntensity,
+            };
+            fn labelled<T: Copy>(
+                all: &[T],
+                label: impl Fn(T) -> std::borrow::Cow<'static, str>,
+            ) -> Vec<(T, std::borrow::Cow<'static, str>)> {
+                all.iter().map(|choice| (*choice, label(*choice))).collect()
+            }
+            changed |= choice_row(
+                ui,
+                &palette,
+                &needle,
+                &customise,
+                &customise_rows[0],
+                &labelled(InterfaceStyle::ALL, |choice| choice.label(locale)),
+                &mut app.settings.interface_style,
+            );
+            let glass = app.settings.interface_style == InterfaceStyle::Glass;
+            ui.add_enabled_ui(glass, |ui| {
+                changed |= choice_row(
+                    ui,
+                    &palette,
+                    &needle,
+                    &customise,
+                    &customise_rows[1],
+                    &labelled(GlassFrost::ALL, |choice| choice.label(locale)),
+                    &mut app.settings.glass_frost,
+                );
+                changed |= choice_row(
+                    ui,
+                    &palette,
+                    &needle,
+                    &customise,
+                    &customise_rows[2],
+                    &labelled(GlassBackdrop::ALL, |choice| choice.label(locale)),
+                    &mut app.settings.glass_backdrop,
+                );
+            });
+            filtered_row(
+                ui,
+                &palette,
+                &needle,
+                &customise,
+                &customise_rows[3],
+                |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
+                        if theme::soft_button(
+                            ui,
+                            &palette,
+                            None,
+                            &gettext(locale, "Theme"),
+                            app.settings.custom_accent.is_none(),
+                        )
+                        .clicked()
+                            && app.settings.custom_accent.is_some()
+                        {
+                            app.settings.custom_accent = None;
+                            changed = true;
+                        }
+                        for rgb in ACCENTS {
+                            let (rect, response) = ui
+                                .allocate_exact_size(egui::vec2(22.0, 22.0), egui::Sense::click());
+                            let chosen = app.settings.custom_accent == Some(rgb);
+                            let colour = egui::Color32::from_rgb(rgb[0], rgb[1], rgb[2]);
+                            let hovered = response.hovered();
+                            ui.painter().circle_filled(
+                                rect.center(),
+                                if hovered { 10.5 } else { 9.5 },
+                                colour,
+                            );
+                            if chosen {
+                                ui.painter().circle_stroke(
+                                    rect.center(),
+                                    11.5,
+                                    egui::Stroke::new(2.0, palette.text),
+                                );
+                            }
+                            let name = format!("#{:02X}{:02X}{:02X}", rgb[0], rgb[1], rgb[2]);
+                            response.widget_info(|| {
+                                egui::WidgetInfo::selected(
+                                    egui::WidgetType::RadioButton,
+                                    true,
+                                    chosen,
+                                    &name,
+                                )
+                            });
+                            if response.on_hover_text(&name).clicked() && !chosen {
+                                app.settings.custom_accent = Some(rgb);
+                                changed = true;
+                            }
+                        }
+                    });
+                },
+            );
+            changed |= choice_row(
+                ui,
+                &palette,
+                &needle,
+                &customise,
+                &customise_rows[4],
+                &labelled(PlayButtonStyle::ALL, |choice| choice.label(locale)),
+                &mut app.settings.play_button,
+            );
+            changed |= choice_row(
+                ui,
+                &palette,
+                &needle,
+                &customise,
+                &customise_rows[5],
+                &labelled(SeekStyle::ALL, |choice| choice.label(locale)),
+                &mut app.settings.seek_style,
+            );
+            changed |= choice_row(
+                ui,
+                &palette,
+                &needle,
+                &customise,
+                &customise_rows[6],
+                &labelled(VisIntensity::ALL, |choice| choice.label(locale)),
+                &mut app.settings.vis_intensity,
+            );
+            changed |= choice_row(
+                ui,
+                &palette,
+                &needle,
+                &customise,
+                &customise_rows[7],
+                &labelled(CursorTrail::ALL, |choice| choice.label(locale)),
+                &mut app.settings.cursor_trail,
+            );
+        });
+    }
+
     let extras = gettext(locale, "Extras");
     let speaker_fade = gettext(locale, "Fade between speakers");
     let moving_art = gettext(locale, "Moving album art");
