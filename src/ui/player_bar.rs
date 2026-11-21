@@ -423,10 +423,7 @@ fn shuffle_visualiser(app: &mut App, now: Option<&NowPlaying>, clock: f64) {
         return;
     }
     let showing = motion.shuffled.unwrap_or(app.settings.player_bar_vis);
-    let choices: Vec<_> = PlayerBarVis::ALL
-        .into_iter()
-        .filter(|mode| *mode != PlayerBarVis::Off && *mode != showing)
-        .collect();
+    let choices = PlayerBarVis::shuffle_pool(showing, &app.settings.favourite_visualisers);
     let pick = ((clock * 7919.0).sin() * 43_758.547).fract().abs();
     motion.shuffled = Some(choices[(pick * choices.len() as f64) as usize % choices.len()]);
     motion.shuffled_at = clock;

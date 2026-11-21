@@ -178,6 +178,41 @@ impl PlayerBarVis {
         let place = Self::ALL.iter().position(|mode| *mode == self).unwrap_or(0);
         Self::ALL[(place + 1) % Self::ALL.len()]
     }
+
+    /// The next mode a click moves to: through the favourites, in their
+    /// list order, once there are two or more; otherwise through them all.
+    pub fn next_among(self, favourites: &[Self]) -> Self {
+        let favourites: Vec<Self> = Self::ALL
+            .into_iter()
+            .filter(|mode| *mode != Self::Off && favourites.contains(mode))
+            .collect();
+        if favourites.len() < 2 {
+            return self.next();
+        }
+        match favourites.iter().position(|mode| *mode == self) {
+            Some(place) => favourites[(place + 1) % favourites.len()],
+            None => favourites[0],
+        }
+    }
+
+    /// The modes visualizer shuffle picks among other than `showing`: the
+    /// favourites when there are at least two others, otherwise every mode.
+    pub fn shuffle_pool(showing: Self, favourites: &[Self]) -> Vec<Self> {
+        let others = |all: bool| -> Vec<Self> {
+            Self::ALL
+                .into_iter()
+                .filter(|mode| {
+                    *mode != Self::Off && *mode != showing && (all || favourites.contains(mode))
+                })
+                .collect()
+        };
+        let chosen = others(false);
+        if chosen.len() >= 2 {
+            chosen
+        } else {
+            others(true)
+        }
+    }
 }
 
 /// How strongly the beat pulse shows.
@@ -402,26 +437,42 @@ pub enum StartupStyle {
     Curtain,
     /// The logo fades up in a soft glow.
     Glow,
+    /// A band of the theme's colours sweeps across.
+    Sweep,
+    /// The logo beats twice like a heart.
+    Pulse,
+    /// The logo flies towards you and past.
+    Zoom,
+    /// Tiles tip away from the middle outward.
+    Mosaic,
     /// A different one each launch.
     Random,
 }
 
 impl StartupStyle {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 10] = [
         Self::Bloom,
         Self::Iris,
         Self::Spin,
         Self::Curtain,
         Self::Glow,
+        Self::Sweep,
+        Self::Pulse,
+        Self::Zoom,
+        Self::Mosaic,
         Self::Random,
     ];
     /// The styles Random picks among.
-    pub const PLAYED: [Self; 5] = [
+    pub const PLAYED: [Self; 9] = [
         Self::Bloom,
         Self::Iris,
         Self::Spin,
         Self::Curtain,
         Self::Glow,
+        Self::Sweep,
+        Self::Pulse,
+        Self::Zoom,
+        Self::Mosaic,
     ];
 
     pub fn label(self, locale: crate::i18n::Locale) -> std::borrow::Cow<'static, str> {
@@ -432,6 +483,10 @@ impl StartupStyle {
             Self::Spin => gettext(locale, "Spin"),
             Self::Curtain => gettext(locale, "Curtain"),
             Self::Glow => gettext(locale, "Glow"),
+            Self::Sweep => gettext(locale, "Sweep"),
+            Self::Pulse => gettext(locale, "Pulse"),
+            Self::Zoom => gettext(locale, "Zoom"),
+            Self::Mosaic => gettext(locale, "Mosaic"),
             Self::Random => gettext(locale, "Random"),
         }
     }
@@ -751,6 +806,10 @@ pub struct Settings {
     pub visualiser_shuffle: VisShuffle,
     /// What the visualizers listen to while another app plays the music.
     pub visualiser_audio: VisAudio,
+    /// Visualizers marked with a heart: listed first, and with two or more
+    /// the only ones a click or shuffle moves between.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub favourite_visualisers: Vec<PlayerBarVis>,
     /// The visualizers and beat pulse fade across a change of speaker.
     pub speaker_fade: bool,
     /// The playing cover drifts with the pointer and breathes with the beat.
@@ -772,6 +831,11 @@ pub struct Settings {
     pub startup_style: StartupStyle,
     /// The sleep timer's clock button shows on the player bar.
     pub sleep_timer_button: bool,
+    /// Depth as pages move: a blurred cover behind album and playlist
+    /// headers, and soft clouds of colour behind Home.
+    pub parallax: bool,
+    /// A band of light glides across a cover as the pointer moves over it.
+    pub cover_sheen: bool,
     /// Page reveal styles left out of the shuffle, by their saved name.
     /// Empty uses every style, as before this setting existed.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -981,6 +1045,7 @@ impl Default for Settings {
             box_shape: BoxShape::Rounded,
             visualiser_shuffle: VisShuffle::Off,
             visualiser_audio: VisAudio::Player,
+            favourite_visualisers: Vec::new(),
             speaker_fade: true,
             moving_art: true,
             karaoke_lyrics: true,
@@ -991,6 +1056,8 @@ impl Default for Settings {
             startup_animation: true,
             startup_style: StartupStyle::Bloom,
             sleep_timer_button: true,
+            parallax: true,
+            cover_sheen: true,
             visualizer_fps: crate::milkdrop::DEFAULT_FPS,
             discord_presence: false,
             discord_application_id: crate::discord_activity::DEFAULT_APPLICATION_ID.to_owned(),
@@ -2186,8 +2253,8 @@ mod tests {
     #[test]
     fn favourites_recents_and_motion_choices_default_empty_and_round_trip() {
         use super::{
-            BoxShape, ClickEffect, GradientDrift, PulseStrength, RECENT_THEMES, StartupStyle,
-            VisAudio, VisColours, VisShuffle,
+            BoxShape, ClickEffect, GradientDrift, PlayerBarVis, PulseStrength, RECENT_THEMES,
+            StartupStyle, VisAudio, VisColours, VisShuffle,
         };
         use crate::theme::MotionTheme;
         let mut settings: Settings = serde_json::from_str("{}").unwrap();
@@ -2227,7 +2294,7 @@ mod tests {
         assert!(settings.speaker_fade && settings.moving_art);
         assert!(settings.karaoke_lyrics && settings.weekly_recap);
         assert!(settings.global_shortcuts && settings.startup_animation);
-        assert!(settings.sleep_timer_button);
+        assert!(settings.sleep_timer_button && settings.parallax && settings.cover_sheen);
         assert_eq!(settings.startup_style, StartupStyle::Bloom);
         assert_eq!(settings.sleep_timer_minutes, 30);
         assert_eq!(settings.weekly_recap_seen, None);
@@ -2247,6 +2314,13 @@ mod tests {
             );
         }
         assert!(!StartupStyle::PLAYED.contains(&StartupStyle::Random));
+        assert!(settings.favourite_visualisers.is_empty());
+        let hearts: Settings =
+            serde_json::from_str(r#"{"favourite_visualisers":["galaxy","orb"]}"#).unwrap();
+        assert_eq!(
+            hearts.favourite_visualisers,
+            [PlayerBarVis::Galaxy, PlayerBarVis::Orb]
+        );
         assert_eq!(quiet.weekly_recap_seen.as_deref(), Some("2026-W47"));
         let everything: Settings =
             serde_json::from_str(r#"{"visualiser_audio":"everything"}"#).unwrap();
@@ -2356,6 +2430,35 @@ mod tests {
             "circuit",
         ];
         assert_eq!(PlayerBarVis::ALL.len(), 21);
+        // A click moves through the favourites once there are two, in the
+        // list's order, from wherever it is; shuffle picks among them too.
+        let favourites = [PlayerBarVis::Orb, PlayerBarVis::Galaxy, PlayerBarVis::Off];
+        assert_eq!(
+            PlayerBarVis::Galaxy.next_among(&favourites),
+            PlayerBarVis::Orb
+        );
+        assert_eq!(
+            PlayerBarVis::Orb.next_among(&favourites),
+            PlayerBarVis::Galaxy
+        );
+        assert_eq!(
+            PlayerBarVis::Lava.next_among(&favourites),
+            PlayerBarVis::Galaxy
+        );
+        assert_eq!(
+            PlayerBarVis::Lava.next_among(&[PlayerBarVis::Orb]),
+            PlayerBarVis::Lava.next(),
+            "one favourite is not a list to move through"
+        );
+        assert_eq!(
+            PlayerBarVis::shuffle_pool(PlayerBarVis::Lava, &favourites),
+            [PlayerBarVis::Galaxy, PlayerBarVis::Orb]
+        );
+        assert_eq!(
+            PlayerBarVis::shuffle_pool(PlayerBarVis::Orb, &favourites).len(),
+            19,
+            "one other favourite falls back to every mode but Off and Orb"
+        );
         // Effects taken out in v17 load as a close one still offered, so an
         // older settings file stays readable.
         for (removed, now) in [

@@ -98,12 +98,15 @@ pub(super) fn hero(app: &mut App, ui: &mut egui::Ui, hero: Hero<'_>) {
         .images
         .thumbnail
         .and_then(|uri| app.softened_covers.texture(ui.ctx(), &art, uri));
-    ui.add_space(12.0);
     let cover_size = if ui.available_width() > 720.0 {
         HERO_ART
     } else {
         160.0
     };
+    // The blurred cover behind the header, at half the scrolling speed;
+    // the cover itself shrinks and fades a little as it scrolls away.
+    let away = super::flair::parallax_header(app, ui, softened.as_ref(), cover_size + 32.0);
+    ui.add_space(12.0);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 24.0;
         // Clicking the cover shows it enlarged (#586).
@@ -134,6 +137,9 @@ pub(super) fn hero(app: &mut App, ui: &mut egui::Ui, hero: Hero<'_>) {
             }
         }
         let radius = if hero.round { cover_size / 2.0 } else { 6.0 };
+        let rect = Rect::from_center_size(rect.center(), rect.size() * (1.0 - 0.12 * away));
+        // The header fades a little as it scrolls away, title and all.
+        ui.multiply_opacity(1.0 - 0.5 * away);
         widgets::paint_shadow(ui, &palette, rect, radius);
         if hero.liked {
             super::sidebar::liked_cover(ui, rect, radius);

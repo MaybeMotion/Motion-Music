@@ -15,15 +15,21 @@ A new section with a switch for each extra. They all start on.
 | Extra | What it does |
 | --- | --- |
 | Fade between speakers | When the music moves to another speaker, the visualisers and beat pulse fade out and back in |
-| Moving album art | The playing cover drifts towards the pointer and breathes with the music |
+| Moving album art | The playing cover drifts towards the pointer and breathes slowly, without jumping on the beat |
 | Karaoke lyrics | In full screen lyrics, the line being sung fills from the left in the visualiser's colours |
 | Weekly recap | When a new week starts, a card shows last week's listening |
 | Global shortcuts | Windows: control playback from any app (below) |
 | Startup animation | A quick logo reveal in your theme's colours as Motion Music opens, under a second, once per launch |
-| Startup animation style | Bloom, Iris, Spin, Curtain, Glow, or Random for a different one each launch |
+| Startup animation style | Bloom, Iris, Spin, Curtain, Glow, Sweep, Pulse, Zoom, Mosaic, or Random for a different one each launch. **Preview** plays it now |
 | Sleep timer | Turns the sleep timer on or off |
 | Sleep timer length | 15, 30, 45, 60, 90 or 120 minutes |
 | Sleep timer on the player bar | Shows or hides the sleep timer's clock button on the player bar |
+| Parallax | A blurred cover behind album and playlist headers scrolls at half speed, and soft clouds of colour behind Home follow the pointer |
+| Cover sheen | A band of light glides across a cover as the pointer moves over it |
+
+## Favourite visualisers
+
+In **Settings > Appearance > Player bar visualizer**, each visualiser has a heart. Hearted ones come first in the list. With two or more favourites, clicking the player bar and visualizer shuffle move between your favourites alone.
 
 ## Karaoke lyrics
 
@@ -66,7 +72,7 @@ The fade now lasts the whole last minute. Turn the timer on in **Settings > Extr
 
 ## Settings file
 
-New optional fields: `speaker_fade`, `moving_art`, `karaoke_lyrics`, `weekly_recap`, `global_shortcuts`, `startup_animation` and `sleep_timer_button` (all `true` or `false`), `startup_style` (`bloom`, `iris`, `spin`, `curtain`, `glow` or `random`), `weekly_recap_seen` (a week such as `2026-W47`) and `sleep_timer_minutes` (15 to 120). `skin` also takes the mini player themes, such as `motion:neon-night`. Existing settings files load unchanged.
+New optional fields: `speaker_fade`, `moving_art`, `karaoke_lyrics`, `weekly_recap`, `global_shortcuts`, `startup_animation`, `sleep_timer_button`, `parallax` and `cover_sheen` (all `true` or `false`), `startup_style` (`bloom`, `iris`, `spin`, `curtain`, `glow`, `sweep`, `pulse`, `zoom`, `mosaic` or `random`), `favourite_visualisers` (a list such as `["galaxy", "orb"]`), `weekly_recap_seen` (a week such as `2026-W47`) and `sleep_timer_minutes` (15 to 120). `skin` also takes the mini player themes, such as `motion:neon-night`. Existing settings files load unchanged.
 
 ## Licences and source
 

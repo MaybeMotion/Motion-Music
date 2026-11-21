@@ -360,6 +360,7 @@ main fields are:
 | `gradient_drift` | `slow` | How fast living gradients sway: `slow`, `medium` or `fast` |
 | `click_effect` | `ripple` | What a click on a page link, playlist, card or song shows: `off`, `ripple`, `glow`, `pop`, `sparkle`, `rings`, `bloom`, `confetti` or `wave` |
 | `box_shape` | `rounded` | Corners of cards, covers and highlighted rows: `rounded`, `square`, `soft`, `bubbly`, `pill` or `leaf` |
+| `favourite_visualisers` | none | Hearted visualizers, such as `["galaxy", "orb"]`; with two or more, clicking the player bar and shuffle use only these |
 | `visualiser_shuffle` | `off` | Change the player bar visualizer by itself: `off`, `song` (each song) or `minute` (every minute) |
 | `speaker_fade` | `true` | Fade the visualizers and beat pulse out and back in when the music moves to another speaker |
 | `moving_art` | `true` | Let the playing cover drift towards the pointer and breathe with the music |
@@ -369,8 +370,10 @@ main fields are:
 | `global_shortcuts` | `true` | Windows: Ctrl+Alt+Space, Right, Left, Up and Down control playback from any app |
 | `sleep_timer_minutes` | `30` | How long the sleep timer runs when it is turned on in Settings: 15, 30, 45, 60, 90 or 120 |
 | `startup_animation` | `true` | The logo reveal when the app opens, once per launch |
-| `startup_style` | `bloom` | How the logo reveal looks: `bloom`, `iris`, `spin`, `curtain`, `glow` or `random` |
+| `startup_style` | `bloom` | How the logo reveal looks: `bloom`, `iris`, `spin`, `curtain`, `glow`, `sweep`, `pulse`, `zoom`, `mosaic` or `random` |
 | `sleep_timer_button` | `true` | Show the sleep timer's clock button on the player bar |
+| `parallax` | `true` | A blurred cover behind album and playlist headers and colour clouds behind Home, moving at their own depths |
+| `cover_sheen` | `true` | A band of light across a cover under the pointer |
 | `visualiser_audio` | `player` | On Windows, while another app plays the music: `player` hears only Soloist, else the Spotify app (everything while neither runs); `everything` hears all PC audio |
 | `page_reveals_off` | absent | Page transition styles left out of the shuffle: any of `circle-out`, `circle-in`, `corner-circle`, `diagonal`, `curtain`, `swipe-left`, `swipe-right`, `swipe-up`, `swipe-down`, `diamond`, `blinds`, `cascade`, `zipper`, `letterbox`, `chevron`, `clock`, `wave-left`, `wave-right`, `wave-up`, `wave-down`. Absent uses all twenty; listing all of them changes pages at once |
 | `visualizer_fps` | `60` | Frame rate of the player bar and mini player visualizers; `0` is uncapped. Half that out of focus, at most 30 while the system saves energy, none while the window is hidden. MilkDrop uses `milkdrop_fps` |

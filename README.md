@@ -52,6 +52,7 @@ Load your own JSON palettes through **Open themes folder**, choose separate cust
 - **Click effect** (Settings > Appearance): clicking Home, Search, My Wrapped, a playlist, a card or a song shows a soft **Ripple** (the default), **Glow**, **Pop**, **Sparkle**, **Rings**, **Bloom**, **Confetti** or a **Wave** washing across it, in the visualiser's colours. Choose **Off** to turn it off.
 - **Box shape** (Settings > Appearance): the corners of cards, covers and highlighted rows. **Rounded** is the usual look; **Square**, **Soft**, **Bubbly**, **Pill** (rows and tiles with fully round ends) and **Leaf** (two opposite corners round) change it everywhere at once.
 - **Visualizer shuffle** (Settings > Appearance): a different visualiser for each song or every minute. Every change of visualiser, by shuffle or by hand, fades softly from one to the next.
+- **Favourite visualisers** (Settings > Appearance > Player bar visualizer): heart the ones you love in the list and they come first. With two or more, clicking the player bar and visualizer shuffle move between your favourites alone.
 - **Visualizer listens to** (Settings > Appearance, Windows): while another app on this PC plays the music, such as Soloist, the visualisers hear that player alone (Soloist, else the Spotify app), so YouTube, games and notification sounds no longer move them. Choose **All PC audio** for the old behaviour. With neither player open, they hear everything.
 - **Theme from this cover** (Settings > Appearance, or **Ctrl+Shift+T**): makes a dark theme from the playing song's cover, saves it in your themes folder as "Cover - album name" and uses it at once.
 - **My Wrapped** (in the sidebar under Search): **Your week in music**, last week's minutes, plays, songs, streak, song and artist; minutes listened, plays, songs, artists and your longest daily streak; badges such as Night owl, Superfan and On a streak; a round **listening clock** of your music by hour, a **heatmap** of every hour of every weekday and a twelve-week listening calendar; a throwback to your song of the day a week ago; your most played songs, albums and artists from this computer's last 2,000 plays; and Spotify's own top artists, a genre mix and top songs. **Save as image** puts the summary in Pictures\Motion Music, ready to share. Nothing is sent anywhere.
@@ -62,12 +63,14 @@ Load your own JSON palettes through **Open themes folder**, choose separate cust
 Each has its own switch, and all start on.
 
 - **Fade between speakers**: when the music moves to another speaker, the visualisers and beat pulse fade out and back in instead of cutting.
-- **Moving album art**: the playing cover drifts towards the pointer and breathes with the music (with the beat while the beat pulse is on).
+- **Moving album art**: the playing cover drifts towards the pointer and breathes slowly while the music plays. It never jumps with the beat.
 - **Karaoke lyrics**: in full screen lyrics, the line being sung fills from the left in the visualiser's colours as it is sung.
 - **Weekly recap**: when a new week starts, a card shows last week's listening, counting up, with a way to My Wrapped. Shown once a week.
 - **Global shortcuts** (Windows): **Ctrl+Alt+Space** plays or pauses, **Ctrl+Alt+Right** and **Ctrl+Alt+Left** skip, and **Ctrl+Alt+Up** and **Ctrl+Alt+Down** change the volume, from any app, even with Motion Music in the tray. A shortcut another app already uses is left to it.
-- **Startup animation**: a quick logo reveal in your theme's colours as Motion Music opens, under a second, once per launch (never when switching to or from the mini player). **Startup animation style** picks **Bloom**, **Iris**, **Spin**, **Curtain**, **Glow** or **Random**.
+- **Startup animation**: a quick logo reveal in your theme's colours as Motion Music opens, under a second, once per launch (never when switching to or from the mini player). **Startup animation style** picks **Bloom**, **Iris**, **Spin**, **Curtain**, **Glow**, **Sweep**, **Pulse**, **Zoom**, **Mosaic** or **Random**, and **Preview** plays it on the spot.
 - **Sleep timer on the player bar**: shows the sleep timer's clock button. Turn it off here, or choose **Remove from the player bar** in the button's own menu.
+- **Parallax**: a blurred copy of the cover glows behind album and playlist headers and scrolls at half speed while the header shrinks and fades away, and soft clouds of colour drift behind Home at three depths, following the pointer.
+- **Cover sheen**: a band of light glides across a cover as the pointer moves over it.
 
 The **tray menu** names the playing song, opens the **mini player**, and turns the sleep timer on or off; its tooltip names the song too. The **mini player** has eight themes of its own under Settings > Winamp skins: **Neon Night**, **Sunset**, **Ocean**, **Forest**, **Mint**, **Ember**, **Candy** and **Mono**, and Random picks among them too.
 

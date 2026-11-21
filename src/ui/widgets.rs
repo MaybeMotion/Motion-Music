@@ -2701,6 +2701,21 @@ pub fn card(
             if circular { Icon::User } else { Icon::Music },
             Some(app.backend.art()),
         );
+        // A band of light glides across the cover with the pointer.
+        if app.settings.cover_sheen && hover > 0.0 && !crate::motion::reduced(ui.ctx()) {
+            let pointer = ui
+                .input(|input| input.pointer.hover_pos())
+                .map_or(0.5, |pointer| {
+                    (pointer.x - image_rect.left()) / image_rect.width()
+                });
+            let along = crate::motion::animate_value(
+                ui.ctx(),
+                response.id.with("card-sheen"),
+                pointer,
+                0.25,
+            );
+            super::flair::sheen(ui.painter(), image_rect, shown, along, hover);
+        }
         let text_left = rect.left() + PAD;
         let title_galley = ellipsized(ui, title, title_font, palette.text, text_width, 1);
         let title_rect = Rect::from_min_size(

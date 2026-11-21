@@ -1303,9 +1303,9 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             gettext(
                 locale,
                 if cfg!(windows) {
-                    "Audio-reactive effects for Motion Music playback, or audio from Spotify and other apps on the default Windows output. No microphone or audio recording."
+                    "Audio-reactive effects for Motion Music playback, or audio from Spotify and other apps on the default Windows output. No microphone or audio recording. Heart your favourites in the list: with two or more, clicking the player bar and shuffle move between them alone."
                 } else {
-                    "Audio-reactive spectrum, waveforms, ocean waves, a city skyline, fireflies and more during local playback."
+                    "Audio-reactive spectrum, waveforms, ocean waves, a city skyline, fireflies and more during local playback. Heart your favourites in the list: with two or more, clicking the player bar and shuffle move between them alone."
                 },
             ),
         ),
@@ -1598,18 +1598,57 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                             .selected_text(selected.as_ref())
                             .width(200.0_f32.min(ui.available_width()))
                             .show_ui(ui, |ui| {
-                                for mode in PlayerBarVis::ALL {
-                                    if ui
-                                        .selectable_label(
-                                            app.settings.player_bar_vis == mode,
-                                            mode.label(locale).as_ref(),
-                                        )
-                                        .clicked()
-                                        && app.settings.player_bar_vis != mode
-                                    {
-                                        app.settings.player_bar_vis = mode;
-                                        changed = true;
-                                    }
+                                // Hearted ones first; a heart beside each
+                                // adds or takes it away.
+                                let favourites = app.settings.favourite_visualisers.clone();
+                                let (hearted, others): (Vec<_>, Vec<_>) = PlayerBarVis::ALL
+                                    .into_iter()
+                                    .partition(|mode| favourites.contains(mode));
+                                for mode in hearted.into_iter().chain(others) {
+                                    ui.horizontal(|ui| {
+                                        let loved = favourites.contains(&mode);
+                                        if mode != PlayerBarVis::Off
+                                            && theme::icon_button(
+                                                ui,
+                                                if loved {
+                                                    Icon::HeartFilled
+                                                } else {
+                                                    Icon::Heart
+                                                },
+                                                14.0,
+                                                if loved { palette.accent } else { palette.dim },
+                                                palette.text,
+                                                &if loved {
+                                                    gettext(locale, "Remove from favourites")
+                                                } else {
+                                                    gettext(locale, "Add to favourites")
+                                                },
+                                            )
+                                            .clicked()
+                                        {
+                                            let list = &mut app.settings.favourite_visualisers;
+                                            if loved {
+                                                list.retain(|kept| *kept != mode);
+                                            } else {
+                                                list.push(mode);
+                                            }
+                                            changed = true;
+                                        }
+                                        if mode == PlayerBarVis::Off {
+                                            ui.add_space(14.0 + theme::ICON_BUTTON_PAD);
+                                        }
+                                        if ui
+                                            .selectable_label(
+                                                app.settings.player_bar_vis == mode,
+                                                mode.label(locale).as_ref(),
+                                            )
+                                            .clicked()
+                                            && app.settings.player_bar_vis != mode
+                                        {
+                                            app.settings.player_bar_vis = mode;
+                                            changed = true;
+                                        }
+                                    });
                                 }
                             });
                         response.response.widget_info(|| {
@@ -2005,6 +2044,8 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let startup_animation = gettext(locale, "Startup animation");
     let sleep_timer = gettext(locale, "Sleep timer");
     let sleep_timer_button = gettext(locale, "Sleep timer on the player bar");
+    let parallax = gettext(locale, "Parallax");
+    let cover_sheen = gettext(locale, "Cover sheen");
     let extras_rows = [
         RowText::new(
             speaker_fade.clone(),
@@ -2053,7 +2094,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             gettext(locale, "Startup animation style"),
             gettext(
                 locale,
-                "Bloom, Iris, Spin, Curtain or Glow, or Random for a different one each launch.",
+                "Bloom, Iris, Spin, Curtain, Glow, Sweep, Pulse, Zoom or Mosaic, or Random for a different one each launch. Preview plays it now.",
             ),
         ),
         RowText::new(
@@ -2074,17 +2115,37 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 "Show the sleep timer's clock button on the player bar. The timer still works from here and the tray when it is hidden.",
             ),
         ),
+        RowText::new(
+            parallax.clone(),
+            gettext(
+                locale,
+                "Depth as pages move: a blurred cover behind album and playlist headers scrolls at half speed, and soft clouds of colour behind Home follow the pointer.",
+            ),
+        ),
+        RowText::new(
+            cover_sheen.clone(),
+            gettext(
+                locale,
+                "A band of light glides across a cover as the pointer moves over it.",
+            ),
+        ),
     ];
     if section_matches(&needle, &extras, &extras_rows) {
         any_visible = true;
         section(ui, &palette, &extras, |ui| {
-            let switches: [(&RowText<'_>, &std::borrow::Cow<'_, str>, &mut bool); 4] = [
+            let switches: [(&RowText<'_>, &std::borrow::Cow<'_, str>, &mut bool); 6] = [
                 (
                     &extras_rows[0],
                     &speaker_fade,
                     &mut app.settings.speaker_fade,
                 ),
                 (&extras_rows[1], &moving_art, &mut app.settings.moving_art),
+                (&extras_rows[10], &parallax, &mut app.settings.parallax),
+                (
+                    &extras_rows[11],
+                    &cover_sheen,
+                    &mut app.settings.cover_sheen,
+                ),
                 (&extras_rows[2], &karaoke, &mut app.settings.karaoke_lyrics),
                 (
                     &extras_rows[3],
@@ -2125,21 +2186,66 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     changed = true;
                 }
             });
-            let styles: Vec<_> = crate::settings::StartupStyle::ALL
-                .into_iter()
-                .map(|choice| (choice, choice.label(locale)))
-                .collect();
-            ui.add_enabled_ui(app.settings.startup_animation, |ui| {
-                changed |= choice_row(
+            {
+                use crate::settings::StartupStyle;
+                let preview = gettext(locale, "Preview");
+                let width = 170.0 + 6.0 + theme::soft_button_width(ui, &preview);
+                filtered_row_sized(
                     ui,
                     &palette,
                     &needle,
                     &extras,
                     &extras_rows[6],
-                    &styles,
-                    &mut app.settings.startup_style,
+                    width,
+                    |ui| {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 6.0;
+                            let selected = app.settings.startup_style.label(locale);
+                            let response = egui::ComboBox::from_id_salt("startup-style")
+                                .selected_text(selected.as_ref())
+                                .width(170.0_f32.min(ui.available_width()))
+                                .show_ui(ui, |ui| {
+                                    for style in StartupStyle::ALL {
+                                        if ui
+                                            .selectable_label(
+                                                app.settings.startup_style == style,
+                                                style.label(locale).as_ref(),
+                                            )
+                                            .clicked()
+                                            && app.settings.startup_style != style
+                                        {
+                                            app.settings.startup_style = style;
+                                            changed = true;
+                                            // Show the one just chosen.
+                                            super::flair::preview(ui.ctx(), style);
+                                        }
+                                    }
+                                });
+                            response.response.widget_info(|| {
+                                let mut info = egui::WidgetInfo::labeled(
+                                    egui::WidgetType::ComboBox,
+                                    ui.is_enabled(),
+                                    extras_rows[6].title.as_ref(),
+                                );
+                                info.current_text_value = Some(selected.to_string());
+                                info
+                            });
+                            if theme::soft_button(
+                                ui,
+                                &palette,
+                                Some(Icon::Sparkles),
+                                &preview,
+                                false,
+                            )
+                            .on_hover_text(gettext(locale, "Play the startup animation now"))
+                            .clicked()
+                            {
+                                super::flair::preview(ui.ctx(), app.settings.startup_style);
+                            }
+                        });
+                    },
                 );
-            });
+            }
             filtered_row(ui, &palette, &needle, &extras, &extras_rows[7], |ui| {
                 let mut on = app.sleep_timer.is_some();
                 if widgets::switch(ui, &palette, &sleep_timer, &mut on).changed() {

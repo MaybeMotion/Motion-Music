@@ -120,7 +120,7 @@ fn hash(seed: f32) -> f32 {
 
 /// The nearest point to `point` inside `rect` with `corner`s, so a shape
 /// drawn through it keeps within the box's rounded corners.
-fn inside(rect: Rect, corner: CornerRadius, point: Pos2) -> Pos2 {
+pub(crate) fn inside(rect: Rect, corner: CornerRadius, point: Pos2) -> Pos2 {
     let point = point.clamp(rect.min, rect.max);
     let most = rect.width().min(rect.height()) / 2.0;
     let round = |value: u8| f32::from(value).min(most);

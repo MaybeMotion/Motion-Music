@@ -39,6 +39,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         });
         return;
     }
+    super::flair::ambient(app, ui);
     ui.add_space(6.0);
     let greeting = crate::util::greeting(app.locale);
     theme::text(ui, greeting.as_ref(), theme::bold(30.0), palette.text);

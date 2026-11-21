@@ -12646,7 +12646,8 @@ impl App {
                     .vis_motion
                     .shuffled
                     .unwrap_or(self.settings.player_bar_vis);
-                self.settings.player_bar_vis = showing.next();
+                self.settings.player_bar_vis =
+                    showing.next_among(&self.settings.favourite_visualisers);
                 self.vis_motion.shuffled = None;
                 self.settings_dirty = true;
             }
