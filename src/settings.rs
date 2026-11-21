@@ -427,7 +427,7 @@ impl VisShuffle {
 macro_rules! choices {
     ($(#[$meta:meta])* $name:ident default $default:ident { $($(#[$doc:meta])* $variant:ident => $label:literal),+ $(,)? }) => {
         $(#[$meta])*
-        #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
         #[serde(rename_all = "lowercase")]
         pub enum $name {
             $($(#[$doc])* $variant),+
@@ -503,6 +503,16 @@ choices! {
         Wave => "Wave",
         /// A row of dots that light up as the song goes.
         Dots => "Dots",
+        /// A hairline.
+        Line => "Line",
+        /// The played part as a gradient of the visualizer's colours.
+        Gradient => "Gradient",
+        /// Small blocks, like a progress meter.
+        Segments => "Segments",
+        /// A bright line in the accent with a strong glow.
+        Neon => "Neon",
+        /// A tall rounded capsule with its knob always showing.
+        Capsule => "Capsule",
     }
 }
 
@@ -1078,6 +1088,8 @@ pub struct Settings {
     pub vis_intensity: VisIntensity,
     pub cursor_trail: CursorTrail,
     pub background_pattern: BackgroundPattern,
+    /// The background pattern drifts slowly.
+    pub pattern_motion: bool,
     pub row_hover: RowHover,
     /// A name Home's greeting adds, as in "Good evening, Louis".
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -1315,6 +1327,7 @@ impl Default for Settings {
             vis_intensity: VisIntensity::Full,
             cursor_trail: CursorTrail::Off,
             background_pattern: BackgroundPattern::None,
+            pattern_motion: true,
             row_hover: RowHover::Fill,
             greeting_name: String::new(),
             time_remaining: false,

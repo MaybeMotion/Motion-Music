@@ -673,6 +673,10 @@ pub struct App {
     last_eviction: Instant,
     /// Playback snapshot for the current frame, built once per redraw.
     frame_now: Option<NowPlaying>,
+    /// The visualizer's colours for this frame, worked out once by the
+    /// first of the many effects that ask: dim behind text under a light
+    /// theme, under a dark one, and at full brightness.
+    pub(crate) vis_palette_cache: std::cell::RefCell<[Option<Vec<Color32>>; 3]>,
     pub sign_in_url: Option<String>,
     /// The verified personal Web API application, when acceleration is ready.
     pub web_app: Option<String>,
@@ -1330,6 +1334,7 @@ impl App {
             milkdrop_host: None,
             last_eviction: Instant::now(),
             frame_now: None,
+            vis_palette_cache: Default::default(),
             sign_in_url: None,
             web_app: None,
             pending_remote_position: None,
@@ -2025,7 +2030,13 @@ impl App {
             .or_else(|| self.resume_preview())
     }
 
+    /// Whether a frame is being drawn, with its snapshot taken.
+    pub(crate) fn in_frame(&self) -> bool {
+        self.frame_now.is_some()
+    }
+
     fn refresh_frame_now(&mut self) {
+        *self.vis_palette_cache.borrow_mut() = Default::default();
         self.frame_now = self
             .requested_track_preview()
             .or_else(|| self.now_playing_live())

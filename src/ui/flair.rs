@@ -16,8 +16,8 @@ use crate::theme;
 
 /// How long the logo reveal lasts, so a quick launch stays quick, and how
 /// much of it is the window fading in.
-const STARTUP_SECONDS: f64 = 0.9;
-const STARTUP_FADE: f64 = 0.35;
+const STARTUP_SECONDS: f64 = 0.6;
+const STARTUP_FADE: f64 = 0.22;
 
 /// The reveal plays once per launch. Switching between the main window and
 /// the mini player makes a new window, but it is the same launch.
@@ -88,7 +88,15 @@ pub(crate) fn startup(app: &App, ctx: &Context) {
     let start = ctx
         .data_mut(|data| *data.get_temp_mut_or_insert_with(Id::new("startup-reveal-at"), || time));
     let age = time - start;
-    if age >= STARTUP_SECONDS {
+    // A click or a key gets straight to the app.
+    let skipped = ctx.input(|input| {
+        input.pointer.any_pressed()
+            || input
+                .events
+                .iter()
+                .any(|event| matches!(event, egui::Event::Key { pressed: true, .. }))
+    });
+    if age >= STARTUP_SECONDS || skipped {
         finish();
         return;
     }
@@ -471,8 +479,8 @@ pub(crate) fn moving_art(app: &App, ui: &egui::Ui, rect: Rect, key: &str, playin
             let offset = (pointer - rect.center()) / (rect.width() * 0.8);
             vec2(offset.x.clamp(-1.0, 1.0), offset.y.clamp(-1.0, 1.0)) * reach
         });
-    let x = crate::motion::animate_value(ctx, id.with("x"), toward.x, 0.35);
-    let y = crate::motion::animate_value(ctx, id.with("y"), toward.y, 0.35);
+    let x = crate::motion::animate_value(ctx, id.with("x"), toward.x, 0.2);
+    let y = crate::motion::animate_value(ctx, id.with("y"), toward.y, 0.2);
     // The breath rides on frames the visualizers and beat pulse already
     // draw; it never keeps an otherwise still window drawing by itself.
     Rect::from_center_size(rect.center() + vec2(x, y), rect.size() * scale)
@@ -690,81 +698,137 @@ pub(crate) fn ambient(app: &App, ui: &egui::Ui) {
     }
 }
 
+/// How big one repeat of a background pattern is, in points.
+const PATTERN_TILE: f32 = 52.0;
+
+/// One repeat of `style` as a white mask `pixels` square, drawn once and
+/// then tiled across the page by the graphics card.
+fn pattern_tile(style: crate::settings::BackgroundPattern, pixels: usize) -> egui::ColorImage {
+    use crate::settings::BackgroundPattern;
+    let mut alpha = vec![0.0_f32; pixels * pixels];
+    let size = pixels as f32;
+    // Soft-edged ink: full within `width` of a shape, fading over a pixel.
+    let mut ink = |distance: f32, width: f32, strength: f32, at: usize| {
+        let cover = (width - distance + 0.5).clamp(0.0, 1.0) * strength;
+        alpha[at] = alpha[at].max(cover);
+    };
+    let unit = size / PATTERN_TILE;
+    for y in 0..pixels {
+        for x in 0..pixels {
+            let (px, py) = (x as f32 + 0.5, y as f32 + 0.5);
+            let at = y * pixels + x;
+            // Distances wrap, so the tile meets itself seamlessly.
+            let wrap = |value: f32| value.min(size - value);
+            match style {
+                BackgroundPattern::None => {}
+                BackgroundPattern::Dots => {
+                    for (cx, cy) in [(0.0, 0.0), (size / 2.0, size / 2.0)] {
+                        let dx = wrap((px - cx).rem_euclid(size));
+                        let dy = wrap((py - cy).rem_euclid(size));
+                        ink((dx * dx + dy * dy).sqrt(), 1.4 * unit, 1.0, at);
+                    }
+                }
+                BackgroundPattern::Grid => {
+                    ink(wrap(px).min(wrap(py)), 0.5 * unit, 0.8, at);
+                }
+                BackgroundPattern::Diagonal => {
+                    let along = (px + py).rem_euclid(size / 2.0);
+                    ink(
+                        along.min(size / 2.0 - along) / std::f32::consts::SQRT_2,
+                        0.5 * unit,
+                        0.9,
+                        at,
+                    );
+                }
+                BackgroundPattern::Waves => {
+                    for row in [0.25, 0.75] {
+                        let wave = size * row + (px / size * TAU).sin() * 4.0 * unit;
+                        ink((py - wave).abs(), 0.6 * unit, 1.0, at);
+                    }
+                }
+                BackgroundPattern::Stars => {
+                    let stars = [
+                        (0.13, 0.22, 1.2),
+                        (0.61, 0.08, 0.7),
+                        (0.37, 0.55, 1.6),
+                        (0.82, 0.71, 0.9),
+                        (0.18, 0.86, 0.6),
+                        (0.72, 0.36, 0.8),
+                    ];
+                    for (sx, sy, big) in stars {
+                        let dx = wrap((px - sx * size).rem_euclid(size));
+                        let dy = wrap((py - sy * size).rem_euclid(size));
+                        ink((dx * dx + dy * dy).sqrt(), big * unit, 0.6 + 0.3 * big, at);
+                    }
+                }
+            }
+        }
+    }
+    let pixels_rgba: Vec<Color32> = alpha
+        .into_iter()
+        .map(|cover| Color32::from_white_alpha((cover.clamp(0.0, 1.0) * 255.0) as u8))
+        .collect();
+    egui::ColorImage::new([pixels, pixels], pixels_rgba)
+}
+
 /// A faint pattern across the page behind everything, as chosen in
-/// Settings > Customise. Still, so it costs nothing between frames.
+/// Settings > Customise, drifting slowly unless its motion is off. One
+/// tile is drawn once and repeated by the graphics card, so even moving it
+/// costs almost nothing.
 pub(crate) fn background_pattern(app: &App, ui: &egui::Ui, rect: Rect) {
     use crate::settings::BackgroundPattern;
     let style = app.settings.background_pattern;
     if style == BackgroundPattern::None {
         return;
     }
-    let painter = ui.painter().with_clip_rect(rect);
+    let ctx = ui.ctx();
+    let pixels = (PATTERN_TILE * ctx.pixels_per_point()).round().max(8.0) as usize;
+    let id = Id::new(("background-pattern", style, pixels));
+    let texture = ctx
+        .data(|data| data.get_temp::<egui::TextureHandle>(id))
+        .unwrap_or_else(|| {
+            let texture = ctx.load_texture(
+                "background-pattern",
+                pattern_tile(style, pixels),
+                egui::TextureOptions {
+                    wrap_mode: egui::TextureWrapMode::Repeat,
+                    ..egui::TextureOptions::LINEAR
+                },
+            );
+            ctx.data_mut(|data| data.insert_temp(id, texture.clone()));
+            texture
+        });
+    // Each pattern drifts its own way, slowly: about a tile every few
+    // seconds.
+    let moving = app.settings.pattern_motion && !crate::motion::reduced(ctx);
+    let time = if moving {
+        ui.input(|input| input.time) as f32
+    } else {
+        0.0
+    };
+    let drift = match style {
+        BackgroundPattern::Dots => vec2(0.12, 0.12),
+        BackgroundPattern::Grid => vec2(0.0, -0.1),
+        BackgroundPattern::Diagonal => vec2(0.15, 0.0),
+        BackgroundPattern::Waves => vec2(-0.2, 0.0),
+        BackgroundPattern::Stars => vec2(0.03, -0.06),
+        BackgroundPattern::None => Vec2::ZERO,
+    } * time;
+    let uv = Rect::from_min_size(
+        pos2(rect.left() / PATTERN_TILE, rect.top() / PATTERN_TILE) + drift,
+        rect.size() / PATTERN_TILE,
+    );
     let ink = app
         .palette
         .text
-        .gamma_multiply(if app.palette.dark { 0.06 } else { 0.07 });
-    let step = 26.0;
-    let columns = (rect.width() / step).ceil() as i32 + 1;
-    let rows = (rect.height() / step).ceil() as i32 + 1;
-    match style {
-        BackgroundPattern::None => {}
-        BackgroundPattern::Dots => {
-            for row in 0..rows {
-                for column in 0..columns {
-                    let point = rect.min + vec2(column as f32 * step, row as f32 * step);
-                    painter.circle_filled(point, 1.3, ink);
-                }
-            }
-        }
-        BackgroundPattern::Grid => {
-            let stroke = egui::Stroke::new(1.0, ink.gamma_multiply(0.7));
-            for column in 0..columns {
-                let x = rect.left() + column as f32 * step * 2.0;
-                painter.vline(x, rect.y_range(), stroke);
-            }
-            for row in 0..rows {
-                let y = rect.top() + row as f32 * step * 2.0;
-                painter.hline(rect.x_range(), y, stroke);
-            }
-        }
-        BackgroundPattern::Diagonal => {
-            let stroke = egui::Stroke::new(1.0, ink.gamma_multiply(0.8));
-            let reach = rect.height();
-            let mut x = rect.left() - reach;
-            while x < rect.right() {
-                painter.line_segment(
-                    [pos2(x, rect.bottom()), pos2(x + reach, rect.top())],
-                    stroke,
-                );
-                x += step;
-            }
-        }
-        BackgroundPattern::Waves => {
-            let stroke = egui::Stroke::new(1.2, ink);
-            for row in 0..rows / 2 + 1 {
-                let y = rect.top() + row as f32 * step * 2.0;
-                let points: Vec<egui::Pos2> = (0..=(rect.width() / 6.0) as usize + 1)
-                    .map(|step| {
-                        let x = rect.left() + step as f32 * 6.0;
-                        pos2(x, y + (x * 0.04).sin() * 6.0)
-                    })
-                    .collect();
-                painter.add(egui::Shape::line(points, stroke));
-            }
-        }
-        BackgroundPattern::Stars => {
-            // The same sky every frame: places from a hash, not the clock.
-            for index in 0..(columns * rows / 3).max(1) {
-                let hash = |salt: f32| {
-                    ((index as f32 * 12.9898 + salt).sin() * 43_758.547)
-                        .fract()
-                        .abs()
-                };
-                let point = rect.min + vec2(hash(1.0) * rect.width(), hash(2.0) * rect.height());
-                let size = 0.6 + hash(3.0) * 1.4;
-                painter.circle_filled(point, size, ink.gamma_multiply(0.6 + hash(4.0) * 1.4));
-            }
-        }
+        .gamma_multiply(if app.palette.dark { 0.13 } else { 0.12 });
+    ui.painter()
+        .with_clip_rect(rect)
+        .image(texture.id(), rect, uv, ink);
+    if moving {
+        // A gentle pace is plenty for so slow a drift, and spares the
+        // processor between frames.
+        ctx.request_repaint_after(std::time::Duration::from_millis(50));
     }
 }
 
@@ -945,6 +1009,22 @@ pub(crate) fn weekly_recap(app: &mut App, ctx: &Context) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_pattern_tile_has_faint_ink_and_none_has_none() {
+        use crate::settings::BackgroundPattern;
+        for style in BackgroundPattern::ALL.iter().copied() {
+            let tile = pattern_tile(style, 52);
+            assert_eq!(tile.size, [52, 52]);
+            let inked = tile.pixels.iter().filter(|pixel| pixel.a() > 40).count();
+            if style == BackgroundPattern::None {
+                assert_eq!(inked, 0);
+            } else {
+                assert!(inked > 0, "{style:?} draws something");
+                assert!(inked < 52 * 52 / 2, "{style:?} stays a pattern, not a fill");
+            }
+        }
+    }
 
     #[test]
     fn a_chosen_style_plays_as_is_and_random_picks_one_for_the_whole_launch() {

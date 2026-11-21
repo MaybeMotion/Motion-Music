@@ -379,10 +379,11 @@ main fields are:
 | `glass_backdrop` | `albumart` | `albumart` (the playing cover, blurred) or `theme` (clouds of the theme's colours) |
 | `custom_accent` | none | An accent colour as red, green and blue, such as `[236, 72, 153]`, over any theme |
 | `play_button` | `circle` | `circle`, `rounded`, `ring` or `gradient` |
-| `seek_style` | `classic` | `classic`, `thick`, `glow`, `wave` or `dots` |
+| `seek_style` | `classic` | `classic`, `thick`, `line`, `capsule`, `segments`, `dots`, `glow`, `gradient`, `neon` or `wave` |
 | `vis_intensity` | `full` | `faint`, `soft` or `full`: how strongly the player bar's visualizer shows |
 | `cursor_trail` | `off` | `off`, `sparkle` or `comet` |
 | `background_pattern` | `none` | `none`, `dots`, `grid`, `diagonal`, `waves` or `stars` |
+| `pattern_motion` | `true` | The background pattern drifts slowly |
 | `row_hover` | `fill` | `fill`, `outline`, `bar` or `glow` |
 | `greeting_name` | none | A name Home's greeting adds |
 | `time_remaining` | `false` | The player bar shows the time left instead of the length |

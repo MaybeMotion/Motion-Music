@@ -2059,7 +2059,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             gettext(locale, "Seek bar"),
             gettext(
                 locale,
-                "How the bar under the player's buttons is drawn. Glow and Dots use the visualizer's colours; Wave ripples.",
+                "How the bar under the player's buttons is drawn: Classic, Thick, Line, Capsule, Segments, Dots, Glow, Gradient, Neon or Wave.",
             ),
         ),
         RowText::new(
@@ -2102,6 +2102,13 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             gettext(
                 locale,
                 "The player bar shows how long the song has left instead of its length. Clicking the time there swaps too.",
+            ),
+        ),
+        RowText::new(
+            gettext(locale, "Pattern motion"),
+            gettext(
+                locale,
+                "The background pattern drifts slowly across the page. It redraws a few times a second while it moves; turn it off for a still pattern.",
             ),
         ),
     ];
@@ -2205,6 +2212,44 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     });
                 },
             );
+            // The page: its pattern, and whether it drifts.
+            changed |= choice_row(
+                ui,
+                &palette,
+                &needle,
+                &customise,
+                &customise_rows[8],
+                &labelled(crate::settings::BackgroundPattern::ALL, |choice| {
+                    choice.label(locale)
+                }),
+                &mut app.settings.background_pattern,
+            );
+            ui.add_enabled_ui(
+                app.settings.background_pattern != crate::settings::BackgroundPattern::None,
+                |ui| {
+                    filtered_row(
+                        ui,
+                        &palette,
+                        &needle,
+                        &customise,
+                        &customise_rows[12],
+                        |ui| {
+                            let label = customise_rows[12].title.clone();
+                            if widgets::switch(
+                                ui,
+                                &palette,
+                                &label,
+                                &mut app.settings.pattern_motion,
+                            )
+                            .changed()
+                            {
+                                changed = true;
+                            }
+                        },
+                    );
+                },
+            );
+            // The player bar.
             changed |= choice_row(
                 ui,
                 &palette,
@@ -2223,6 +2268,21 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 &labelled(SeekStyle::ALL, |choice| choice.label(locale)),
                 &mut app.settings.seek_style,
             );
+            filtered_row(
+                ui,
+                &palette,
+                &needle,
+                &customise,
+                &customise_rows[11],
+                |ui| {
+                    let label = customise_rows[11].title.clone();
+                    if widgets::switch(ui, &palette, &label, &mut app.settings.time_remaining)
+                        .changed()
+                    {
+                        changed = true;
+                    }
+                },
+            );
             changed |= choice_row(
                 ui,
                 &palette,
@@ -2232,26 +2292,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 &labelled(VisIntensity::ALL, |choice| choice.label(locale)),
                 &mut app.settings.vis_intensity,
             );
-            changed |= choice_row(
-                ui,
-                &palette,
-                &needle,
-                &customise,
-                &customise_rows[7],
-                &labelled(CursorTrail::ALL, |choice| choice.label(locale)),
-                &mut app.settings.cursor_trail,
-            );
-            changed |= choice_row(
-                ui,
-                &palette,
-                &needle,
-                &customise,
-                &customise_rows[8],
-                &labelled(crate::settings::BackgroundPattern::ALL, |choice| {
-                    choice.label(locale)
-                }),
-                &mut app.settings.background_pattern,
-            );
+            // Lists, the pointer and the greeting.
             changed |= choice_row(
                 ui,
                 &palette,
@@ -2262,6 +2303,15 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     choice.label(locale)
                 }),
                 &mut app.settings.row_hover,
+            );
+            changed |= choice_row(
+                ui,
+                &palette,
+                &needle,
+                &customise,
+                &customise_rows[7],
+                &labelled(CursorTrail::ALL, |choice| choice.label(locale)),
+                &mut app.settings.cursor_trail,
             );
             filtered_row_sized(
                 ui,
@@ -2276,21 +2326,6 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                         .char_limit(40)
                         .desired_width(200.0_f32.min(ui.available_width()));
                     if widgets::text_edit(ui, locale, edit).changed() {
-                        changed = true;
-                    }
-                },
-            );
-            filtered_row(
-                ui,
-                &palette,
-                &needle,
-                &customise,
-                &customise_rows[11],
-                |ui| {
-                    let label = customise_rows[11].title.clone();
-                    if widgets::switch(ui, &palette, &label, &mut app.settings.time_remaining)
-                        .changed()
-                    {
                         changed = true;
                     }
                 },
@@ -2350,7 +2385,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             startup_animation.clone(),
             gettext(
                 locale,
-                "A quick logo reveal in your theme's colours when Motion Music opens, under a second. It plays once per launch, not when you switch to or from the mini player.",
+                "A quick logo reveal in your theme's colours when Motion Music opens, about half a second, and a click or key skips it. It plays once per launch, not when you switch to or from the mini player.",
             ),
         ),
         RowText::new(

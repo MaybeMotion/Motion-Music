@@ -2715,7 +2715,7 @@ pub fn card(
                 ui.ctx(),
                 response.id.with("card-sheen"),
                 pointer,
-                0.25,
+                0.12,
             );
             super::flair::sheen(ui.painter(), image_rect, shown, along, hover);
         }
@@ -3179,7 +3179,13 @@ fn styled_slider(
             || response.dragged()
             || dragging_value.is_some();
         use crate::settings::SeekStyle;
-        let thickness = if style == SeekStyle::Thick { 8.0 } else { 4.0 };
+        let thickness = match style {
+            SeekStyle::Thick => 8.0,
+            SeekStyle::Capsule => 10.0,
+            SeekStyle::Line => 2.0,
+            SeekStyle::Gradient => 6.0,
+            _ => 4.0,
+        };
         let bar = Rect::from_center_size(rect.center(), vec2(rect.width(), thickness));
         let track_color = if palette.dark {
             Color32::from_white_alpha(50)
@@ -3206,9 +3212,77 @@ fn styled_slider(
         };
         let painter = ui.painter();
         match style {
-            SeekStyle::Classic | SeekStyle::Thick => {
+            SeekStyle::Classic | SeekStyle::Thick | SeekStyle::Line => {
                 painter.rect_filled(bar, thickness / 2.0, track_color);
                 painter.rect_filled(filled, thickness / 2.0, fill);
+            }
+            SeekStyle::Capsule => {
+                painter.rect_filled(bar, thickness / 2.0, track_color);
+                painter.rect_filled(filled, thickness / 2.0, fill);
+                // The knob always shows, a touch bigger under the pointer.
+                let knob = pos2(filled.right().max(bar.left() + 5.0), bar.center().y);
+                painter.circle_filled(knob + vec2(0.0, 1.0), 7.5, Color32::from_black_alpha(60));
+                painter.circle_filled(knob, 6.5 + hover, palette.text);
+            }
+            SeekStyle::Gradient => {
+                painter.rect_filled(bar, thickness / 2.0, track_color);
+                let mut mesh = egui::Mesh::default();
+                let steps = 12;
+                for step in 0..=steps {
+                    let at = step as f32 / steps as f32;
+                    let x = filled.left() + filled.width() * at;
+                    let colour = swept(at);
+                    mesh.colored_vertex(pos2(x, filled.top()), colour);
+                    mesh.colored_vertex(pos2(x, filled.bottom()), colour);
+                }
+                for step in 0..steps {
+                    let at = step * 2;
+                    mesh.add_triangle(at, at + 1, at + 3);
+                    mesh.add_triangle(at, at + 3, at + 2);
+                }
+                painter.add(egui::Shape::mesh(mesh));
+                // Rounded ends.
+                painter.circle_filled(
+                    pos2(filled.left(), bar.center().y),
+                    thickness / 2.0,
+                    swept(0.0),
+                );
+                if filled.width() > 0.5 {
+                    painter.circle_filled(
+                        pos2(filled.right(), bar.center().y),
+                        thickness / 2.0,
+                        swept(1.0),
+                    );
+                }
+            }
+            SeekStyle::Segments => {
+                let block = 6.0;
+                let gap = 2.0;
+                let count = ((bar.width() + gap) / (block + gap)).floor().max(1.0) as usize;
+                let lit = (count as f32 * shown.clamp(0.0, 1.0)).round() as usize;
+                let tall = Rect::from_center_size(bar.center(), vec2(bar.width(), 6.0));
+                for index in 0..count {
+                    let left = tall.left() + index as f32 * (block + gap);
+                    let piece =
+                        Rect::from_min_size(pos2(left, tall.top()), vec2(block, tall.height()));
+                    painter.rect_filled(piece, 1.5, if index < lit { fill } else { track_color });
+                }
+            }
+            SeekStyle::Neon => {
+                painter.rect_filled(bar, 2.0, track_color);
+                let glow = palette.accent;
+                for (spread, alpha) in [(7.0, 0.12), (4.0, 0.25), (2.0, 0.45)] {
+                    painter.rect_filled(
+                        filled.expand2(vec2(spread / 2.0, spread)),
+                        6.0,
+                        glow.gamma_multiply(alpha),
+                    );
+                }
+                painter.rect_filled(
+                    Rect::from_center_size(filled.center(), vec2(filled.width(), 2.0)),
+                    1.0,
+                    glow.lerp_to_gamma(Color32::WHITE, 0.6),
+                );
             }
             SeekStyle::Glow => {
                 painter.rect_filled(bar, 2.0, track_color);
@@ -3274,7 +3348,8 @@ fn styled_slider(
                 }
             }
         }
-        if hover > 0.0 {
+        // Capsule's knob always shows already.
+        if hover > 0.0 && style != SeekStyle::Capsule {
             ui.painter().circle_filled(
                 pos2(filled.right(), bar.center().y),
                 4.0 + 2.0 * hover,

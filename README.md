@@ -63,10 +63,10 @@ Load your own JSON palettes through **Open themes folder**, choose separate cust
 - **Interface style**: **Glass** makes the sidebar, pages and player bar frosted and see-through, like iOS, over a blurred backdrop. **Glass frost** (Light, Medium or Heavy) sets how much shows through, and **Glass backdrop** shows the playing song's cover, blurred, or soft clouds of your theme's colours.
 - **Accent colour**: fourteen colours of your own for buttons, sliders and highlights, over any theme, or the theme's own.
 - **Play button**: Circle, Rounded, Ring, or Gradient in the visualiser's colours.
-- **Seek bar**: Classic, Thick, Glow (the visualiser's colours), Wave (it ripples) or Dots.
+- **Seek bar**: Classic, Thick, Line, Capsule (its knob always showing), Segments, Dots, Glow and Gradient (the visualiser's colours), Neon, or Wave (it ripples).
 - **Visualizer intensity**: Faint, Soft or Full for the player bar's visualiser.
 - **Cursor trail**: Off, Sparkle or Comet, in the visualiser's colours.
-- **Background pattern**: None, Dots, Grid, Diagonal, Waves or Stars, faintly across the page.
+- **Background pattern**: None, Dots, Grid, Diagonal, Waves or Stars, faintly across the page, drifting slowly unless **Pattern motion** is off.
 - **Song row highlight**: Fill, Outline, Accent bar or Glow.
 - **Your name**: Home greets you by it, as in **Good evening, Louis**.
 - **Show time left**: the player bar counts down instead of showing the length; clicking the time swaps too.
@@ -81,7 +81,7 @@ Each has its own switch, and all start on.
 - **Karaoke lyrics**: in full screen lyrics, the line being sung fills from the left in the visualiser's colours as it is sung.
 - **Weekly recap**: when a new week starts, a card shows last week's listening, counting up, with a way to My Wrapped. Shown once a week.
 - **Global shortcuts** (Windows): **Ctrl+Alt+Space** plays or pauses, **Ctrl+Alt+Right** and **Ctrl+Alt+Left** skip, and **Ctrl+Alt+Up** and **Ctrl+Alt+Down** change the volume, from any app, even with Motion Music in the tray. A shortcut another app already uses is left to it.
-- **Startup animation**: a quick logo reveal in your theme's colours as Motion Music opens, under a second, once per launch (never when switching to or from the mini player). **Startup animation style** picks **Bloom**, **Iris**, **Spin**, **Curtain**, **Glow**, **Sweep**, **Pulse**, **Zoom**, **Mosaic** or **Random**, and **Preview** plays it on the spot.
+- **Startup animation**: a quick logo reveal in your theme's colours as Motion Music opens, about half a second (a click or key skips it), once per launch (never when switching to or from the mini player). **Startup animation style** picks **Bloom**, **Iris**, **Spin**, **Curtain**, **Glow**, **Sweep**, **Pulse**, **Zoom**, **Mosaic** or **Random**, and **Preview** plays it on the spot.
 - **Sleep timer on the player bar**: shows the sleep timer's clock button. Turn it off here, or choose **Remove from the player bar** in the button's own menu.
 - **Parallax**: album and playlist headers shrink and fade as they scroll away, and soft clouds of colour drift behind Home at three depths, following the pointer.
 - **Cover sheen**: a band of light glides across a cover as the pointer moves over it.

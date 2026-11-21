@@ -19,7 +19,7 @@ A new section with a switch for each extra. They all start on.
 | Karaoke lyrics | In full screen lyrics, the line being sung fills from the left in the visualiser's colours |
 | Weekly recap | When a new week starts, a card shows last week's listening |
 | Global shortcuts | Windows: control playback from any app (below) |
-| Startup animation | A quick logo reveal in your theme's colours as Motion Music opens, under a second, once per launch |
+| Startup animation | A quick logo reveal in your theme's colours as Motion Music opens, about half a second, once per launch; a click or key skips it |
 | Startup animation style | Bloom, Iris, Spin, Curtain, Glow, Sweep, Pulse, Zoom, Mosaic, or Random for a different one each launch. **Preview** plays it now |
 | Sleep timer | Turns the sleep timer on or off |
 | Sleep timer length | 15, 30, 45, 60, 90 or 120 minutes |
@@ -36,10 +36,11 @@ A new section with a switch for each extra. They all start on.
 | Glass backdrop | The playing song's cover, blurred, or soft clouds of your theme's colours |
 | Accent colour | The theme's own, or any of fourteen colours, over any theme |
 | Play button | Circle, Rounded, Ring or Gradient |
-| Seek bar | Classic, Thick, Glow, Wave or Dots |
+| Seek bar | Classic, Thick, Line, Capsule, Segments, Dots, Glow, Gradient, Neon or Wave |
 | Visualizer intensity | Faint, Soft or Full |
 | Cursor trail | Off, Sparkle or Comet |
 | Background pattern | None, Dots, Grid, Diagonal, Waves or Stars |
+| Pattern motion | The pattern drifts slowly across the page |
 | Song row highlight | Fill, Outline, Accent bar or Glow |
 | Your name | Home greets you by it |
 | Show time left | The player bar counts down; clicking the time swaps too |
@@ -91,7 +92,7 @@ The fade now lasts the whole last minute. Turn the timer on in **Settings > Extr
 
 ## Settings file
 
-New optional fields: `speaker_fade`, `moving_art`, `karaoke_lyrics`, `weekly_recap`, `global_shortcuts`, `startup_animation`, `sleep_timer_button`, `parallax` and `cover_sheen` (all `true` or `false`), `startup_style` (`bloom`, `iris`, `spin`, `curtain`, `glow`, `sweep`, `pulse`, `zoom`, `mosaic` or `random`), `favourite_visualisers` (a list such as `["galaxy", "orb"]`), `interface_style` (`solid` or `glass`), `glass_frost` (`light`, `medium` or `heavy`), `glass_backdrop` (`albumart` or `theme`), `custom_accent` (red, green and blue such as `[236, 72, 153]`), `play_button` (`circle`, `rounded`, `ring` or `gradient`), `seek_style` (`classic`, `thick`, `glow`, `wave` or `dots`), `vis_intensity` (`faint`, `soft` or `full`), `cursor_trail` (`off`, `sparkle` or `comet`), `background_pattern` (`none`, `dots`, `grid`, `diagonal`, `waves` or `stars`), `row_hover` (`fill`, `outline`, `bar` or `glow`), `greeting_name` and `time_remaining`. `visualizer_colours` also takes `rainbow`, `fire`, `ice`, `neon`, `sunset` and `forest`, `weekly_recap_seen` (a week such as `2026-W47`) and `sleep_timer_minutes` (15 to 120). `skin` also takes the mini player themes, such as `motion:neon-night`. Existing settings files load unchanged.
+New optional fields: `speaker_fade`, `moving_art`, `karaoke_lyrics`, `weekly_recap`, `global_shortcuts`, `startup_animation`, `sleep_timer_button`, `parallax` and `cover_sheen` (all `true` or `false`), `startup_style` (`bloom`, `iris`, `spin`, `curtain`, `glow`, `sweep`, `pulse`, `zoom`, `mosaic` or `random`), `favourite_visualisers` (a list such as `["galaxy", "orb"]`), `interface_style` (`solid` or `glass`), `glass_frost` (`light`, `medium` or `heavy`), `glass_backdrop` (`albumart` or `theme`), `custom_accent` (red, green and blue such as `[236, 72, 153]`), `play_button` (`circle`, `rounded`, `ring` or `gradient`), `seek_style` (`classic`, `thick`, `line`, `capsule`, `segments`, `dots`, `glow`, `gradient`, `neon` or `wave`), `pattern_motion` (`true` or `false`), `vis_intensity` (`faint`, `soft` or `full`), `cursor_trail` (`off`, `sparkle` or `comet`), `background_pattern` (`none`, `dots`, `grid`, `diagonal`, `waves` or `stars`), `row_hover` (`fill`, `outline`, `bar` or `glow`), `greeting_name` and `time_remaining`. `visualizer_colours` also takes `rainbow`, `fire`, `ice`, `neon`, `sunset` and `forest`, `weekly_recap_seen` (a week such as `2026-W47`) and `sleep_timer_minutes` (15 to 120). `skin` also takes the mini player themes, such as `motion:neon-night`. Existing settings files load unchanged.
 
 ## Licences and source
 

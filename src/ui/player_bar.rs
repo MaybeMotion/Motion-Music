@@ -520,6 +520,24 @@ fn visualizer_mode(
 /// words over; without, they are at full brightness, as on the stage and in
 /// the beat pulse's soft glow.
 pub(crate) fn visualiser_palette(app: &App, behind_text: Option<bool>) -> Vec<Color32> {
+    // Many effects ask each frame; the first works it out for the rest.
+    let slot = match behind_text {
+        None => 0,
+        Some(false) => 1,
+        Some(true) => 2,
+    };
+    if !app.in_frame() {
+        return work_out_visualiser_palette(app, behind_text);
+    }
+    if let Some(colours) = &app.vis_palette_cache.borrow()[slot] {
+        return colours.clone();
+    }
+    let colours = work_out_visualiser_palette(app, behind_text);
+    app.vis_palette_cache.borrow_mut()[slot] = Some(colours.clone());
+    colours
+}
+
+fn work_out_visualiser_palette(app: &App, behind_text: Option<bool>) -> Vec<Color32> {
     let gradient_colours = app
         .theme_gradient()
         .map(|stops| stops.map(|colour| [colour.r(), colour.g(), colour.b()]));
