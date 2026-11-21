@@ -1123,6 +1123,22 @@ pub fn apply_flags(app: &mut App, page: Option<&str>, show: Option<&str>) {
             // demo otherwise leaves out of its exact frames.
             "flair" => app.flair = true,
             // Settings > Customise, for captures of each look.
+            pattern if pattern.starts_with("pattern-") => {
+                if let Ok(style) =
+                    serde_json::from_value(serde_json::Value::String(pattern[8..].to_owned()))
+                {
+                    app.settings.background_pattern = style;
+                }
+            }
+            scheme if scheme.starts_with("colours-") => {
+                if let Ok(colours) =
+                    serde_json::from_value(serde_json::Value::String(scheme[8..].to_owned()))
+                {
+                    app.settings.visualizer_colours = colours;
+                }
+            }
+            "greeting-name" => app.settings.greeting_name = "Louis".into(),
+            "time-left" => app.settings.time_remaining = true,
             "glass" => {
                 app.settings.interface_style = crate::settings::InterfaceStyle::Glass;
             }
@@ -8459,7 +8475,7 @@ mod tests {
                 // Draw the full Settings page, including MilkDrop.
                 screen_rect: Some(egui::Rect::from_min_size(
                     egui::Pos2::ZERO,
-                    egui::vec2(1280.0, 6400.0),
+                    egui::vec2(1280.0, 8400.0),
                 )),
                 ..Default::default()
             };

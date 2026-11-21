@@ -66,6 +66,11 @@ Load your own JSON palettes through **Open themes folder**, choose separate cust
 - **Seek bar**: Classic, Thick, Glow (the visualiser's colours), Wave (it ripples) or Dots.
 - **Visualizer intensity**: Faint, Soft or Full for the player bar's visualiser.
 - **Cursor trail**: Off, Sparkle or Comet, in the visualiser's colours.
+- **Background pattern**: None, Dots, Grid, Diagonal, Waves or Stars, faintly across the page.
+- **Song row highlight**: Fill, Outline, Accent bar or Glow.
+- **Your name**: Home greets you by it, as in **Good evening, Louis**.
+- **Show time left**: the player bar counts down instead of showing the length; clicking the time swaps too.
+- **Visualizer colours** (Settings > Appearance) also offers its own schemes: **Rainbow**, **Fire**, **Ice**, **Neon**, **Sunset** and **Forest**.
 
 ### Extras (Settings > Extras)
 
@@ -78,7 +83,7 @@ Each has its own switch, and all start on.
 - **Global shortcuts** (Windows): **Ctrl+Alt+Space** plays or pauses, **Ctrl+Alt+Right** and **Ctrl+Alt+Left** skip, and **Ctrl+Alt+Up** and **Ctrl+Alt+Down** change the volume, from any app, even with Motion Music in the tray. A shortcut another app already uses is left to it.
 - **Startup animation**: a quick logo reveal in your theme's colours as Motion Music opens, under a second, once per launch (never when switching to or from the mini player). **Startup animation style** picks **Bloom**, **Iris**, **Spin**, **Curtain**, **Glow**, **Sweep**, **Pulse**, **Zoom**, **Mosaic** or **Random**, and **Preview** plays it on the spot.
 - **Sleep timer on the player bar**: shows the sleep timer's clock button. Turn it off here, or choose **Remove from the player bar** in the button's own menu.
-- **Parallax**: a blurred copy of the cover glows behind album and playlist headers and scrolls at half speed while the header shrinks and fades away, and soft clouds of colour drift behind Home at three depths, following the pointer.
+- **Parallax**: album and playlist headers shrink and fade as they scroll away, and soft clouds of colour drift behind Home at three depths, following the pointer.
 - **Cover sheen**: a band of light glides across a cover as the pointer moves over it.
 
 The **tray menu** names the playing song, opens the **mini player**, and turns the sleep timer on or off; its tooltip names the song too. The **mini player** has eight themes of its own under Settings > Winamp skins: **Neon Night**, **Sunset**, **Ocean**, **Forest**, **Mint**, **Ember**, **Candy** and **Mono**, and Random picks among them too.

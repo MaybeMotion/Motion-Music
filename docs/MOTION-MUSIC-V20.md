@@ -24,7 +24,7 @@ A new section with a switch for each extra. They all start on.
 | Sleep timer | Turns the sleep timer on or off |
 | Sleep timer length | 15, 30, 45, 60, 90 or 120 minutes |
 | Sleep timer on the player bar | Shows or hides the sleep timer's clock button on the player bar |
-| Parallax | A blurred cover behind album and playlist headers scrolls at half speed, and soft clouds of colour behind Home follow the pointer |
+| Parallax | Album and playlist headers shrink and fade as they scroll away, and soft clouds of colour behind Home follow the pointer |
 | Cover sheen | A band of light glides across a cover as the pointer moves over it |
 
 ## Settings > Customise
@@ -39,6 +39,12 @@ A new section with a switch for each extra. They all start on.
 | Seek bar | Classic, Thick, Glow, Wave or Dots |
 | Visualizer intensity | Faint, Soft or Full |
 | Cursor trail | Off, Sparkle or Comet |
+| Background pattern | None, Dots, Grid, Diagonal, Waves or Stars |
+| Song row highlight | Fill, Outline, Accent bar or Glow |
+| Your name | Home greets you by it |
+| Show time left | The player bar counts down; clicking the time swaps too |
+
+**Visualizer colours** in Appearance also has six schemes of its own: Rainbow, Fire, Ice, Neon, Sunset and Forest.
 
 ## Favourite visualisers
 
@@ -85,7 +91,7 @@ The fade now lasts the whole last minute. Turn the timer on in **Settings > Extr
 
 ## Settings file
 
-New optional fields: `speaker_fade`, `moving_art`, `karaoke_lyrics`, `weekly_recap`, `global_shortcuts`, `startup_animation`, `sleep_timer_button`, `parallax` and `cover_sheen` (all `true` or `false`), `startup_style` (`bloom`, `iris`, `spin`, `curtain`, `glow`, `sweep`, `pulse`, `zoom`, `mosaic` or `random`), `favourite_visualisers` (a list such as `["galaxy", "orb"]`), `interface_style` (`solid` or `glass`), `glass_frost` (`light`, `medium` or `heavy`), `glass_backdrop` (`albumart` or `theme`), `custom_accent` (red, green and blue such as `[236, 72, 153]`), `play_button` (`circle`, `rounded`, `ring` or `gradient`), `seek_style` (`classic`, `thick`, `glow`, `wave` or `dots`), `vis_intensity` (`faint`, `soft` or `full`) and `cursor_trail` (`off`, `sparkle` or `comet`), `weekly_recap_seen` (a week such as `2026-W47`) and `sleep_timer_minutes` (15 to 120). `skin` also takes the mini player themes, such as `motion:neon-night`. Existing settings files load unchanged.
+New optional fields: `speaker_fade`, `moving_art`, `karaoke_lyrics`, `weekly_recap`, `global_shortcuts`, `startup_animation`, `sleep_timer_button`, `parallax` and `cover_sheen` (all `true` or `false`), `startup_style` (`bloom`, `iris`, `spin`, `curtain`, `glow`, `sweep`, `pulse`, `zoom`, `mosaic` or `random`), `favourite_visualisers` (a list such as `["galaxy", "orb"]`), `interface_style` (`solid` or `glass`), `glass_frost` (`light`, `medium` or `heavy`), `glass_backdrop` (`albumart` or `theme`), `custom_accent` (red, green and blue such as `[236, 72, 153]`), `play_button` (`circle`, `rounded`, `ring` or `gradient`), `seek_style` (`classic`, `thick`, `glow`, `wave` or `dots`), `vis_intensity` (`faint`, `soft` or `full`), `cursor_trail` (`off`, `sparkle` or `comet`), `background_pattern` (`none`, `dots`, `grid`, `diagonal`, `waves` or `stars`), `row_hover` (`fill`, `outline`, `bar` or `glow`), `greeting_name` and `time_remaining`. `visualizer_colours` also takes `rainbow`, `fire`, `ice`, `neon`, `sunset` and `forest`, `weekly_recap_seen` (a week such as `2026-W47`) and `sleep_timer_minutes` (15 to 120). `skin` also takes the mini player themes, such as `motion:neon-night`. Existing settings files load unchanged.
 
 ## Licences and source
 

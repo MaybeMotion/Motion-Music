@@ -690,60 +690,94 @@ pub(crate) fn ambient(app: &App, ui: &egui::Ui) {
     }
 }
 
-/// The blurred cover behind an album or playlist header, scrolling at half
-/// the page's speed and fading towards the page below it. Answers how much
-/// to shrink and fade the cover itself as it scrolls away, 0 to 1.
-pub(crate) fn parallax_header(
-    app: &App,
-    ui: &egui::Ui,
-    texture: Option<&egui::TextureHandle>,
-    height: f32,
-) -> f32 {
+/// A faint pattern across the page behind everything, as chosen in
+/// Settings > Customise. Still, so it costs nothing between frames.
+pub(crate) fn background_pattern(app: &App, ui: &egui::Ui, rect: Rect) {
+    use crate::settings::BackgroundPattern;
+    let style = app.settings.background_pattern;
+    if style == BackgroundPattern::None {
+        return;
+    }
+    let painter = ui.painter().with_clip_rect(rect);
+    let ink = app
+        .palette
+        .text
+        .gamma_multiply(if app.palette.dark { 0.06 } else { 0.07 });
+    let step = 26.0;
+    let columns = (rect.width() / step).ceil() as i32 + 1;
+    let rows = (rect.height() / step).ceil() as i32 + 1;
+    match style {
+        BackgroundPattern::None => {}
+        BackgroundPattern::Dots => {
+            for row in 0..rows {
+                for column in 0..columns {
+                    let point = rect.min + vec2(column as f32 * step, row as f32 * step);
+                    painter.circle_filled(point, 1.3, ink);
+                }
+            }
+        }
+        BackgroundPattern::Grid => {
+            let stroke = egui::Stroke::new(1.0, ink.gamma_multiply(0.7));
+            for column in 0..columns {
+                let x = rect.left() + column as f32 * step * 2.0;
+                painter.vline(x, rect.y_range(), stroke);
+            }
+            for row in 0..rows {
+                let y = rect.top() + row as f32 * step * 2.0;
+                painter.hline(rect.x_range(), y, stroke);
+            }
+        }
+        BackgroundPattern::Diagonal => {
+            let stroke = egui::Stroke::new(1.0, ink.gamma_multiply(0.8));
+            let reach = rect.height();
+            let mut x = rect.left() - reach;
+            while x < rect.right() {
+                painter.line_segment(
+                    [pos2(x, rect.bottom()), pos2(x + reach, rect.top())],
+                    stroke,
+                );
+                x += step;
+            }
+        }
+        BackgroundPattern::Waves => {
+            let stroke = egui::Stroke::new(1.2, ink);
+            for row in 0..rows / 2 + 1 {
+                let y = rect.top() + row as f32 * step * 2.0;
+                let points: Vec<egui::Pos2> = (0..=(rect.width() / 6.0) as usize + 1)
+                    .map(|step| {
+                        let x = rect.left() + step as f32 * 6.0;
+                        pos2(x, y + (x * 0.04).sin() * 6.0)
+                    })
+                    .collect();
+                painter.add(egui::Shape::line(points, stroke));
+            }
+        }
+        BackgroundPattern::Stars => {
+            // The same sky every frame: places from a hash, not the clock.
+            for index in 0..(columns * rows / 3).max(1) {
+                let hash = |salt: f32| {
+                    ((index as f32 * 12.9898 + salt).sin() * 43_758.547)
+                        .fract()
+                        .abs()
+                };
+                let point = rect.min + vec2(hash(1.0) * rect.width(), hash(2.0) * rect.height());
+                let size = 0.6 + hash(3.0) * 1.4;
+                painter.circle_filled(point, size, ink.gamma_multiply(0.6 + hash(4.0) * 1.4));
+            }
+        }
+    }
+}
+
+/// How far an album or playlist header has scrolled away, 0 to 1, for the
+/// cover to shrink and fade a little as it goes. No art is drawn behind the
+/// header: the theme stays clean.
+pub(crate) fn header_away(app: &App, ui: &egui::Ui, height: f32) -> f32 {
     if !app.settings.parallax || crate::motion::reduced(ui.ctx()) {
         return 0.0;
     }
-    let view = ui.clip_rect();
-    let top = ui.cursor().top();
-    let scrolled = (view.top() - top).max(0.0);
-    let away = (scrolled / height).clamp(0.0, 1.0);
-    let Some(texture) = texture else {
-        return away;
-    };
-    // Twice as wide as tall a slice of the cover, filling the width.
-    let area = Rect::from_min_size(
-        pos2(ui.max_rect().left() - 32.0, top - 40.0 + scrolled * 0.5),
-        vec2(ui.max_rect().width() + 64.0, height + 80.0),
-    );
-    let uv_height = (area.height() / area.width()).min(1.0);
-    let uv = Rect::from_center_size(pos2(0.5, 0.5), vec2(1.0, uv_height));
-    let strength = if app.palette.dark { 0.42 } else { 0.3 } * (1.0 - away * 0.6);
-    let painter = ui.painter().with_clip_rect(view);
-    let mut mesh = egui::Mesh::with_texture(texture.id());
-    // Fully there at the top, gone by the foot, so the page shows through.
-    for (row, fade) in [(0.0, 1.0), (0.55, 0.75), (1.0, 0.0)] {
-        let y = area.top() + area.height() * row;
-        let v = uv.top() + uv.height() * row;
-        let tint = Color32::WHITE.gamma_multiply(strength * fade);
-        mesh.vertices.push(egui::epaint::Vertex {
-            pos: pos2(area.left(), y),
-            uv: pos2(uv.left(), v),
-            color: tint,
-        });
-        mesh.vertices.push(egui::epaint::Vertex {
-            pos: pos2(area.right(), y),
-            uv: pos2(uv.right(), v),
-            color: tint,
-        });
-    }
-    for row in 0..2 {
-        let at = row * 2;
-        mesh.add_triangle(at, at + 1, at + 3);
-        mesh.add_triangle(at, at + 3, at + 2);
-    }
-    painter.add(egui::Shape::mesh(mesh));
-    away
+    let scrolled = (ui.clip_rect().top() - ui.cursor().top()).max(0.0);
+    (scrolled / height).clamp(0.0, 1.0)
 }
-
 /// A soft band of light across a cover, inside its own corners, at
 /// `along` (0 at the left to 1 at the right), `strength` 0 to 1.
 pub(crate) fn sheen(

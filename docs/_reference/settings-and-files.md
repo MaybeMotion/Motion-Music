@@ -351,7 +351,7 @@ main fields are:
 | `accent_from_art` | `true` | Tint pages with album art, and colour the player bar visualizer with the cover's colours |
 | `player_bar_vis` | `off` | Player-bar effect: `off`, `spectrum`, `waveform`, `mirror`, `waterfall`, `prism`, `helix`, `synthwave`, `terrain`, `lava`, `galaxy`, `matrix`, `spectrogram`, `orb`, `bubbles`, `skyline`, `ocean`, `led`, `fireflies`, `heartbeat` or `circuit`. Names of effects removed in v17 still load, as the nearest effect: `aurora`, `plasma` and `ripples` as `ocean`; `radial`, `orbit`, `kaleidoscope` and `rose` as `orb`; `embers` and `fireworks` as `fireflies`; `tunnel` and `starfield` as `galaxy`; `lasers` as `led`. On Windows, a visible effect can also follow the default Windows audio output while Motion Music's local player is idle |
 | `player_bar_vis_click` | `true` | Allow clicks on empty player bar space to cycle visualizer modes |
-| `visualizer_colours` | `auto` | Player bar visualizer colours: `auto` follows the playing cover while `accent_from_art` is on; `theme` always uses the theme, including a gradient theme's three colours |
+| `visualizer_colours` | `auto` | Player bar visualizer colours: `auto` follows the playing cover while `accent_from_art` is on; `theme` always uses the theme, including a gradient theme's three colours; `rainbow`, `fire`, `ice`, `neon`, `sunset` and `forest` are schemes of their own |
 | `favourite_themes` | absent | Motion themes starred in the gallery, by built-in name such as `motion-theme:crimson`, in the order they were starred. Written only once one is starred; names this version does not carry are kept and not shown |
 | `recent_themes` | absent | The twelve Motion themes applied most recently, newest first |
 | `beat_pulse` | `false` | Glow softly at the top of the player bar and around the play button on the beat |
@@ -372,7 +372,7 @@ main fields are:
 | `startup_animation` | `true` | The logo reveal when the app opens, once per launch |
 | `startup_style` | `bloom` | How the logo reveal looks: `bloom`, `iris`, `spin`, `curtain`, `glow`, `sweep`, `pulse`, `zoom`, `mosaic` or `random` |
 | `sleep_timer_button` | `true` | Show the sleep timer's clock button on the player bar |
-| `parallax` | `true` | A blurred cover behind album and playlist headers and colour clouds behind Home, moving at their own depths |
+| `parallax` | `true` | Album and playlist headers shrink and fade as they scroll away; colour clouds behind Home move at their own depths |
 | `cover_sheen` | `true` | A band of light across a cover under the pointer |
 | `interface_style` | `solid` | `glass` makes panels frosted and see-through over a blurred backdrop |
 | `glass_frost` | `medium` | `light`, `medium` or `heavy`: how much of the backdrop shows through |
@@ -382,6 +382,10 @@ main fields are:
 | `seek_style` | `classic` | `classic`, `thick`, `glow`, `wave` or `dots` |
 | `vis_intensity` | `full` | `faint`, `soft` or `full`: how strongly the player bar's visualizer shows |
 | `cursor_trail` | `off` | `off`, `sparkle` or `comet` |
+| `background_pattern` | `none` | `none`, `dots`, `grid`, `diagonal`, `waves` or `stars` |
+| `row_hover` | `fill` | `fill`, `outline`, `bar` or `glow` |
+| `greeting_name` | none | A name Home's greeting adds |
+| `time_remaining` | `false` | The player bar shows the time left instead of the length |
 | `visualiser_audio` | `player` | On Windows, while another app plays the music: `player` hears only Soloist, else the Spotify app (everything while neither runs); `everything` hears all PC audio |
 | `page_reveals_off` | absent | Page transition styles left out of the shuffle: any of `circle-out`, `circle-in`, `corner-circle`, `diagonal`, `curtain`, `swipe-left`, `swipe-right`, `swipe-up`, `swipe-down`, `diamond`, `blinds`, `cascade`, `zipper`, `letterbox`, `chevron`, `clock`, `wave-left`, `wave-right`, `wave-up`, `wave-down`. Absent uses all twenty; listing all of them changes pages at once |
 | `visualizer_fps` | `60` | Frame rate of the player bar and mini player visualizers; `0` is uncapped. Half that out of focus, at most 30 while the system saves energy, none while the window is hidden. MilkDrop uses `milkdrop_fps` |

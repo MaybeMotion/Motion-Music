@@ -4,7 +4,7 @@
 //! effect is drawn above the page for a moment, in the visualiser's colours.
 //! Box shapes change the corners of cards, covers and highlighted rows.
 
-use crate::settings::{BoxShape, ClickEffect};
+use crate::settings::{BoxShape, ClickEffect, RowHover};
 use egui::{Color32, Context, CornerRadius, Id, Pos2, Rect, Stroke, pos2, vec2};
 use std::f32::consts::TAU;
 
@@ -34,12 +34,69 @@ fn shape_id() -> Id {
     Id::new("motion-box-shape")
 }
 
+fn hover_id() -> Id {
+    Id::new("motion-row-hover")
+}
+
 /// Takes this frame's choices from the settings, before anything is drawn.
-pub fn configure(ctx: &Context, effect: ClickEffect, shape: BoxShape) {
+pub fn configure(ctx: &Context, effect: ClickEffect, shape: BoxShape, hover: RowHover) {
     ctx.data_mut(|data| {
         data.insert_temp(effect_id(), effect);
         data.insert_temp(shape_id(), shape);
+        data.insert_temp(hover_id(), hover);
     });
+}
+
+/// A song row's hover highlight, `hover` (0 to 1) of the way in, in the
+/// style chosen in Settings > Customise: the usual `fill`, an outline, an
+/// accent bar or a glow in `accent`.
+pub fn row_hover(
+    ui: &egui::Ui,
+    rect: Rect,
+    corner: CornerRadius,
+    fill: Color32,
+    accent: Color32,
+    hover: f32,
+) {
+    let style = ui
+        .ctx()
+        .data(|data| data.get_temp::<RowHover>(hover_id()))
+        .unwrap_or_default();
+    let painter = ui.painter();
+    match style {
+        RowHover::Fill => {
+            painter.rect_filled(rect, corner, fill);
+        }
+        RowHover::Outline => {
+            painter.rect_filled(rect, corner, fill.gamma_multiply(0.4));
+            painter.rect_stroke(
+                rect.shrink(0.75),
+                corner,
+                Stroke::new(1.5, accent.gamma_multiply(0.8 * hover)),
+                egui::StrokeKind::Inside,
+            );
+        }
+        RowHover::Bar => {
+            painter.rect_filled(rect, corner, fill.gamma_multiply(0.6));
+            let bar = Rect::from_min_size(
+                rect.left_top() + vec2(0.0, rect.height() * 0.2),
+                vec2(3.0, rect.height() * 0.6),
+            );
+            painter.rect_filled(bar, 1.5, accent.gamma_multiply(hover));
+        }
+        RowHover::Glow => {
+            painter.add(
+                egui::epaint::Shadow {
+                    offset: [0, 0],
+                    blur: 14,
+                    spread: 0,
+                    color: accent.gamma_multiply(0.35 * hover),
+                }
+                .as_shape(rect, corner),
+            );
+            painter.rect_filled(rect, corner, fill);
+        }
+    }
 }
 
 fn effect(ctx: &Context) -> ClickEffect {
@@ -406,11 +463,11 @@ mod tests {
     #[test]
     fn every_effect_draws_then_clears() {
         let ctx = Context::default();
-        configure(&ctx, ClickEffect::Pop, BoxShape::Soft);
+        configure(&ctx, ClickEffect::Pop, BoxShape::Soft, RowHover::Fill);
         assert_eq!(shape(&ctx), BoxShape::Soft);
         let colours = [Color32::RED, Color32::BLUE];
         for style in ClickEffect::ALL {
-            configure(&ctx, style, BoxShape::Rounded);
+            configure(&ctx, style, BoxShape::Rounded, RowHover::Fill);
             for time in [0.05, 0.3] {
                 let input = egui::RawInput {
                     time: Some(time),

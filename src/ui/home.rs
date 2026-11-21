@@ -42,7 +42,14 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     super::flair::ambient(app, ui);
     ui.add_space(6.0);
     let greeting = crate::util::greeting(app.locale);
-    theme::text(ui, greeting.as_ref(), theme::bold(30.0), palette.text);
+    // Settings > Customise can add a name: "Good evening, Louis".
+    let name = app.settings.greeting_name.trim();
+    let greeting = if name.is_empty() {
+        greeting.into_owned()
+    } else {
+        format!("{greeting}, {name}")
+    };
+    theme::text(ui, greeting.as_str(), theme::bold(30.0), palette.text);
     ui.add_space(12.0);
     quick_access(app, ui);
     ui.add_space(16.0);

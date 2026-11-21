@@ -1599,12 +1599,15 @@ fn track_row_contents(
             palette.secondary.gamma_multiply(0.20 + 0.10 * hover),
         );
     } else if hover > 0.0 {
-        ui.painter().rect_filled(
+        super::click_fx::row_hover(
+            ui,
             rect,
             row_corner,
             palette
                 .surface_hover
                 .gamma_multiply(hover * if palette.dark { 0.7 } else { 1.0 }),
+            palette.accent,
+            hover,
         );
     }
     // The row highlight also shows keyboard focus. Do not add an outline

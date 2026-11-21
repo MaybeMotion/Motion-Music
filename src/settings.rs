@@ -549,6 +549,32 @@ choices! {
     }
 }
 
+choices! {
+    /// A faint pattern on the page behind everything.
+    BackgroundPattern default None {
+        None => "None",
+        Dots => "Dots",
+        Grid => "Grid",
+        Diagonal => "Diagonal",
+        Waves => "Waves",
+        Stars => "Stars",
+    }
+}
+
+choices! {
+    /// How a song row shows the pointer over it.
+    RowHover default Fill {
+        /// A soft fill, as always.
+        Fill => "Fill",
+        /// An outline in the accent colour.
+        Outline => "Outline",
+        /// A bar of the accent at the row's left edge.
+        Bar => "Accent bar",
+        /// A soft glow of the accent.
+        Glow => "Glow",
+    }
+}
+
 /// The accent colours offered in Settings > Customise, besides the theme's.
 pub const ACCENTS: [[u8; 3]; 14] = [
     [239, 68, 68],
@@ -675,17 +701,76 @@ pub enum VisColours {
     Auto,
     /// Always the theme: a gradient theme's three colours, or the accent.
     Theme,
+    /// A colour scheme of its own, whatever the theme or cover.
+    Rainbow,
+    Fire,
+    Ice,
+    Neon,
+    Sunset,
+    Forest,
 }
 
 impl VisColours {
-    pub const ALL: [Self; 2] = [Self::Auto, Self::Theme];
+    pub const ALL: [Self; 8] = [
+        Self::Auto,
+        Self::Theme,
+        Self::Rainbow,
+        Self::Fire,
+        Self::Ice,
+        Self::Neon,
+        Self::Sunset,
+        Self::Forest,
+    ];
 
     pub fn label(self, locale: crate::i18n::Locale) -> std::borrow::Cow<'static, str> {
         use crate::i18n::gettext;
         match self {
             Self::Auto => gettext(locale, "Album art"),
             Self::Theme => gettext(locale, "Theme"),
+            Self::Rainbow => gettext(locale, "Rainbow"),
+            Self::Fire => gettext(locale, "Fire"),
+            Self::Ice => gettext(locale, "Ice"),
+            Self::Neon => gettext(locale, "Neon"),
+            Self::Sunset => gettext(locale, "Sunset"),
+            Self::Forest => gettext(locale, "Forest"),
         }
+    }
+
+    /// A scheme's own colours, from the bass to the treble; `None` for the
+    /// cover's and the theme's.
+    pub fn scheme(self) -> Option<&'static [[u8; 3]]> {
+        Some(match self {
+            Self::Auto | Self::Theme => return None,
+            Self::Rainbow => &[
+                [255, 59, 48],
+                [255, 149, 0],
+                [255, 214, 10],
+                [52, 199, 89],
+                [0, 199, 190],
+                [10, 132, 255],
+                [191, 90, 242],
+            ],
+            Self::Fire => &[[220, 30, 10], [255, 100, 0], [255, 170, 20], [255, 220, 80]],
+            Self::Ice => &[
+                [40, 90, 255],
+                [40, 170, 255],
+                [60, 220, 255],
+                [150, 240, 255],
+            ],
+            Self::Neon => &[[255, 0, 200], [140, 50, 255], [0, 230, 255], [0, 255, 140]],
+            Self::Sunset => &[
+                [150, 50, 220],
+                [255, 70, 130],
+                [255, 130, 60],
+                [255, 200, 80],
+            ],
+            Self::Forest => &[
+                [20, 140, 110],
+                [40, 190, 90],
+                [150, 220, 60],
+                [230, 220, 90],
+            ],
+        })
     }
 }
 
@@ -992,6 +1077,13 @@ pub struct Settings {
     pub play_button: PlayButtonStyle,
     pub vis_intensity: VisIntensity,
     pub cursor_trail: CursorTrail,
+    pub background_pattern: BackgroundPattern,
+    pub row_hover: RowHover,
+    /// A name Home's greeting adds, as in "Good evening, Louis".
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub greeting_name: String,
+    /// The player bar shows the time left instead of the song's length.
+    pub time_remaining: bool,
     /// Page reveal styles left out of the shuffle, by their saved name.
     /// Empty uses every style, as before this setting existed.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -1222,6 +1314,10 @@ impl Default for Settings {
             play_button: PlayButtonStyle::Circle,
             vis_intensity: VisIntensity::Full,
             cursor_trail: CursorTrail::Off,
+            background_pattern: BackgroundPattern::None,
+            row_hover: RowHover::Fill,
+            greeting_name: String::new(),
+            time_remaining: false,
             visualizer_fps: crate::milkdrop::DEFAULT_FPS,
             discord_presence: false,
             discord_application_id: crate::discord_activity::DEFAULT_APPLICATION_ID.to_owned(),
@@ -2486,6 +2582,19 @@ mod tests {
         assert_eq!(settings.play_button, super::PlayButtonStyle::Circle);
         assert_eq!(settings.vis_intensity, super::VisIntensity::Full);
         assert_eq!(settings.cursor_trail, super::CursorTrail::Off);
+        assert_eq!(settings.background_pattern, super::BackgroundPattern::None);
+        assert_eq!(settings.row_hover, super::RowHover::Fill);
+        assert!(settings.greeting_name.is_empty() && !settings.time_remaining);
+        let more: Settings = serde_json::from_str(
+            r#"{"background_pattern":"stars","row_hover":"bar","greeting_name":"Louis","time_remaining":true,"visualizer_colours":"neon"}"#,
+        )
+        .unwrap();
+        assert_eq!(more.background_pattern, super::BackgroundPattern::Stars);
+        assert_eq!(more.row_hover, super::RowHover::Bar);
+        assert_eq!(more.greeting_name, "Louis");
+        assert!(more.time_remaining);
+        assert_eq!(more.visualizer_colours, VisColours::Neon);
+        assert!(VisColours::Neon.scheme().is_some() && VisColours::Auto.scheme().is_none());
         let custom: Settings = serde_json::from_str(
             r#"{"interface_style":"glass","glass_frost":"heavy","glass_backdrop":"albumart","custom_accent":[236,72,153],"seek_style":"wave","play_button":"ring","vis_intensity":"soft","cursor_trail":"comet"}"#,
         )

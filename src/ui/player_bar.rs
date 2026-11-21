@@ -527,10 +527,14 @@ pub(crate) fn visualiser_palette(app: &App, behind_text: Option<bool>) -> Vec<Co
     // accent, whatever is playing; pages may still follow the cover.
     let art_colours = match app.settings.visualizer_colours {
         crate::settings::VisColours::Auto => app.now_playing_palette(),
-        crate::settings::VisColours::Theme => None,
+        _ => None,
     };
-    let source_colours =
-        art_colours.or_else(|| gradient_colours.as_ref().map(|colours| colours.as_slice()));
+    let source_colours = app
+        .settings
+        .visualizer_colours
+        .scheme()
+        .or(art_colours)
+        .or_else(|| gradient_colours.as_ref().map(|colours| colours.as_slice()));
     match behind_text {
         Some(dark) => vis_colours(source_colours, app.palette.accent, dark),
         None => stage_colours(source_colours, app.palette.accent),
@@ -2253,13 +2257,35 @@ fn transport(app: &mut App, ui: &mut egui::Ui, now: Option<&NowPlaying>, region:
         }
         SliderEvent::None => {}
     }
-    ui.painter().text(
+    // The song's length, or with Settings > Customise the time left. A
+    // click on it swaps between the two.
+    let end_text = if app.settings.time_remaining && duration > 0 {
+        format!(
+            "-{}",
+            util::format_duration_ms(duration.saturating_sub(shown_position))
+        )
+    } else {
+        util::format_duration_ms(duration)
+    };
+    let end = ui.painter().text(
         pos2(slider_left + slider_width + 8.0, row_cy),
         egui::Align2::LEFT_CENTER,
-        util::format_duration_ms(duration),
+        end_text,
         theme::regular(11.5),
         time_color,
     );
+    let swap = ui
+        .interact(
+            end.expand(3.0),
+            egui::Id::new("player-time-end"),
+            Sense::click(),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(gettext(app.locale, "Show the time left or the length"));
+    if swap.clicked() {
+        app.settings.time_remaining = !app.settings.time_remaining;
+        app.actions.push(Action::SettingsChanged);
+    }
 }
 
 fn extras(app: &mut App, ui: &mut egui::Ui, now: Option<&NowPlaying>, transport_right: f32) {

@@ -1326,7 +1326,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             visualizer_colours.clone(),
             gettext(
                 locale,
-                "Album art follows the playing cover while Colour from album art is on. Theme keeps your theme's colours, including a gradient's three, whatever is playing.",
+                "Album art follows the playing cover while Colour from album art is on. Theme keeps your theme's colours, including a gradient's three, whatever is playing. Rainbow, Fire, Ice, Neon, Sunset and Forest are colour schemes of their own, for the visualizers, beat pulse and every effect that uses their colours.",
             ),
         ),
         RowText::new(
@@ -1704,35 +1704,18 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             );
             {
                 use crate::settings::VisColours;
-                let labels = VisColours::ALL.map(|choice| choice.label(locale));
-                let gap = 6.0;
-                let width = labels
-                    .iter()
-                    .map(|label| theme::soft_button_width(ui, label))
-                    .sum::<f32>()
-                    + gap * (labels.len() - 1) as f32;
-                filtered_row_sized(
+                let schemes: Vec<_> = VisColours::ALL
+                    .into_iter()
+                    .map(|choice| (choice, choice.label(locale)))
+                    .collect();
+                changed |= choice_row(
                     ui,
                     &palette,
                     &needle,
                     &appearance,
                     &appearance_rows[13],
-                    width,
-                    |ui| {
-                        // Laid right to left, so the last choice goes first.
-                        ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = gap;
-                            for (choice, label) in VisColours::ALL.into_iter().zip(&labels).rev() {
-                                let current = app.settings.visualizer_colours == choice;
-                                if theme::soft_button(ui, &palette, None, label, current).clicked()
-                                    && !current
-                                {
-                                    app.settings.visualizer_colours = choice;
-                                    changed = true;
-                                }
-                            }
-                        });
-                    },
+                    &schemes,
+                    &mut app.settings.visualizer_colours,
                 );
             }
             filtered_row(
@@ -2093,6 +2076,34 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 "Sparks or a comet's tail in the visualizer's colours following the pointer.",
             ),
         ),
+        RowText::new(
+            gettext(locale, "Background pattern"),
+            gettext(
+                locale,
+                "A faint pattern across the page behind everything: dots, a grid, diagonal lines, waves or stars.",
+            ),
+        ),
+        RowText::new(
+            gettext(locale, "Song row highlight"),
+            gettext(
+                locale,
+                "How a song row shows the pointer over it: a soft fill, an outline, an accent bar or a glow.",
+            ),
+        ),
+        RowText::new(
+            gettext(locale, "Your name"),
+            gettext(
+                locale,
+                "Home greets you by name, as in Good evening, Louis. Leave it empty for the greeting alone.",
+            ),
+        ),
+        RowText::new(
+            gettext(locale, "Show time left"),
+            gettext(
+                locale,
+                "The player bar shows how long the song has left instead of its length. Clicking the time there swaps too.",
+            ),
+        ),
     ];
     if section_matches(&needle, &customise, &customise_rows) {
         any_visible = true;
@@ -2230,6 +2241,60 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 &labelled(CursorTrail::ALL, |choice| choice.label(locale)),
                 &mut app.settings.cursor_trail,
             );
+            changed |= choice_row(
+                ui,
+                &palette,
+                &needle,
+                &customise,
+                &customise_rows[8],
+                &labelled(crate::settings::BackgroundPattern::ALL, |choice| {
+                    choice.label(locale)
+                }),
+                &mut app.settings.background_pattern,
+            );
+            changed |= choice_row(
+                ui,
+                &palette,
+                &needle,
+                &customise,
+                &customise_rows[9],
+                &labelled(crate::settings::RowHover::ALL, |choice| {
+                    choice.label(locale)
+                }),
+                &mut app.settings.row_hover,
+            );
+            filtered_row_sized(
+                ui,
+                &palette,
+                &needle,
+                &customise,
+                &customise_rows[10],
+                200.0,
+                |ui| {
+                    let edit = egui::TextEdit::singleline(&mut app.settings.greeting_name)
+                        .hint_text(gettext(locale, "Your name"))
+                        .char_limit(40)
+                        .desired_width(200.0_f32.min(ui.available_width()));
+                    if widgets::text_edit(ui, locale, edit).changed() {
+                        changed = true;
+                    }
+                },
+            );
+            filtered_row(
+                ui,
+                &palette,
+                &needle,
+                &customise,
+                &customise_rows[11],
+                |ui| {
+                    let label = customise_rows[11].title.clone();
+                    if widgets::switch(ui, &palette, &label, &mut app.settings.time_remaining)
+                        .changed()
+                    {
+                        changed = true;
+                    }
+                },
+            );
         });
     }
 
@@ -2317,7 +2382,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             parallax.clone(),
             gettext(
                 locale,
-                "Depth as pages move: a blurred cover behind album and playlist headers scrolls at half speed, and soft clouds of colour behind Home follow the pointer.",
+                "Depth as pages move: album and playlist headers shrink and fade as they scroll away, and soft clouds of colour behind Home follow the pointer.",
             ),
         ),
         RowText::new(

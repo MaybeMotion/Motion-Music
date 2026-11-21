@@ -73,7 +73,12 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     // Under everything, so the glass panels drawn next show it through.
     flair::glass_backdrop(app, ctx);
     living_gradient(app, ctx);
-    click_fx::configure(ctx, app.settings.click_effect, app.settings.box_shape);
+    click_fx::configure(
+        ctx,
+        app.settings.click_effect,
+        app.settings.box_shape,
+        app.settings.row_hover,
+    );
     player_bar::show(app, ui);
     if app.lyrics_fullscreen.is_some() {
         lyrics::fullscreen(app, ui);
@@ -315,6 +320,7 @@ fn central(app: &mut App, ui: &mut egui::Ui) {
             if let Some(stops) = app.background_gradient() {
                 theme::paint_theme_gradient(ui, rect, stops, 0);
             }
+            flair::background_pattern(app, ui, rect);
             let page = app.page().clone();
             let overview = matches!(
                 page,
