@@ -684,6 +684,13 @@ fn paint_expanded_art(app: &mut App, ui: &mut egui::Ui, rect: Rect) {
     let album_id = now.album_id.clone();
     let show_id = now.show_id.clone();
     let palette = app.palette;
+    // Moving art keeps a little room to drift and swell inside the sidebar.
+    let shown = if app.settings.moving_art && !crate::motion::reduced(ui.ctx()) {
+        let room = rect.shrink(rect.width() * 0.04);
+        super::flair::moving_art(app, ui, room, "sidebar-art", now.playing)
+    } else {
+        rect
+    };
     ui.painter().add(
         egui::epaint::Shadow {
             offset: [0, 0],
@@ -691,7 +698,7 @@ fn paint_expanded_art(app: &mut App, ui: &mut egui::Ui, rect: Rect) {
             spread: 0,
             color: egui::Color32::from_black_alpha(if palette.dark { 120 } else { 40 }),
         }
-        .as_shape(rect, egui::CornerRadius::same(8)),
+        .as_shape(shown, egui::CornerRadius::same(8)),
     );
     super::widgets::playing_cover(
         ui,
@@ -699,7 +706,7 @@ fn paint_expanded_art(app: &mut App, ui: &mut egui::Ui, rect: Rect) {
         app.backend.art(),
         "sidebar-art",
         Some(&url),
-        rect,
+        shown,
         8.0,
     );
     let art = ui.interact(rect, egui::Id::new("sidebar-art"), Sense::click());

@@ -9,6 +9,7 @@ pub mod config;
 pub mod font;
 pub mod layout;
 pub mod sprites;
+pub mod themes;
 pub mod zip;
 
 use std::collections::{HashMap, VecDeque};
@@ -213,6 +214,43 @@ impl Skin {
     /// so any other skin's gaps can be filled from it.
     pub fn builtin() -> Arc<Skin> {
         BUILTIN.clone()
+    }
+
+    /// This skin with every colour mapped along `ramp` by its brightness,
+    /// keeping every pixel's transparency, for a mini player theme.
+    pub fn recoloured(&self, name: &str, ramp: &themes::Ramp) -> Skin {
+        let sheets = self
+            .sheets
+            .iter()
+            .map(|(sheet, bitmap)| {
+                let mut rgba = bitmap.rgba.clone();
+                for pixel in rgba.as_chunks_mut::<4>().0 {
+                    let [r, g, b] = ramp.map([pixel[0], pixel[1], pixel[2]]);
+                    pixel[..3].copy_from_slice(&[r, g, b]);
+                }
+                (
+                    *sheet,
+                    Bitmap {
+                        width: bitmap.width,
+                        height: bitmap.height,
+                        rgba,
+                    },
+                )
+            })
+            .collect();
+        Skin {
+            name: name.to_owned(),
+            sheets,
+            playlist: PlaylistStyle {
+                normal: ramp.at(0.7),
+                current: ramp.at(1.0),
+                normal_background: ramp.at(0.04),
+                selected_background: ramp.at(0.35),
+                font: self.playlist.font.clone(),
+            },
+            vis_colors: ramp.vis_colors(),
+            regions: self.regions.clone(),
+        }
     }
 
     /// Whether the skin brought this sheet itself.

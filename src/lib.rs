@@ -20,6 +20,7 @@ pub mod discord;
 pub mod discord_activity;
 pub mod emoji;
 pub mod eq;
+pub mod global_keys;
 pub mod history;
 pub mod http;
 pub mod i18n;

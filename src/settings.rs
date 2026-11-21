@@ -387,6 +387,9 @@ impl VisShuffle {
         }
     }
 }
+/// The lengths the sleep timer offers, in minutes.
+pub const SLEEP_TIMER_LENGTHS: [u32; 6] = [15, 30, 45, 60, 90, 120];
+
 /// What the visualizers listen to on Windows while the music plays in
 /// another app on this PC, such as Soloist, rather than in Motion Music.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -698,6 +701,25 @@ pub struct Settings {
     pub visualiser_shuffle: VisShuffle,
     /// What the visualizers listen to while another app plays the music.
     pub visualiser_audio: VisAudio,
+    /// The visualizers and beat pulse fade across a change of speaker.
+    pub speaker_fade: bool,
+    /// A card with the cover slides in when the song changes.
+    pub song_card: bool,
+    /// The playing cover drifts with the pointer and breathes with the beat.
+    pub moving_art: bool,
+    /// The sung line fills with the visualizer's colours as it is sung.
+    pub karaoke_lyrics: bool,
+    /// Show a recap of the week's listening once each new week starts.
+    pub weekly_recap: bool,
+    /// The week whose recap was last shown, as `2026-W47`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub weekly_recap_seen: Option<String>,
+    /// Windows: Ctrl+Alt shortcuts that control playback from any app.
+    pub global_shortcuts: bool,
+    /// How long the sleep timer runs when it is turned on in Settings.
+    pub sleep_timer_minutes: u32,
+    /// A short logo reveal in the theme's colours when the app opens.
+    pub startup_animation: bool,
     /// Page reveal styles left out of the shuffle, by their saved name.
     /// Empty uses every style, as before this setting existed.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -907,6 +929,15 @@ impl Default for Settings {
             box_shape: BoxShape::Rounded,
             visualiser_shuffle: VisShuffle::Off,
             visualiser_audio: VisAudio::Player,
+            speaker_fade: true,
+            song_card: true,
+            moving_art: true,
+            karaoke_lyrics: true,
+            weekly_recap: true,
+            weekly_recap_seen: None,
+            global_shortcuts: true,
+            sleep_timer_minutes: 30,
+            startup_animation: true,
             visualizer_fps: crate::milkdrop::DEFAULT_FPS,
             discord_presence: false,
             discord_application_id: crate::discord_activity::DEFAULT_APPLICATION_ID.to_owned(),
@@ -2139,6 +2170,19 @@ mod tests {
         assert_eq!(json["visualiser_shuffle"], "song");
         assert_eq!(json["box_shape"], "leaf");
         assert_eq!(settings.visualiser_audio, VisAudio::Player);
+        // v20's extras all start on, with a 30 minute sleep timer.
+        assert!(settings.speaker_fade && settings.song_card && settings.moving_art);
+        assert!(settings.karaoke_lyrics && settings.weekly_recap);
+        assert!(settings.global_shortcuts && settings.startup_animation);
+        assert_eq!(settings.sleep_timer_minutes, 30);
+        assert_eq!(settings.weekly_recap_seen, None);
+        let quiet: Settings = serde_json::from_str(
+            r#"{"song_card":false,"sleep_timer_minutes":60,"weekly_recap_seen":"2026-W47"}"#,
+        )
+        .unwrap();
+        assert!(!quiet.song_card);
+        assert_eq!(quiet.sleep_timer_minutes, 60);
+        assert_eq!(quiet.weekly_recap_seen.as_deref(), Some("2026-W47"));
         let everything: Settings =
             serde_json::from_str(r#"{"visualiser_audio":"everything"}"#).unwrap();
         assert_eq!(everything.visualiser_audio, VisAudio::Everything);

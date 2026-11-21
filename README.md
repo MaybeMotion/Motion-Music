@@ -54,8 +54,22 @@ Load your own JSON palettes through **Open themes folder**, choose separate cust
 - **Visualizer shuffle** (Settings > Appearance): a different visualiser for each song or every minute. Every change of visualiser, by shuffle or by hand, fades softly from one to the next.
 - **Visualizer listens to** (Settings > Appearance, Windows): while another app on this PC plays the music, such as Soloist, the visualisers hear that player alone (Soloist, else the Spotify app), so YouTube, games and notification sounds no longer move them. Choose **All PC audio** for the old behaviour. With neither player open, they hear everything.
 - **Theme from this cover** (Settings > Appearance, or **Ctrl+Shift+T**): makes a dark theme from the playing song's cover, saves it in your themes folder as "Cover - album name" and uses it at once.
-- **My Wrapped** (in the sidebar under Search): minutes listened, plays, songs, artists and your longest daily streak; badges such as Night owl, Superfan and On a streak; a chart of when you listen and a twelve-week listening calendar; a throwback to your song of the day a week ago; your most played songs, albums and artists from this computer's last 2,000 plays; and Spotify's own top artists, a genre mix and top songs. **Save as image** puts the summary in Pictures\Motion Music, ready to share. Nothing is sent anywhere.
-- **Sleep timer** (the clock button in the player bar): fades the music out over its last 45 seconds and pauses it after 5 to 90 minutes, then puts the volume back.
+- **My Wrapped** (in the sidebar under Search): **Your week in music**, last week's minutes, plays, songs, streak, song and artist; minutes listened, plays, songs, artists and your longest daily streak; badges such as Night owl, Superfan and On a streak; a round **listening clock** of your music by hour, a **heatmap** of every hour of every weekday and a twelve-week listening calendar; a throwback to your song of the day a week ago; your most played songs, albums and artists from this computer's last 2,000 plays; and Spotify's own top artists, a genre mix and top songs. **Save as image** puts the summary in Pictures\Motion Music, ready to share. Nothing is sent anywhere.
+- **Sleep timer** (the clock button in the player bar, the tray menu, or Settings > Extras): fades the music out over its last minute and pauses it, then puts the volume back. Settings > Extras turns it on and off and sets its length, 15 minutes to 2 hours.
+
+### Extras (Settings > Extras)
+
+Each has its own switch, and all start on.
+
+- **Fade between speakers**: when the music moves to another speaker, the visualisers and beat pulse fade out and back in instead of cutting.
+- **Song change card**: a card with the new song's cover, title and artist rises beside the player bar, then floats away.
+- **Moving album art**: the playing cover drifts towards the pointer and breathes with the music (with the beat while the beat pulse is on).
+- **Karaoke lyrics**: in full screen lyrics, the line being sung fills from the left in the visualiser's colours as it is sung.
+- **Weekly recap**: when a new week starts, a card shows last week's listening, counting up, with a way to My Wrapped. Shown once a week.
+- **Global shortcuts** (Windows): **Ctrl+Alt+Space** plays or pauses, **Ctrl+Alt+Right** and **Ctrl+Alt+Left** skip, and **Ctrl+Alt+Up** and **Ctrl+Alt+Down** change the volume, from any app, even with Motion Music in the tray. A shortcut another app already uses is left to it.
+- **Startup animation**: the logo blooms in your theme's colours as Motion Music opens.
+
+The **tray menu** names the playing song, opens the **mini player**, and turns the sleep timer on or off; its tooltip names the song too. The **mini player** has eight themes of its own under Settings > Winamp skins: **Neon Night**, **Sunset**, **Ocean**, **Forest**, **Mint**, **Ember**, **Candy** and **Mono**, and Random picks among them too.
 
 ## Smooth motion
 

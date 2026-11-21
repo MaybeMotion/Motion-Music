@@ -1,6 +1,8 @@
 //! My Wrapped: big-number listening stats from this computer's plays, beside
 //! Spotify's own top artists and songs.
 
+use std::sync::Arc;
+
 use egui::{Color32, CornerRadius, Frame, Margin, Rect, Sense, Ui, pos2, vec2};
 
 use super::widgets;
@@ -19,11 +21,70 @@ const WEEKDAYS: [&str; 7] = [
     "Sunday",
 ];
 
+/// Everything My Wrapped and the weekly recap work out from the plays,
+/// kept until a play is added or the day changes. Working it out reads and
+/// parses every play, far too much to repeat on every frame.
+pub(crate) struct Summary {
+    key: (usize, Option<String>, jiff::civil::Date),
+    pub stats: crate::wrapped::Stats,
+    /// Last week: the Monday it started, and its stats.
+    pub week: (jiff::civil::Date, crate::wrapped::Stats),
+    pub week_ago: Option<crate::wrapped::Ranked>,
+    /// Plays in each hour of each weekday, Monday first.
+    pub grid: [[usize; 24]; 7],
+}
+
+/// The summary of `app`'s plays, worked out again only when they change.
+pub(crate) fn summary(app: &App, ctx: &egui::Context) -> Arc<Summary> {
+    let id = egui::Id::new("wrapped-summary");
+    let plays = app.plays.plays();
+    let today = jiff::Zoned::now().date();
+    let key = (
+        plays.len(),
+        plays.first().and_then(|play| play.played_at.clone()),
+        today,
+    );
+    if let Some(kept) = ctx.data(|data| data.get_temp::<Arc<Summary>>(id))
+        && kept.key == key
+    {
+        return kept;
+    }
+    let zone = jiff::tz::TimeZone::system();
+    let made = Arc::new(Summary {
+        stats: crate::wrapped::stats(plays, &zone),
+        week: crate::wrapped::last_week(plays, today, &zone),
+        week_ago: crate::wrapped::week_ago(plays, today, &zone),
+        grid: crate::wrapped::week_hours(plays, &zone),
+        key,
+    });
+    ctx.data_mut(|data| data.insert_temp(id, made.clone()));
+    made
+}
+
+/// `target` counting up from nothing over a second the first time it is
+/// shown, as a recap's numbers do.
+pub(crate) fn count_up(ui: &Ui, id: egui::Id, target: u64) -> u64 {
+    if crate::motion::reduced(ui.ctx()) {
+        return target;
+    }
+    let now = ui.input(|input| input.time);
+    let start = ui
+        .ctx()
+        .data_mut(|data| *data.get_temp_mut_or_insert_with(id, || now));
+    let progress = ((now - start) / 1.1).clamp(0.0, 1.0) as f32;
+    if progress < 1.0 {
+        ui.ctx().request_repaint();
+    }
+    // Fast at first, settling softly on the number.
+    let eased = 1.0 - (1.0 - progress).powi(3);
+    (target as f32 * eased).round() as u64
+}
+
 pub fn show(app: &mut App, ui: &mut Ui) {
     let palette = app.palette;
     let locale = app.locale;
-    let zone = jiff::tz::TimeZone::system();
-    let stats = crate::wrapped::stats(app.plays.plays(), &zone);
+    let summary = summary(app, ui.ctx());
+    let stats = &summary.stats;
 
     ui.add_space(12.0);
     // Everything from the title to the listening calendar makes the share
@@ -67,8 +128,27 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     theme::subtle(ui, &palette, &range);
     ui.add_space(12.0);
 
+    // Last week, Monday to Sunday, as a mini Wrapped.
+    let (week_start, week) = &summary.week;
+    if week.plays > 0 {
+        heading(app, ui, &gettext(locale, "Your week in music"));
+        let end = week_start
+            .checked_add(jiff::Span::new().days(6))
+            .unwrap_or(*week_start);
+        theme::subtle(
+            ui,
+            &palette,
+            &gettext(locale, "Last week, {first} to {last}")
+                .replace("{first}", &week_start.strftime("%-d %b").to_string())
+                .replace("{last}", &end.strftime("%-d %b").to_string()),
+        );
+        ui.add_space(8.0);
+        week_recap(app, ui, week, "wrapped-week");
+        ui.add_space(18.0);
+    }
+
     // The titles these habits earn.
-    let earned = crate::wrapped::badges(&stats);
+    let earned = crate::wrapped::badges(stats);
     if !earned.is_empty() {
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
@@ -143,6 +223,18 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         ui.add_space(8.0);
         listening_clock(app, ui, &stats.hours);
         ui.add_space(16.0);
+        heading(app, ui, &gettext(locale, "When you listen most"));
+        theme::subtle(
+            ui,
+            &palette,
+            &gettext(
+                locale,
+                "Every hour of every weekday. Brighter is more music.",
+            ),
+        );
+        ui.add_space(8.0);
+        listening_heatmap(app, ui, &summary.grid);
+        ui.add_space(16.0);
         heading(app, ui, &gettext(locale, "Your listening calendar"));
         theme::subtle(
             ui,
@@ -165,8 +257,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         .data_mut(|data| data.insert_temp(egui::Id::new("wrapped-share-rect"), share));
 
     // A throwback to the song of the day a week ago.
-    let today = jiff::Zoned::now().date();
-    if let Some(song) = crate::wrapped::week_ago(app.plays.plays(), today, &zone) {
+    if let Some(song) = summary.week_ago.clone() {
         heading(app, ui, &gettext(locale, "A week ago today"));
         let plays =
             gettext(locale, "{count} plays that day").replace("{count}", &song.plays.to_string());
@@ -478,50 +569,189 @@ fn rounded_mesh(
     mesh
 }
 
-/// Twenty-four bars, one for each hour, the busiest lit in the accent.
+/// A clock face of twenty-four petals, one for each hour, each reaching out
+/// as far as that hour's music, midnight at the top. The petals take the
+/// visualizer's colours around the face, and grow in the first time the
+/// page shows.
 fn listening_clock(app: &App, ui: &mut Ui, hours: &[usize; 24]) {
+    use std::f32::consts::TAU;
     let palette = app.palette;
-    let height = 90.0;
-    let (rect, _) = ui.allocate_exact_size(
-        vec2(ui.available_width().min(760.0), height + 18.0),
-        Sense::hover(),
-    );
-    let most = hours.iter().copied().max().unwrap_or(0).max(1);
-    let slot = rect.width() / 24.0;
+    let side = 240.0_f32.min(ui.available_width());
+    let (rect, _) = ui.allocate_exact_size(vec2(side, side), Sense::hover());
+    if !ui.is_rect_visible(rect) {
+        return;
+    }
+    let colours = super::player_bar::visualiser_palette(app, None);
+    let grow = count_up(ui, egui::Id::new("wrapped-clock-grow"), 1000) as f32 / 1000.0;
     let painter = ui.painter();
+    let centre = rect.center();
+    let outer = side / 2.0 - 16.0;
+    let inner = outer * 0.32;
+    painter.circle_stroke(centre, outer, egui::Stroke::new(1.0, palette.outline));
+    painter.circle_filled(centre, inner - 4.0, palette.surface);
+    let most = hours.iter().copied().max().unwrap_or(0).max(1);
     for (hour, &count) in hours.iter().enumerate() {
-        let fill = count as f32 / most as f32;
-        let bar_height = (height * fill).max(3.0);
-        let bar = Rect::from_min_max(
-            pos2(
-                rect.left() + hour as f32 * slot + 2.0,
-                rect.top() + height - bar_height,
-            ),
-            pos2(
-                rect.left() + (hour + 1) as f32 * slot - 2.0,
-                rect.top() + height,
-            ),
-        );
-        let colour = if count == most && count > 0 {
-            palette.accent
-        } else {
-            widgets_blend(palette.surface_active, palette.accent, fill * 0.6)
-        };
-        painter.rect_filled(bar, CornerRadius::same(3), colour);
+        let share = count as f32 / most as f32;
+        let reach = inner + (outer - inner) * share.max(0.04) * grow;
+        let middle = hour as f32 / 24.0 * TAU - TAU / 4.0;
+        let half = TAU / 24.0 * 0.38;
+        let colour = super::player_bar::swept(&colours, hour as f32 / 23.0)
+            .gamma_multiply(0.35 + 0.65 * share);
+        let point = |angle: f32, radius: f32| centre + vec2(angle.cos(), angle.sin()) * radius;
+        let mut petal = egui::Mesh::default();
+        let steps = 4;
+        for step in 0..=steps {
+            let angle = middle - half + 2.0 * half * step as f32 / steps as f32;
+            petal.colored_vertex(point(angle, inner), colour.gamma_multiply(0.6));
+            petal.colored_vertex(point(angle, reach), colour);
+        }
+        for step in 0..steps {
+            let at = step * 2;
+            petal.add_triangle(at, at + 1, at + 3);
+            petal.add_triangle(at, at + 3, at + 2);
+        }
+        painter.add(egui::Shape::mesh(petal));
         if hour % 6 == 0 {
             painter.text(
-                pos2(bar.left(), rect.top() + height + 4.0),
-                egui::Align2::LEFT_TOP,
+                point(middle, outer + 9.0),
+                egui::Align2::CENTER_CENTER,
                 format!("{hour:02}"),
                 theme::regular(11.0),
                 palette.dim,
             );
         }
     }
+    if let Some(busiest) = crate::wrapped::busiest_hour(hours) {
+        painter.text(
+            centre,
+            egui::Align2::CENTER_CENTER,
+            format!("{busiest:02}:00"),
+            theme::bold(15.0),
+            palette.text,
+        );
+    }
 }
 
-fn widgets_blend(from: Color32, to: Color32, amount: f32) -> Color32 {
-    theme::motion::blend(from, to, amount)
+/// Seven rows of twenty-four squares, every hour of every weekday, lit in
+/// the visualizer's colours by how much music it had.
+fn listening_heatmap(app: &App, ui: &mut Ui, grid: &[[usize; 24]; 7]) {
+    let palette = app.palette;
+    let label = 34.0;
+    let gap = 3.0;
+    let size = ((ui.available_width().min(760.0) - label) / 24.0 - gap).clamp(8.0, 22.0);
+    let (rect, _) = ui.allocate_exact_size(
+        vec2(label + 24.0 * (size + gap), 7.0 * (size + gap) + 16.0),
+        Sense::hover(),
+    );
+    if !ui.is_rect_visible(rect) {
+        return;
+    }
+    let colours = super::player_bar::visualiser_palette(app, None);
+    let most = grid.iter().flatten().copied().max().unwrap_or(0).max(1);
+    let painter = ui.painter();
+    const DAYS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    for (day, hours) in grid.iter().enumerate() {
+        let top = rect.top() + day as f32 * (size + gap);
+        painter.text(
+            pos2(rect.left(), top + size / 2.0),
+            egui::Align2::LEFT_CENTER,
+            gettext(app.locale, DAYS[day]),
+            theme::regular(11.0),
+            palette.dim,
+        );
+        for (hour, &count) in hours.iter().enumerate() {
+            let cell = Rect::from_min_size(
+                pos2(rect.left() + label + hour as f32 * (size + gap), top),
+                vec2(size, size),
+            );
+            let colour = if count == 0 {
+                palette.surface
+            } else {
+                let share = count as f32 / most as f32;
+                theme::motion::blend(
+                    palette.surface_active,
+                    super::player_bar::swept(&colours, hour as f32 / 23.0),
+                    0.3 + 0.7 * share,
+                )
+            };
+            painter.rect_filled(cell, super::click_fx::corner(ui, 3.0), colour);
+        }
+    }
+    for hour in (0..24).step_by(6) {
+        painter.text(
+            pos2(
+                rect.left() + label + hour as f32 * (size + gap),
+                rect.top() + 7.0 * (size + gap) + 2.0,
+            ),
+            egui::Align2::LEFT_TOP,
+            format!("{hour:02}"),
+            theme::regular(11.0),
+            palette.dim,
+        );
+    }
+}
+
+/// Last week's numbers, counting up, and its favourite song and artist.
+pub(crate) fn week_recap(app: &App, ui: &mut Ui, week: &crate::wrapped::Stats, key: &str) {
+    let palette = app.palette;
+    let locale = app.locale;
+    let numbers = [
+        (week.minutes, gettext(locale, "minutes")),
+        (week.plays as u64, gettext(locale, "plays")),
+        (week.songs as u64, gettext(locale, "songs")),
+        (week.longest_streak as u64, gettext(locale, "days in a row")),
+    ];
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = vec2(10.0, 10.0);
+        for (index, (number, label)) in numbers.iter().enumerate() {
+            let shown = count_up(ui, egui::Id::new((key, "count", index)), *number);
+            Frame::new()
+                .fill(palette.surface)
+                .corner_radius(super::click_fx::corner(ui, 12.0))
+                .inner_margin(Margin::symmetric(14, 10))
+                .show(ui, |ui| {
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = 0.0;
+                        theme::text(ui, shown.to_string(), theme::bold(26.0), palette.text);
+                        theme::text(ui, label.as_ref(), theme::medium(12.0), palette.secondary);
+                    });
+                });
+        }
+    });
+    ui.add_space(8.0);
+    if let Some(song) = week.top_songs.first() {
+        let plays = gettext(locale, "{count} plays").replace("{count}", &song.plays.to_string());
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 12.0;
+            let art = super::click_fx::radius(ui, 6.0);
+            widgets::cover(ui, &palette, song.image.as_deref(), 52.0, art, Icon::Music);
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = 2.0;
+                theme::text(
+                    ui,
+                    gettext(locale, "Song of the week").as_ref(),
+                    theme::semibold(12.0),
+                    palette.accent,
+                );
+                theme::text(ui, &song.name, theme::semibold(15.0), palette.text);
+                theme::text(
+                    ui,
+                    format!("{} \u{b7} {plays}", song.detail),
+                    theme::regular(13.0),
+                    palette.secondary,
+                );
+            });
+        });
+    }
+    if let Some(artist) = week.top_artists.first() {
+        ui.add_space(4.0);
+        theme::text(
+            ui,
+            gettext(locale, "Artist of the week: {artist}").replace("{artist}", &artist.name),
+            theme::medium(13.5),
+            palette.text,
+        );
+    }
 }
 
 /// A numbered row with a small picture. Answers whether it was clicked.

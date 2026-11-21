@@ -1119,6 +1119,9 @@ pub fn apply_flags(app: &mut App, page: Option<&str>, show: Option<&str>) {
     }
     for surface in show.unwrap_or("").split(',').map(str::trim) {
         match surface {
+            // The startup reveal, song card and weekly recap, which the
+            // demo otherwise leaves out of its exact frames.
+            "flair" => app.flair = true,
             "presaved" => {
                 for page in app.album_pages.values_mut() {
                     if let Some(data) = &mut page.prerelease {
@@ -1488,6 +1491,19 @@ pub fn apply_flags(app: &mut App, page: Option<&str>, show: Option<&str>) {
                 // Two screen pixels per skin pixel, whatever the display, so
                 // captures match the pages that show them.
                 app.settings.skin_scale = Some(2);
+            }
+            // One of Motion Music's own mini player themes, by its place in
+            // the list: mini-theme-0 is Neon Night.
+            theme if theme.starts_with("mini-theme-") => {
+                if let Some(chosen) = theme["mini-theme-".len()..]
+                    .parse::<usize>()
+                    .ok()
+                    .and_then(|index| crate::skin::themes::THEMES.get(index))
+                {
+                    app.settings.winamp_window = true;
+                    app.settings.skin = Some(chosen.id.to_owned());
+                    app.settings.skin_scale = Some(2);
+                }
             }
             "playlist" => app.settings.playlist_open = true,
             "shade" => app.settings.winamp_shaded = true,
@@ -8399,7 +8415,7 @@ mod tests {
                 // Draw the full Settings page, including MilkDrop.
                 screen_rect: Some(egui::Rect::from_min_size(
                     egui::Pos2::ZERO,
-                    egui::vec2(1280.0, 5400.0),
+                    egui::vec2(1280.0, 6400.0),
                 )),
                 ..Default::default()
             };

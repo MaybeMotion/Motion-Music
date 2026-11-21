@@ -97,7 +97,10 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     app.actions.push(Action::CyclePlayerBarVis);
                 }
             }
-            let pulse = beat_pulse(app, ui, now.as_ref());
+            let clock = ui.input(|input| input.time);
+            let reduced = crate::motion::reduced(ui.ctx());
+            let pulse =
+                beat_pulse(app, ui, now.as_ref()) * speaker_fade(app, now.as_ref(), clock, reduced);
             if pulse > 0.01 {
                 paint_pulse_glow(
                     ui.painter(),
@@ -264,9 +267,10 @@ fn visualizer(
         PlayerBarVis::Off if stage => PlayerBarVis::Galaxy,
         mode => mode,
     };
-    let (mode, opacity) = app
-        .vis_motion
-        .crossfade(wanted, clock, crate::motion::reduced(ui.ctx()));
+    let reduced = crate::motion::reduced(ui.ctx());
+    let (mode, opacity) = app.vis_motion.crossfade(wanted, clock, reduced);
+    let handover = speaker_fade(app, now, clock, reduced);
+    let opacity = opacity * handover;
     let fading = opacity < 1.0;
     if mode == PlayerBarVis::Off {
         return fading;
@@ -294,9 +298,47 @@ pub struct VisMotion {
     shuffled_at: f64,
     /// The saved choice last seen, so a new choice shows at once.
     chosen: Option<crate::settings::PlayerBarVis>,
+    /// The speaker last playing (`None` for this computer), and when the
+    /// music last moved to another one.
+    speaker: Option<Option<String>>,
+    handover_at: Option<f64>,
 }
 
+/// How long a change of speaker dims the visualizers and beat pulse: out
+/// over the first half, back in over the second.
+const SPEAKER_FADE: f64 = 1.4;
+
 impl VisMotion {
+    /// How strongly to draw the visualizers at `now` (0 to 1) while
+    /// `speaker` plays: a move to another speaker fades them out and back in
+    /// rather than cutting from one sound to the next.
+    pub(crate) fn speaker_fade(
+        &mut self,
+        speaker: Option<Option<String>>,
+        now: f64,
+        enabled: bool,
+    ) -> f32 {
+        if let Some(speaker) = speaker
+            && self.speaker.as_ref() != Some(&speaker)
+        {
+            if self.speaker.is_some() && enabled {
+                self.handover_at = Some(now);
+            }
+            self.speaker = Some(speaker);
+        }
+        let Some(start) = self.handover_at.filter(|_| enabled) else {
+            return 1.0;
+        };
+        let progress = ((now - start) / SPEAKER_FADE).max(0.0) as f32;
+        if progress >= 1.0 {
+            self.handover_at = None;
+            1.0
+        } else {
+            // Down to nothing at the middle, then back up.
+            smooth((progress * 2.0 - 1.0).abs())
+        }
+    }
+
     /// The visualiser to draw at `now` while `wanted` is chosen, and how
     /// strongly: a change fades the old one out and the new one in.
     fn crossfade(
@@ -329,6 +371,15 @@ impl VisMotion {
             (wanted, smooth(progress * 2.0 - 1.0))
         }
     }
+}
+
+/// How strongly the visualizers and pulse show through a change of speaker.
+fn speaker_fade(app: &mut App, now: Option<&NowPlaying>, clock: f64, reduced: bool) -> f32 {
+    let speaker = now
+        .filter(|now| !now.resuming)
+        .map(|now| (!now.local).then(|| now.device_name.clone().unwrap_or_default()));
+    let enabled = app.settings.speaker_fade && !reduced;
+    app.vis_motion.speaker_fade(speaker, clock, enabled)
 }
 
 /// Eases from 0 to 1 gently at both ends.
@@ -637,7 +688,7 @@ fn vis_colours(art: Option<&[[u8; 3]]>, accent: Color32, dark: bool) -> Vec<Colo
 
 /// The colour `at` the given fraction of the way along `colours`, from the
 /// first at 0 to the last at 1.
-fn swept(colours: &[Color32], at: f32) -> Color32 {
+pub(crate) fn swept(colours: &[Color32], at: f32) -> Color32 {
     let Some(last) = colours.len().checked_sub(1) else {
         return Color32::TRANSPARENT;
     };
@@ -1706,13 +1757,14 @@ fn now_playing_block(app: &mut App, ui: &mut egui::Ui, region: Rect, now: Option
         return;
     };
 
+    let shown_cover = super::flair::moving_art(app, ui, cover_rect, "player-bar", now.playing);
     super::widgets::playing_cover(
         ui,
         &palette,
         app.backend.art(),
         "player-bar",
         app.small_art(now, cover_rect.width()),
-        cover_rect,
+        shown_cover,
         6.0,
     );
     let song = app.now_playing_item();
@@ -2856,6 +2908,31 @@ mod visualizer_scene_tests {
             first,
             geometry(PlayerBarVis::Mirror, &[0.1; 7], 0.0, 640.0, true)
         );
+    }
+
+    #[test]
+    fn moving_to_another_speaker_dims_the_visualizers_and_brings_them_back() {
+        let mut motion = VisMotion::default();
+        let phone = Some(Some("Phone".to_owned()));
+        assert_eq!(motion.speaker_fade(None, 0.0, true), 1.0);
+        assert_eq!(
+            motion.speaker_fade(Some(None), 0.0, true),
+            1.0,
+            "first speaker"
+        );
+        assert_eq!(motion.speaker_fade(phone.clone(), 1.0, true), 1.0);
+        let middle = motion.speaker_fade(phone.clone(), 1.0 + SPEAKER_FADE / 2.0, true);
+        assert!(middle < 0.05, "dark halfway through: {middle}");
+        let late = motion.speaker_fade(phone.clone(), 1.0 + SPEAKER_FADE * 0.9, true);
+        assert!(late > 0.5 && late < 1.0, "coming back: {late}");
+        assert_eq!(
+            motion.speaker_fade(phone.clone(), 1.0 + SPEAKER_FADE, true),
+            1.0
+        );
+        // Nothing playing is not a change of speaker, and off means no fade.
+        assert_eq!(motion.speaker_fade(None, 9.0, true), 1.0);
+        assert_eq!(motion.speaker_fade(Some(None), 10.0, false), 1.0);
+        assert_eq!(motion.speaker_fade(Some(None), 10.5, true), 1.0);
     }
 
     #[test]

@@ -131,6 +131,11 @@ impl Stats {
     }
 }
 
+/// The hour of the day with the most plays in `hours`.
+pub fn busiest_hour(hours: &[usize; 24]) -> Option<usize> {
+    busiest(hours)
+}
+
 fn busiest(counts: &[usize]) -> Option<usize> {
     let most = *counts.iter().max()?;
     (most > 0).then(|| counts.iter().position(|&count| count == most))?
@@ -262,6 +267,58 @@ pub fn week_ago(
     stats(&then, zone).top_songs.into_iter().next()
 }
 
+/// The Monday that starts the week holding `day`.
+pub fn week_start(day: jiff::civil::Date) -> jiff::civil::Date {
+    day.checked_sub(jiff::Span::new().days(i64::from(day.weekday().to_monday_zero_offset())))
+        .unwrap_or(day)
+}
+
+/// A week's name, such as `2026-W47`, for remembering which recap was shown.
+pub fn week_id(day: jiff::civil::Date) -> String {
+    let week = day.iso_week_date();
+    format!("{}-W{:02}", week.year(), week.week())
+}
+
+/// Last week's listening, Monday to Sunday, for the weekly recap: the
+/// Monday it started and its stats.
+pub fn last_week(
+    plays: &[PlayHistory],
+    today: jiff::civil::Date,
+    zone: &jiff::tz::TimeZone,
+) -> (jiff::civil::Date, Stats) {
+    let end = week_start(today);
+    let start = end.checked_sub(jiff::Span::new().days(7)).unwrap_or(end);
+    let within: Vec<PlayHistory> = plays
+        .iter()
+        .filter(|play| {
+            play.played_at
+                .as_deref()
+                .and_then(|at| at.parse::<jiff::Timestamp>().ok())
+                .is_some_and(|at| {
+                    let day = at.to_zoned(zone.clone()).date();
+                    day >= start && day < end
+                })
+        })
+        .cloned()
+        .collect();
+    (start, stats(&within, zone))
+}
+
+/// Plays started in each hour of each weekday, Monday first, for the
+/// listening heatmap.
+pub fn week_hours(plays: &[PlayHistory], zone: &jiff::tz::TimeZone) -> [[usize; 24]; 7] {
+    let mut grid = [[0; 24]; 7];
+    for at in plays
+        .iter()
+        .filter(|play| !play.track.uri.is_empty())
+        .filter_map(|play| play.played_at.as_deref()?.parse::<jiff::Timestamp>().ok())
+    {
+        let local = at.to_zoned(zone.clone());
+        grid[local.weekday().to_monday_zero_offset() as usize][local.hour() as usize % 24] += 1;
+    }
+    grid
+}
+
 /// The five most played, most plays first, then by name for a stable order.
 fn top(mut ranked: Vec<Ranked>) -> Vec<Ranked> {
     ranked.sort_by(|a, b| {
@@ -294,6 +351,59 @@ mod tests {
             played_at: Some(at.into()),
             context: None,
         }
+    }
+
+    #[test]
+    fn last_week_runs_monday_to_sunday_and_has_its_own_name() {
+        // Friday 20 November 2026; last week ran 9 to 15 November.
+        let today = jiff::civil::date(2026, 11, 20);
+        assert_eq!(week_start(today), jiff::civil::date(2026, 11, 16));
+        assert_eq!(
+            week_start(jiff::civil::date(2026, 11, 16)),
+            jiff::civil::date(2026, 11, 16)
+        );
+        assert_eq!(week_id(today), "2026-W47");
+        let plays = vec![
+            play(
+                "spotify:track:a",
+                "Rosewood",
+                "Bonobo",
+                "2026-11-08T23:00:00Z",
+            ),
+            play(
+                "spotify:track:a",
+                "Rosewood",
+                "Bonobo",
+                "2026-11-09T09:00:00Z",
+            ),
+            play(
+                "spotify:track:b",
+                "Kerala",
+                "Bonobo",
+                "2026-11-10T21:00:00Z",
+            ),
+            play(
+                "spotify:track:a",
+                "Rosewood",
+                "Bonobo",
+                "2026-11-15T22:00:00Z",
+            ),
+            play(
+                "spotify:track:c",
+                "Otomo",
+                "Khruangbin",
+                "2026-11-16T08:00:00Z",
+            ),
+        ];
+        let (start, week) = last_week(&plays, today, &jiff::tz::TimeZone::UTC);
+        assert_eq!(start, jiff::civil::date(2026, 11, 9));
+        assert_eq!(week.plays, 3, "only Monday 9 to Sunday 15");
+        assert_eq!(week.top_songs[0].name, "Rosewood");
+        assert_eq!(week.top_artists[0].name, "Bonobo");
+        let grid = week_hours(&plays, &jiff::tz::TimeZone::UTC);
+        assert_eq!(grid[0][9], 1, "Monday at nine");
+        assert_eq!(grid[6][22] + grid[6][23], 2, "two Sunday nights");
+        assert_eq!(grid.iter().flatten().sum::<usize>(), 5);
     }
 
     #[test]

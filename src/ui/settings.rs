@@ -1996,6 +1996,162 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         });
     }
 
+    let extras = gettext(locale, "Extras");
+    let speaker_fade = gettext(locale, "Fade between speakers");
+    let song_card = gettext(locale, "Song change card");
+    let moving_art = gettext(locale, "Moving album art");
+    let karaoke = gettext(locale, "Karaoke lyrics");
+    let weekly_recap = gettext(locale, "Weekly recap");
+    let global_shortcuts = gettext(locale, "Global shortcuts");
+    let startup_animation = gettext(locale, "Startup animation");
+    let sleep_timer = gettext(locale, "Sleep timer");
+    let extras_rows = [
+        RowText::new(
+            speaker_fade.clone(),
+            gettext(
+                locale,
+                "The visualizers and beat pulse fade out and back in when the music moves to another speaker.",
+            ),
+        ),
+        RowText::new(
+            song_card.clone(),
+            gettext(
+                locale,
+                "A card with the cover slides in for a moment when the song changes.",
+            ),
+        ),
+        RowText::new(
+            moving_art.clone(),
+            gettext(
+                locale,
+                "The playing cover drifts towards the pointer and breathes with the music.",
+            ),
+        ),
+        RowText::new(
+            karaoke.clone(),
+            gettext(
+                locale,
+                "In full screen lyrics, the line being sung fills with the visualizer's colours as it is sung.",
+            ),
+        ),
+        RowText::new(
+            weekly_recap.clone(),
+            gettext(
+                locale,
+                "When a new week starts, show a recap of last week's listening. It is also on My Wrapped.",
+            ),
+        ),
+        RowText::new(
+            global_shortcuts.clone(),
+            gettext(
+                locale,
+                "Control playback from any app: Ctrl+Alt+Space plays or pauses, Ctrl+Alt+Right and Left skip, Ctrl+Alt+Up and Down change the volume.",
+            ),
+        )
+        .when(cfg!(windows)),
+        RowText::new(
+            startup_animation.clone(),
+            gettext(
+                locale,
+                "A short logo reveal in your theme's colours when Motion Music opens.",
+            ),
+        ),
+        RowText::new(
+            sleep_timer.clone(),
+            gettext(
+                locale,
+                "Fade the music out over the last minute, then pause it. Also on the player bar's clock button.",
+            ),
+        ),
+        RowText::new(
+            gettext(locale, "Sleep timer length"),
+            gettext(locale, "How long the sleep timer runs when it is turned on here."),
+        ),
+    ];
+    if section_matches(&needle, &extras, &extras_rows) {
+        any_visible = true;
+        section(ui, &palette, &extras, |ui| {
+            let switches: [(&RowText<'_>, &std::borrow::Cow<'_, str>, &mut bool); 6] = [
+                (
+                    &extras_rows[0],
+                    &speaker_fade,
+                    &mut app.settings.speaker_fade,
+                ),
+                (&extras_rows[1], &song_card, &mut app.settings.song_card),
+                (&extras_rows[2], &moving_art, &mut app.settings.moving_art),
+                (&extras_rows[3], &karaoke, &mut app.settings.karaoke_lyrics),
+                (
+                    &extras_rows[4],
+                    &weekly_recap,
+                    &mut app.settings.weekly_recap,
+                ),
+                (
+                    &extras_rows[6],
+                    &startup_animation,
+                    &mut app.settings.startup_animation,
+                ),
+            ];
+            for (row, label, value) in switches {
+                filtered_row(ui, &palette, &needle, &extras, row, |ui| {
+                    if widgets::switch(ui, &palette, label, value).changed() {
+                        changed = true;
+                    }
+                });
+            }
+            if cfg!(windows) {
+                filtered_row(ui, &palette, &needle, &extras, &extras_rows[5], |ui| {
+                    if widgets::switch(
+                        ui,
+                        &palette,
+                        &global_shortcuts,
+                        &mut app.settings.global_shortcuts,
+                    )
+                    .changed()
+                    {
+                        changed = true;
+                    }
+                });
+            }
+            filtered_row(ui, &palette, &needle, &extras, &extras_rows[7], |ui| {
+                let mut on = app.sleep_timer.is_some();
+                if widgets::switch(ui, &palette, &sleep_timer, &mut on).changed() {
+                    app.actions.push(Action::SetSleepTimer(
+                        on.then_some(app.settings.sleep_timer_minutes),
+                    ));
+                }
+            });
+            let lengths: Vec<_> = crate::settings::SLEEP_TIMER_LENGTHS
+                .into_iter()
+                .map(|minutes| {
+                    (
+                        minutes,
+                        std::borrow::Cow::Owned(
+                            gettext(locale, "{count} minutes")
+                                .replace("{count}", &minutes.to_string()),
+                        ),
+                    )
+                })
+                .collect();
+            if choice_row(
+                ui,
+                &palette,
+                &needle,
+                &extras,
+                &extras_rows[8],
+                &lengths,
+                &mut app.settings.sleep_timer_minutes,
+            ) {
+                changed = true;
+                // A running timer starts again at the new length.
+                if app.sleep_timer.is_some() {
+                    app.actions.push(Action::SetSleepTimer(Some(
+                        app.settings.sleep_timer_minutes,
+                    )));
+                }
+            }
+        });
+    }
+
     let proxy = gettext(locale, "Proxy");
     let proxy_rows = [RowText::new(
         gettext(locale, "Mode, host, port, username and password"),
@@ -2113,7 +2269,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             gettext(
                 locale,
                 // Translators: {folder} is the path of the skins folder.
-                "Installed skins are in {folder}. Find more at the Winamp Skin Museum.",
+                "Motion Music's themes come first: Neon Night, Sunset, Ocean, Forest, Mint, Ember, Candy and Mono. Installed skins are in {folder}. Find more at the Winamp Skin Museum.",
             )
             .replace("{folder}", &skins_folder.display().to_string()),
         ),
@@ -2191,19 +2347,36 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 // the mini player opens.
                 const RANDOM: usize = usize::MAX;
                 let random = gettext(locale, "Random");
+                // The built-in skin, then Motion Music's themes of it, then
+                // the installed skins.
+                let themes = &crate::skin::themes::THEMES;
+                let first_installed = 1 + themes.len();
                 let mut options: Vec<(usize, &str)> = vec![(RANDOM, &random), (0, "Motion Music")];
+                options.extend(
+                    themes
+                        .iter()
+                        .enumerate()
+                        .map(|(index, theme)| (index + 1, theme.name)),
+                );
                 options.extend(
                     choices
                         .iter()
                         .enumerate()
-                        .map(|(index, choice)| (index + 1, choice.label())),
+                        .map(|(index, choice)| (index + first_installed, choice.label())),
                 );
-                let showing = app
-                    .settings
-                    .skin
-                    .as_deref()
-                    .and_then(|name| choices.iter().position(|choice| choice.name == name))
-                    .map_or(0, |index| index + 1);
+                let showing = app.settings.skin.as_deref().map_or(0, |name| {
+                    themes
+                        .iter()
+                        .position(|theme| theme.id == name)
+                        .map(|index| index + 1)
+                        .or_else(|| {
+                            choices
+                                .iter()
+                                .position(|choice| choice.name == name)
+                                .map(|index| index + first_installed)
+                        })
+                        .unwrap_or(0)
+                });
                 let current = if app.settings.random_skin {
                     RANDOM
                 } else {
@@ -2215,9 +2388,13 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     if picked == RANDOM {
                         app.actions.push(Action::SetRandomSkin(true));
                     } else {
-                        let name = picked
-                            .checked_sub(1)
-                            .map(|index| choices[index].name.clone());
+                        let name = match picked {
+                            0 => None,
+                            theme if theme < first_installed => {
+                                Some(themes[theme - 1].id.to_owned())
+                            }
+                            installed => Some(choices[installed - first_installed].name.clone()),
+                        };
                         app.actions.push(Action::SetSkin(name));
                     }
                 }

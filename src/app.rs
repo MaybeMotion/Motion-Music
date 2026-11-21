@@ -49,7 +49,7 @@ const DEVICES_FRESH: Duration = Duration::from_secs(12);
 const DEFAULT_SPEAKER_WINDOW: Duration = Duration::from_secs(60);
 const DEFAULT_SPEAKER_POLL: Duration = Duration::from_secs(4);
 /// How long the sleep timer takes to fade the music out before pausing.
-const SLEEP_FADE: Duration = Duration::from_secs(45);
+const SLEEP_FADE: Duration = Duration::from_secs(60);
 
 /// Marks the window picture taken for My Wrapped's share image.
 #[derive(Clone, Copy, Debug)]
@@ -360,6 +360,21 @@ pub struct App {
     autostart_sent: Vec<crate::backend::AutostartRequest>,
     /// Whether the tray menu last offered Pause rather than Play.
     tray_playing: bool,
+    /// The song line and sleep timer entry the tray menu last showed.
+    tray_song: String,
+    tray_sleep: String,
+    /// Wakes the app from other threads, such as the global shortcuts'.
+    waker: Waker,
+    /// Windows: the Ctrl+Alt shortcuts, while their setting is on.
+    global_keys: Option<crate::global_keys::GlobalKeys>,
+    /// Whether they were tried since the setting turned on, so a failure is
+    /// not retried every frame.
+    global_keys_tried: bool,
+    /// Only a real app registers global shortcuts, like its tray.
+    global_keys_allowed: bool,
+    /// The startup reveal, song card and weekly recap may show. Off in
+    /// tests and the demo (unless it asks), which draw exact frames.
+    pub flair: bool,
     /// The system's power and session state.
     power: crate::power::Power,
     /// Whether the system's word on reaching the internet goes to the
@@ -848,6 +863,29 @@ const TRAY_PLAY_PAUSE: &str = "play-pause";
 const TRAY_NEXT: &str = "next";
 const TRAY_PREVIOUS: &str = "previous";
 const TRAY_QUIT: &str = "quit";
+const TRAY_NOW: &str = "now-playing";
+const TRAY_MINI: &str = "mini-player";
+const TRAY_SLEEP: &str = "sleep-timer";
+
+/// The tray menu's song line: what is playing, or that nothing is.
+fn tray_song_label(song: Option<(&str, &str)>) -> String {
+    match song {
+        Some((title, "")) => format!("\u{266a} {title}"),
+        Some((title, artists)) => format!("\u{266a} {title} \u{b7} {artists}"),
+        None => "Nothing playing".to_owned(),
+    }
+}
+
+/// The tray menu's sleep timer entry, with the minutes left while it runs.
+fn tray_sleep_label(left: Option<Duration>) -> String {
+    match left {
+        Some(left) => format!(
+            "Sleep timer: {} min left (turn off)",
+            left.as_secs().div_ceil(60)
+        ),
+        None => "Turn on sleep timer".to_owned(),
+    }
+}
 
 /// What the shell around `eframe::run_native` does with the app between
 /// windows.
@@ -956,11 +994,15 @@ fn tray_config() -> fastframe_tray::Config {
         template_icon: Some(util::tray_template_rgba),
         themed_icon: true,
         menu: vec![
+            MenuItem::action(TRAY_NOW, tray_song_label(None)).enabled(false),
+            MenuItem::Separator,
             MenuItem::action(TRAY_SHOW, "Show or hide Motion Music"),
+            MenuItem::action(TRAY_MINI, "Mini player"),
             MenuItem::Separator,
             MenuItem::action(TRAY_PLAY_PAUSE, play_pause_label(false)),
             MenuItem::action(TRAY_NEXT, "Next"),
             MenuItem::action(TRAY_PREVIOUS, "Previous"),
+            MenuItem::action(TRAY_SLEEP, tray_sleep_label(None)),
             MenuItem::Separator,
             MenuItem::action(TRAY_QUIT, "Quit"),
         ],
@@ -1107,6 +1149,13 @@ impl App {
             #[cfg(test)]
             autostart_sent: Vec::new(),
             tray_playing: false,
+            tray_song: String::new(),
+            tray_sleep: String::new(),
+            waker: waker.clone(),
+            global_keys: None,
+            global_keys_tried: false,
+            global_keys_allowed: options.tray,
+            flair: options.tray,
             power,
             follows_reachability: cfg!(target_os = "macos"),
             reachable: true,
@@ -3994,7 +4043,12 @@ impl App {
         {
             match self.settings.skin.clone() {
                 None => self.winamp.wear(None, crate::skin::Skin::builtin()),
-                Some(name) => self.winamp.load(name, &self.dirs.skins_dir(), ctx),
+                Some(name) => match crate::skin::themes::find(&name) {
+                    Some(theme) => self
+                        .winamp
+                        .wear(Some(name), crate::skin::themes::skin(theme)),
+                    None => self.winamp.load(name, &self.dirs.skins_dir(), ctx),
+                },
             }
         }
         if let Some(loaded) = self.winamp.poll() {
@@ -4599,6 +4653,27 @@ impl App {
         }
     }
 
+    /// Starts or stops the global shortcuts with their setting, and turns
+    /// each press into its action. Tests and the demo never register any.
+    fn handle_global_keys(&mut self) {
+        let wanted = self.settings.global_shortcuts && self.global_keys_allowed;
+        if wanted && self.global_keys.is_none() && !self.global_keys_tried {
+            self.global_keys_tried = true;
+            let waker = self.waker.clone();
+            self.global_keys = crate::global_keys::GlobalKeys::start(move || waker.wake());
+        } else if !wanted {
+            self.global_keys = None;
+            self.global_keys_tried = false;
+        }
+        let pressed = self
+            .global_keys
+            .as_ref()
+            .map(crate::global_keys::GlobalKeys::drain)
+            .unwrap_or_default();
+        self.actions
+            .extend(pressed.into_iter().map(crate::global_keys::Key::action));
+    }
+
     fn handle_tray(&mut self) {
         use fastframe_tray::Event;
         let Some(events) = self.tray.as_ref().map(fastframe_tray::Tray::events) else {
@@ -4618,6 +4693,17 @@ impl App {
                 Event::Menu(TRAY_NEXT) => Action::Next,
                 Event::Menu(TRAY_PREVIOUS) => Action::Previous,
                 Event::Menu(TRAY_QUIT) => Action::Quit,
+                Event::Menu(TRAY_MINI) => {
+                    if !self.settings.winamp_window {
+                        self.actions.push(Action::ToggleWinampWindow);
+                    }
+                    Action::ShowWindow
+                }
+                Event::Menu(TRAY_SLEEP) => Action::SetSleepTimer(
+                    self.sleep_timer
+                        .is_none()
+                        .then_some(self.settings.sleep_timer_minutes),
+                ),
                 Event::Menu(_) => continue,
             };
             self.actions.push(action);
@@ -4931,6 +5017,33 @@ impl App {
         {
             self.tray_playing = playing;
             tray.set_label(TRAY_PLAY_PAUSE, play_pause_label(playing));
+        }
+        if self.tray.is_some() {
+            let now = self.now_playing();
+            let song = tray_song_label(
+                now.as_ref()
+                    .map(|now| (now.title.as_str(), now.subtitle.as_str())),
+            );
+            let sleep = tray_sleep_label(
+                self.sleep_timer
+                    .map(|timer| timer.ends.saturating_duration_since(Instant::now())),
+            );
+            if let Some(tray) = &mut self.tray {
+                if self.tray_song != song {
+                    tray.set_tooltip(match now {
+                        Some(_) => {
+                            format!("Motion Music\n{}", song.trim_start_matches("\u{266a} "))
+                        }
+                        None => "Motion Music".to_owned(),
+                    });
+                    tray.set_label(TRAY_NOW, song.clone());
+                    self.tray_song = song;
+                }
+                if self.tray_sleep != sleep {
+                    tray.set_label(TRAY_SLEEP, sleep.clone());
+                    self.tray_sleep = sleep;
+                }
+            }
         }
         if let Some(tray) = &mut self.tray {
             // Changes the item only when the setting did.
@@ -12312,6 +12425,11 @@ impl App {
                     self.winamp.refresh_choices(&self.dirs.skins_dir());
                     let candidates: Vec<Option<String>> = std::iter::once(None)
                         .chain(
+                            crate::skin::themes::THEMES
+                                .iter()
+                                .map(|theme| Some(theme.id.to_owned())),
+                        )
+                        .chain(
                             self.winamp
                                 .choices
                                 .iter()
@@ -12919,6 +13037,7 @@ impl App {
         self.run_sleep_timer(ctx);
         self.save_wrapped_shot(ctx);
         self.handle_tray();
+        self.handle_global_keys();
         #[cfg(target_os = "macos")]
         self.handle_dock_menu();
         #[cfg(target_os = "macos")]
@@ -30784,6 +30903,24 @@ mod tests {
         app.default_speaker_until = Some(Instant::now() - Duration::from_secs(1));
         assert!(!app.looking_for_default_speaker());
         app.backend.shutdown();
+    }
+
+    #[test]
+    fn the_tray_menu_names_the_song_and_the_sleep_timer() {
+        assert_eq!(super::tray_song_label(None), "Nothing playing");
+        assert_eq!(
+            super::tray_song_label(Some(("Rosewood", "Bonobo"))),
+            "\u{266a} Rosewood \u{b7} Bonobo"
+        );
+        assert_eq!(
+            super::tray_song_label(Some(("Episode", ""))),
+            "\u{266a} Episode"
+        );
+        assert_eq!(super::tray_sleep_label(None), "Turn on sleep timer");
+        assert_eq!(
+            super::tray_sleep_label(Some(Duration::from_secs(61))),
+            "Sleep timer: 2 min left (turn off)"
+        );
     }
 
     #[test]

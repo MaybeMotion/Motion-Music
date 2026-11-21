@@ -503,7 +503,8 @@ fn big_cover(app: &App, ui: &mut egui::Ui, column: Rect, align: Align) {
         return;
     };
     let side = column.width();
-    let cover = Rect::from_min_size(column.min, vec2(side, side));
+    let base = Rect::from_min_size(column.min, vec2(side, side));
+    let cover = super::flair::moving_art(app, ui, base, "fullscreen-lyrics", now.playing);
     let radius = 10.0;
     ui.painter().add(
         egui::epaint::Shadow {
@@ -523,7 +524,7 @@ fn big_cover(app: &App, ui: &mut egui::Ui, column: Rect, align: Align) {
         cover,
         radius,
     );
-    let words = Rect::from_min_max(pos2(column.left(), cover.bottom() + 18.0), column.max);
+    let words = Rect::from_min_max(pos2(column.left(), base.bottom() + 18.0), column.max);
     let mut text = ui.new_child(
         UiBuilder::new()
             .max_rect(words)
@@ -748,6 +749,12 @@ fn fullscreen_contents(app: &mut App, ui: &mut egui::Ui) {
     // so highlighting cannot rewrap the words during a transition.
     // A line takes 200 ms to light up or fade.
     let quiet = palette.text.gamma_multiply(0.68);
+    let karaoke = app.settings.karaoke_lyrics && lyrics.synced;
+    let colours = if karaoke {
+        super::player_bar::visualiser_palette(app, None)
+    } else {
+        Vec::new()
+    };
     ui.spacing_mut().scroll.fade.strength = 0.0;
     egui::ScrollArea::vertical()
         .id_salt(("fullscreen-lyrics-scroll", &now.uri))
@@ -812,6 +819,7 @@ fn fullscreen_contents(app: &mut App, ui: &mut egui::Ui) {
                 let edge = ((center - viewport.top()).min(viewport.bottom() - center)
                     / (size * 2.0))
                     .clamp(0.0, 1.0);
+                let sung = galley.clone();
                 let response = ui
                     .scope(|ui| {
                         ui.multiply_opacity(edge * edge * (3.0 - 2.0 * edge));
@@ -819,6 +827,17 @@ fn fullscreen_contents(app: &mut App, ui: &mut egui::Ui) {
                     })
                     .inner;
                 let rect = response.rect;
+                if is_active
+                    && karaoke
+                    && let Some(progress) =
+                        line_progress(&lyrics, index, now.position_ms, now.duration_ms)
+                    && !crate::bidi::is_rtl(text)
+                {
+                    paint_karaoke(ui, &sung, rect.min, progress, &colours, lit);
+                    if now.playing {
+                        theme::visualiser_frame(ui.ctx(), app.visualiser_fps());
+                    }
+                }
                 if lyrics.synced
                     && response.clicked()
                     && let Some(at_ms) = line.at_ms
@@ -869,9 +888,114 @@ fn fullscreen_contents(app: &mut App, ui: &mut egui::Ui) {
     }
 }
 
+/// How far through singing line `index` the song is at `position_ms`, 0 to
+/// 1: from the line's time to the next timed line's, or to the song's end.
+fn line_progress(
+    lyrics: &crate::lyrics::Lyrics,
+    index: usize,
+    position_ms: u32,
+    duration_ms: u32,
+) -> Option<f32> {
+    let start = lyrics.lines.get(index)?.at_ms?;
+    let end = lyrics.lines[index + 1..]
+        .iter()
+        .find_map(|line| line.at_ms)
+        .unwrap_or(duration_ms)
+        .max(start + 1);
+    Some((position_ms.saturating_sub(start) as f32 / (end - start) as f32).clamp(0.0, 1.0))
+}
+
+/// Fills the sung `galley` at `at` from the left, `progress` of the way
+/// along its words, in the visualizer's colours, row after row for a line
+/// that wraps, with a soft glow behind what has been sung.
+fn paint_karaoke(
+    ui: &egui::Ui,
+    galley: &std::sync::Arc<egui::Galley>,
+    at: egui::Pos2,
+    progress: f32,
+    colours: &[Color32],
+    lit: f32,
+) {
+    if colours.is_empty() || progress <= 0.0 {
+        return;
+    }
+    let rows: Vec<Rect> = galley
+        .rows
+        .iter()
+        .map(|row| row.rect_without_leading_space().translate(at.to_vec2()))
+        .filter(|row| row.width() > 0.0)
+        .collect();
+    let total: f32 = rows.iter().map(Rect::width).sum();
+    let mut left_to_fill = total * progress;
+    let mut along = 0.0;
+    // The colour changes in narrow slices, so the fill is a gradient.
+    const SLICE: f32 = 18.0;
+    for row in rows {
+        if left_to_fill <= 0.0 {
+            break;
+        }
+        let filled = row.width().min(left_to_fill);
+        left_to_fill -= filled;
+        let done = Rect::from_min_max(row.min, pos2(row.left() + filled, row.max.y));
+        ui.painter().rect_filled(
+            done.expand2(vec2(6.0, 2.0)),
+            8.0,
+            super::player_bar::swept(colours, (along + filled / 2.0) / total)
+                .gamma_multiply(0.07 * lit),
+        );
+        let mut x = row.left();
+        while x < done.right() {
+            let slice = Rect::from_min_max(
+                pos2(x, row.top() - 4.0),
+                pos2((x + SLICE).min(done.right()), row.bottom() + 4.0),
+            );
+            let colour = super::player_bar::swept(colours, (along + x - row.left()) / total);
+            ui.painter()
+                .with_clip_rect(slice.intersect(ui.clip_rect()))
+                .galley_with_override_text_color(
+                    at,
+                    galley.clone(),
+                    theme::motion::blend(Color32::WHITE, colour, lit),
+                );
+            x += SLICE;
+        }
+        along += row.width();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{fullscreen_content_width, preferred_backdrop_art};
+
+    #[test]
+    fn a_sung_line_fills_from_its_time_to_the_next_lines() {
+        let line = |at: Option<u32>, text: &str| crate::lyrics::Line {
+            at_ms: at,
+            text: text.into(),
+        };
+        let lyrics = crate::lyrics::Lyrics {
+            lines: vec![
+                line(Some(1_000), "first"),
+                line(None, "untimed"),
+                line(Some(3_000), "second"),
+            ],
+            synced: true,
+            ..Default::default()
+        };
+        assert_eq!(super::line_progress(&lyrics, 0, 500, 10_000), Some(0.0));
+        assert_eq!(super::line_progress(&lyrics, 0, 2_000, 10_000), Some(0.5));
+        assert_eq!(super::line_progress(&lyrics, 0, 9_000, 10_000), Some(1.0));
+        assert_eq!(
+            super::line_progress(&lyrics, 2, 6_500, 10_000),
+            Some(0.5),
+            "to the song's end"
+        );
+        assert_eq!(
+            super::line_progress(&lyrics, 1, 2_000, 10_000),
+            None,
+            "no time of its own"
+        );
+    }
 
     #[test]
     fn fullscreen_backdrop_prefers_small_art_with_large_art_as_fallback() {
