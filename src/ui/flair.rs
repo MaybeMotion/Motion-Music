@@ -757,26 +757,8 @@ fn pattern_tile(
                         ink((py - wave).abs(), 0.6 * unit, 1.0, at);
                     }
                 }
-                BackgroundPattern::Stars => {
-                    // A few stars, mostly small and dim, one or two brighter,
-                    // scattered rather than in rows.
-                    let stars = [
-                        (0.11, 0.18, 1.0, 0.6),
-                        (0.47, 0.09, 0.8, 0.45),
-                        (0.83, 0.31, 1.5, 1.0),
-                        (0.29, 0.62, 0.9, 0.55),
-                        (0.66, 0.74, 1.2, 0.8),
-                        (0.92, 0.88, 0.7, 0.4),
-                    ];
-                    for (sx, sy, big, bright) in stars {
-                        let dx = wrap((px - sx * size).rem_euclid(size));
-                        let dy = wrap((py - sy * size).rem_euclid(size));
-                        let distance = (dx * dx + dy * dy).sqrt();
-                        ink(distance, big * unit, bright, at);
-                        // A soft halo around each, fainter than the star.
-                        ink(distance, big * 2.6 * unit, bright * 0.15, at);
-                    }
-                }
+                // Stars are drawn one by one, so each can twinkle.
+                BackgroundPattern::Stars => {}
             }
         }
     }
@@ -795,6 +777,10 @@ pub(crate) fn background_pattern(app: &App, ui: &egui::Ui, rect: Rect) {
     use crate::settings::BackgroundPattern;
     let style = app.settings.background_pattern;
     if style == BackgroundPattern::None {
+        return;
+    }
+    if style == BackgroundPattern::Stars {
+        star_field(app, ui, rect);
         return;
     }
     let ctx = ui.ctx();
@@ -854,6 +840,75 @@ pub(crate) fn background_pattern(app: &App, ui: &egui::Ui, rect: Rect) {
     }
 }
 
+/// The Stars pattern: a sparse sky drawn star by star, each in its own
+/// place, size and brightness, twinkling at its own pace, a few tinted in
+/// the visualizer's colours and the brightest with a soft glint. They lie
+/// on two depths, the nearer drifting faster. Still, and so not
+/// twinkling, when Pattern motion is off.
+fn star_field(app: &App, ui: &egui::Ui, rect: Rect) {
+    let ctx = ui.ctx();
+    let moving = app.settings.pattern_motion && !crate::motion::reduced(ctx);
+    let time = if moving {
+        ui.input(|input| input.time) as f32
+    } else {
+        0.0
+    };
+    // The sky repeats only every so often, far wider than a screen.
+    let field = vec2(1500.0, 1100.0);
+    let count = 80;
+    let painter = ui.painter().with_clip_rect(rect);
+    let colours = super::player_bar::visualiser_palette(app, None);
+    let light = app.palette.text;
+    let strength = if app.palette.dark { 0.85 } else { 0.6 };
+    for star in 0..count {
+        // Steady random numbers for this star, from its number alone.
+        let random = |salt: f32| {
+            ((star as f32 * 12.9898 + salt * 78.233).sin() * 43_758.547)
+                .fract()
+                .abs()
+        };
+        let depth = 0.5 + random(1.0) * 0.5;
+        let drift = vec2(3.0, -5.0) * depth * time;
+        let place = vec2(random(2.0) * field.x, random(3.0) * field.y) + drift;
+        let place = vec2(place.x.rem_euclid(field.x), place.y.rem_euclid(field.y));
+        // Mostly small, a few large: a real sky's spread.
+        let size = 0.5 + random(4.0).powi(3) * 1.9;
+        let base = (0.25 + random(5.0) * 0.55) * (0.6 + size * 0.25);
+        let twinkle = if moving {
+            0.5 + 0.5 * (time * (0.7 + random(6.0) * 2.3) + random(7.0) * TAU).sin()
+        } else {
+            0.7
+        };
+        let alpha = (base * (0.3 + 0.7 * twinkle) * strength).min(1.0);
+        let colour = if random(8.0) > 0.8 {
+            super::player_bar::swept(&colours, random(9.0)).lerp_to_gamma(light, 0.4)
+        } else {
+            light
+        };
+        // The same star wherever the sky repeats across the page.
+        for column in 0..=(rect.width() / field.x).ceil() as i32 {
+            for row in 0..=(rect.height() / field.y).ceil() as i32 {
+                let at = rect.min + place + vec2(column as f32 * field.x, row as f32 * field.y);
+                if !rect.expand(8.0).contains(at) {
+                    continue;
+                }
+                painter.circle_filled(at, size * 3.0, colour.gamma_multiply(alpha * 0.08));
+                painter.circle_filled(at, size, colour.gamma_multiply(alpha));
+                // The brightest catch a glint as they twinkle.
+                if size > 1.6 {
+                    let reach = size * (2.5 + 3.5 * twinkle);
+                    let glint = egui::Stroke::new(0.8, colour.gamma_multiply(alpha * 0.6));
+                    painter.line_segment([at - vec2(reach, 0.0), at + vec2(reach, 0.0)], glint);
+                    painter.line_segment([at - vec2(0.0, reach), at + vec2(0.0, reach)], glint);
+                }
+            }
+        }
+    }
+    if moving {
+        // Twinkling needs only a gentle pace.
+        ctx.request_repaint_after(std::time::Duration::from_millis(50));
+    }
+}
 /// How far an album or playlist header has scrolled away, 0 to 1, for the
 /// cover to shrink and fade a little as it goes. No art is drawn behind the
 /// header: the theme stays clean.
@@ -1039,7 +1094,8 @@ mod tests {
             let tile = pattern_tile(style, 52, 52.0);
             assert_eq!(tile.size, [52, 52]);
             let inked = tile.pixels.iter().filter(|pixel| pixel.a() > 40).count();
-            if style == BackgroundPattern::None {
+            // Stars are drawn one by one rather than from a tile.
+            if matches!(style, BackgroundPattern::None | BackgroundPattern::Stars) {
                 assert_eq!(inked, 0);
             } else {
                 assert!(inked > 0, "{style:?} draws something");
