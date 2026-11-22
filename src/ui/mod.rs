@@ -320,7 +320,6 @@ fn central(app: &mut App, ui: &mut egui::Ui) {
             if let Some(stops) = app.background_gradient() {
                 theme::paint_theme_gradient(ui, rect, stops, 0);
             }
-            flair::background_pattern(app, ui, rect);
             let page = app.page().clone();
             let overview = matches!(
                 page,
@@ -340,6 +339,9 @@ fn central(app: &mut App, ui: &mut egui::Ui) {
             {
                 widgets::paint_vertical_gradient(ui, header_rect(rect, scrolled), top, bottom);
             }
+            // Over the header's colour wash, so the pattern runs unbroken from
+            // the top of the page instead of starting where the wash ends.
+            flair::background_pattern(app, ui, rect);
             ui.spacing_mut().item_spacing = vec2(8.0, 6.0);
             // egui fades a scrolled page's edge into the panel's plain
             // colour, which shows as a pale band over a cover's tint; the

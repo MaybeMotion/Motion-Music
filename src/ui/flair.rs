@@ -698,12 +698,23 @@ pub(crate) fn ambient(app: &App, ui: &egui::Ui) {
     }
 }
 
-/// How big one repeat of a background pattern is, in points.
-const PATTERN_TILE: f32 = 52.0;
+/// How big one repeat of a background pattern is, in points. Stars repeat
+/// over a much wider tile, so the sky stays sparse and its repeat is hard to
+/// spot.
+fn pattern_span(style: crate::settings::BackgroundPattern) -> f32 {
+    match style {
+        crate::settings::BackgroundPattern::Stars => 180.0,
+        _ => 52.0,
+    }
+}
 
 /// One repeat of `style` as a white mask `pixels` square, drawn once and
 /// then tiled across the page by the graphics card.
-fn pattern_tile(style: crate::settings::BackgroundPattern, pixels: usize) -> egui::ColorImage {
+fn pattern_tile(
+    style: crate::settings::BackgroundPattern,
+    pixels: usize,
+    span: f32,
+) -> egui::ColorImage {
     use crate::settings::BackgroundPattern;
     let mut alpha = vec![0.0_f32; pixels * pixels];
     let size = pixels as f32;
@@ -712,7 +723,7 @@ fn pattern_tile(style: crate::settings::BackgroundPattern, pixels: usize) -> egu
         let cover = (width - distance + 0.5).clamp(0.0, 1.0) * strength;
         alpha[at] = alpha[at].max(cover);
     };
-    let unit = size / PATTERN_TILE;
+    let unit = size / span;
     for y in 0..pixels {
         for x in 0..pixels {
             let (px, py) = (x as f32 + 0.5, y as f32 + 0.5);
@@ -747,18 +758,23 @@ fn pattern_tile(style: crate::settings::BackgroundPattern, pixels: usize) -> egu
                     }
                 }
                 BackgroundPattern::Stars => {
+                    // A few stars, mostly small and dim, one or two brighter,
+                    // scattered rather than in rows.
                     let stars = [
-                        (0.13, 0.22, 1.2),
-                        (0.61, 0.08, 0.7),
-                        (0.37, 0.55, 1.6),
-                        (0.82, 0.71, 0.9),
-                        (0.18, 0.86, 0.6),
-                        (0.72, 0.36, 0.8),
+                        (0.11, 0.18, 1.0, 0.6),
+                        (0.47, 0.09, 0.8, 0.45),
+                        (0.83, 0.31, 1.5, 1.0),
+                        (0.29, 0.62, 0.9, 0.55),
+                        (0.66, 0.74, 1.2, 0.8),
+                        (0.92, 0.88, 0.7, 0.4),
                     ];
-                    for (sx, sy, big) in stars {
+                    for (sx, sy, big, bright) in stars {
                         let dx = wrap((px - sx * size).rem_euclid(size));
                         let dy = wrap((py - sy * size).rem_euclid(size));
-                        ink((dx * dx + dy * dy).sqrt(), big * unit, 0.6 + 0.3 * big, at);
+                        let distance = (dx * dx + dy * dy).sqrt();
+                        ink(distance, big * unit, bright, at);
+                        // A soft halo around each, fainter than the star.
+                        ink(distance, big * 2.6 * unit, bright * 0.15, at);
                     }
                 }
             }
@@ -782,14 +798,15 @@ pub(crate) fn background_pattern(app: &App, ui: &egui::Ui, rect: Rect) {
         return;
     }
     let ctx = ui.ctx();
-    let pixels = (PATTERN_TILE * ctx.pixels_per_point()).round().max(8.0) as usize;
+    let span = pattern_span(style);
+    let pixels = (span * ctx.pixels_per_point()).round().max(8.0) as usize;
     let id = Id::new(("background-pattern", style, pixels));
     let texture = ctx
         .data(|data| data.get_temp::<egui::TextureHandle>(id))
         .unwrap_or_else(|| {
             let texture = ctx.load_texture(
                 "background-pattern",
-                pattern_tile(style, pixels),
+                pattern_tile(style, pixels, span),
                 egui::TextureOptions {
                     wrap_mode: egui::TextureWrapMode::Repeat,
                     ..egui::TextureOptions::LINEAR
@@ -811,17 +828,22 @@ pub(crate) fn background_pattern(app: &App, ui: &egui::Ui, rect: Rect) {
         BackgroundPattern::Grid => vec2(0.0, -0.1),
         BackgroundPattern::Diagonal => vec2(0.15, 0.0),
         BackgroundPattern::Waves => vec2(-0.2, 0.0),
-        BackgroundPattern::Stars => vec2(0.03, -0.06),
+        BackgroundPattern::Stars => vec2(0.01, -0.02),
         BackgroundPattern::None => Vec2::ZERO,
     } * time;
     let uv = Rect::from_min_size(
-        pos2(rect.left() / PATTERN_TILE, rect.top() / PATTERN_TILE) + drift,
-        rect.size() / PATTERN_TILE,
+        pos2(rect.left() / span, rect.top() / span) + drift,
+        rect.size() / span,
     );
+    // Sparse stars can each shine brighter than a field of dots.
+    let strength = match style {
+        BackgroundPattern::Stars => 0.55,
+        _ => 0.13,
+    };
     let ink = app
         .palette
         .text
-        .gamma_multiply(if app.palette.dark { 0.13 } else { 0.12 });
+        .gamma_multiply(strength * if app.palette.dark { 1.0 } else { 0.9 });
     ui.painter()
         .with_clip_rect(rect)
         .image(texture.id(), rect, uv, ink);
@@ -1014,7 +1036,7 @@ mod tests {
     fn every_pattern_tile_has_faint_ink_and_none_has_none() {
         use crate::settings::BackgroundPattern;
         for style in BackgroundPattern::ALL.iter().copied() {
-            let tile = pattern_tile(style, 52);
+            let tile = pattern_tile(style, 52, 52.0);
             assert_eq!(tile.size, [52, 52]);
             let inked = tile.pixels.iter().filter(|pixel| pixel.a() > 40).count();
             if style == BackgroundPattern::None {
