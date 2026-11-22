@@ -6,13 +6,13 @@
 
 Motion Music is a personal customisation of [Spotifast](https://github.com/crmne/spotifast), built with Rust, egui, fastframe, and librespot. Original copyright, licence, and upstream credits are retained. Upstream documentation and release links describe Spotifast; official downloads do not include these customisations.
 
-## Download Motion Music v20
+## Download Motion Music v20.1
 
-**[Download the Windows portable ZIP](https://github.com/MaybeMotion/Motion-Music/releases/download/motion-v20/Motion-Music-v20-Windows.zip)** or open the [Motion Music v20 release](https://github.com/MaybeMotion/Motion-Music/releases/tag/motion-v20) for the source archive and checksums. Extract the ZIP, keep `spotifast-portable.txt` beside `Motion Music v20.exe`, move your existing `spotifast-data` folder beside it to keep your settings, sign-in and personal Spotify app, and fully quit an older running copy before opening it.
+**[Download the Windows portable ZIP](https://github.com/MaybeMotion/Motion-Music/releases/download/motion-v20.1/Motion-Music-v20.1-Windows.zip)** or open the [Motion Music v20.1 release](https://github.com/MaybeMotion/Motion-Music/releases/tag/motion-v20.1) for the source archive and checksums. Extract the ZIP, keep `spotifast-portable.txt` beside `Motion Music v20.1.exe`, move your existing `spotifast-data` folder beside it to keep your settings, sign-in and personal Spotify app, and fully quit an older running copy before opening it.
 
-**Mac:** v20 has not been built for Mac yet. The [v12 Apple Silicon installer](https://github.com/MaybeMotion/Motion-Music/releases/download/motion-v12/Motion-Music-v12-macos-arm64.zip) and [v12 Intel installer](https://github.com/MaybeMotion/Motion-Music/releases/download/motion-v12/Motion-Music-v12-macos-x86_64.zip) remain available. See the [Mac installation guide](docs/MAC-INSTALL.md).
+**Mac:** v20.1 has not been built for Mac yet. The [v12 Apple Silicon installer](https://github.com/MaybeMotion/Motion-Music/releases/download/motion-v12/Motion-Music-v12-macos-arm64.zip) and [v12 Intel installer](https://github.com/MaybeMotion/Motion-Music/releases/download/motion-v12/Motion-Music-v12-macos-x86_64.zip) remain available. See the [Mac installation guide](docs/MAC-INSTALL.md).
 
-See the [v20 guide](docs/MOTION-MUSIC-V20.md) for the glass interface, Settings > Customise and Extras, karaoke lyrics, your week in music and more. Earlier guides: [v19](docs/MOTION-MUSIC-V19.md), [v18](docs/MOTION-MUSIC-V18.md), [v17](docs/MOTION-MUSIC-V17.md), [v16](docs/MOTION-MUSIC-V16.md), [v15](docs/MOTION-MUSIC-V15.md), [v14](docs/MOTION-MUSIC-V14.md) and [v13](docs/MOTION-MUSIC-V13.md). Downloads are installed manually; the automatic updater remains disabled for this custom build. **motion-v20** identifies this customised portable edition. The underlying Cargo package and executable version remain **0.14.1**.
+See the [v20 guide](docs/MOTION-MUSIC-V20.md) for the glass interface, Settings > Customise and Extras, karaoke lyrics, your week in music and more (v20.1 adds a twinkling Stars sky). Earlier guides: [v19](docs/MOTION-MUSIC-V19.md), [v18](docs/MOTION-MUSIC-V18.md), [v17](docs/MOTION-MUSIC-V17.md), [v16](docs/MOTION-MUSIC-V16.md), [v15](docs/MOTION-MUSIC-V15.md), [v14](docs/MOTION-MUSIC-V14.md) and [v13](docs/MOTION-MUSIC-V13.md). Downloads are installed manually; the automatic updater remains disabled for this custom build. **motion-v20.1** identifies this customised portable edition. The underlying Cargo package and executable version remain **0.14.1**.
 
 The inherited Spotifast publishing workflows are archived and inactive. See [GitHub upload notes](docs/GITHUB-UPLOAD.md) for the source and publishing details.
 
@@ -183,7 +183,7 @@ Demo visual flags include **--demo-show motion-aurora**, **motion-radial**, **mo
 
 The executable, windows, tray/menu entries, playback device default, and native icons identify as Motion Music. Internal crate names, Spotify authentication identifiers, credential keys, profile folders, IPC identifiers, and package IDs remain compatible with Spotifast. Existing saved settings, sign-ins and custom device names are preserved. To have Motion Music control another Spotify Connect speaker as soon as it starts, choose it in **Settings > Playback on this computer > Default speaker**. It is picked as soon as Spotify lists it, unless music is already playing on another device.
 
-Self-updates remain disabled for this custom build, preventing an upstream Spotifast download from replacing Motion Music. Update manually from [Motion Music releases](https://github.com/MaybeMotion/Motion-Music/releases), or rebuild this source. The custom v20 label identifies this portable update; the underlying package version remains 0.14.1.
+Self-updates remain disabled for this custom build, preventing an upstream Spotifast download from replacing Motion Music. Update manually from [Motion Music releases](https://github.com/MaybeMotion/Motion-Music/releases), or rebuild this source. The custom v20.1 label identifies this portable update; the underlying package version remains 0.14.1.
 
 ## Upstream and licence
 
@@ -197,4 +197,4 @@ The native playback engine can receive **audio key 0 1** from Spotify. This mean
 
 The Motion Music v12 app icon is **Vortex Bloom**, an original four-blade symbol in violet, pink, coral and cyan with a transparent background and open centre. A canonical PNG supplies the window and in-app icon; a matching monochrome bloom supplies the tray template, with native ICO and macOS exports.
 
-For the supplied v20 portable build, keep **spotifast-portable.txt** beside the executable. Fully quit an older running Motion Music instance before launching the new build; otherwise the existing instance handles the launch.
+For the supplied v20.1 portable build, keep **spotifast-portable.txt** beside the executable. Fully quit an older running Motion Music instance before launching the new build; otherwise the existing instance handles the launch.
